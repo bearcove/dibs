@@ -182,7 +182,8 @@ article p {
     margin-bottom: 1rem;
 }
 
-article ul, article ol {
+article ul,
+article ol {
     margin-bottom: 1rem;
     padding-left: 1.5rem;
 }
@@ -210,11 +211,12 @@ article code {
 
 article pre {
     background: var(--code-bg);
-    border-radius: 8px;
+    border-radius: 0 0 8px 8px;
     padding: 1rem;
     overflow-x: auto;
-    margin-bottom: 1rem;
+    margin: 0;
     border: 1px solid var(--border);
+    border-top: none;
 }
 
 article pre code {
@@ -222,6 +224,33 @@ article pre code {
     padding: 0;
     font-size: 0.875rem;
     line-height: 1.5;
+}
+
+/* Code blocks with language header */
+.code-block {
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.code-block pre {
+    border-radius: 0;
+    border: none;
+    margin: 0;
+}
+
+.code-block:not(:has(.code-header)) pre {
+    border-radius: 8px;
+}
+
+.code-header {
+    background: var(--border);
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0.4rem 1rem;
+    border-bottom: 1px solid var(--border);
 }
 
 article strong {
