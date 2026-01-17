@@ -29,10 +29,12 @@ use std::pin::Pin;
 
 mod error;
 mod migrate;
-mod schema;
+mod plugin;
+pub mod schema;
 
 pub use error::Error;
 pub use migrate::{Migration, MigrationContext, MigrationRunner, MigrationStatus};
+pub use schema::{Column, ForeignKey, PgType, Schema, Table, TableDef};
 
 // Re-export inventory for the proc macro
 pub use inventory;
