@@ -18,4 +18,4 @@ thiserror = "2"
 dibs-macros = { path = "dibs-macros" }
 
 [workspace]
-members = ["dibs-macros"]
+members = ["dibs-macros", "crates/*"]
