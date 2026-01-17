@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}dibs - Postgres toolkit for Rust{% endblock title %}
+{% block body_class %}home{% endblock body_class %}
+
+{% block body %}
+<div class="hero">
+    <div class="hero-content">
+        <h1 class="hero-title">dibs</h1>
+        <p class="hero-tagline">Postgres toolkit for Rust</p>
+        <p class="hero-sub">Migrations as code. Powered by facet reflection.</p>
+        <div class="hero-actions">
+            <a href="https://docs.rs/dibs" class="btn btn-primary">Documentation</a>
+            <a href="https://github.com/bearcove/dibs" class="btn btn-secondary">View on GitHub</a>
+        </div>
+    </div>
+</div>
+
+<main class="content">
+    <article>
+        {{ section.content | safe }}
+    </article>
+</main>
+{% endblock body %}

@@ -1,2 +1,8 @@
 /target
 Cargo.lock
+.cache
+-e 
+# Dodeca docs
+docs/public/
+docs/.cache/
+docs/.dodeca.db/
