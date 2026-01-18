@@ -11,7 +11,8 @@ export type FilterOp =
   | { tag: 'Like' }
   | { tag: 'ILike' }
   | { tag: 'IsNull' }
-  | { tag: 'IsNotNull' };
+  | { tag: 'IsNotNull' }
+  | { tag: 'In' };
 
 export type Value =
   | { tag: 'Null' }
@@ -30,6 +31,7 @@ export interface Filter {
   field: string;
   op: FilterOp;
   value: Value;
+  values: Value[];
 }
 
 export interface Sort {
@@ -45,6 +47,7 @@ export interface ColumnInfo {
   default: string | null;
   primary_key: boolean;
   unique: boolean;
+  auto_generated: boolean;
   doc: string | null;
 }
 

@@ -1,6 +1,9 @@
 <script lang="ts">
-    import { CaretUp, CaretDown, Clock } from "phosphor-svelte";
-    import type { Row, ColumnInfo, Value, Sort, SortDir } from "../types.js";
+    import { CaretUp, CaretDown, Clock, Hash, TextT, ToggleLeft, Calendar, Timer, Binary, ArrowSquareOut } from "phosphor-svelte";
+    import type { Row, ColumnInfo, Value, Sort, SortDir, TableInfo, SchemaInfo, SquelClient } from "../types.js";
+    import type { Component } from "svelte";
+    import { getFkForColumn, getTableByName } from "../lib/fk-utils.js";
+    import FkCell from "./FkCell.svelte";
 
     interface Props {
         columns: ColumnInfo[];
@@ -8,9 +11,16 @@
         sort: Sort | null;
         onSort: (column: string) => void;
         onRowClick?: (row: Row) => void;
+        // FK support
+        table?: TableInfo;
+        schema?: SchemaInfo;
+        client?: SquelClient;
+        databaseUrl?: string;
+        onFkClick?: (targetTable: string, pkValue: Value) => void;
+        fkLookup?: Map<string, Map<string, Row>>;
     }
 
-    let { columns, rows, sort, onSort, onRowClick }: Props = $props();
+    let { columns, rows, sort, onSort, onRowClick, table, schema, client, databaseUrl, onFkClick, fkLookup }: Props = $props();
 
     // Time display mode: "relative" or "absolute"
     let timeMode = $state<"relative" | "absolute">("relative");
@@ -18,6 +28,21 @@
     function isTimestampColumn(col: ColumnInfo): boolean {
         const t = col.sql_type.toUpperCase();
         return t.includes("TIMESTAMP") || t.includes("TIMESTAMPTZ");
+    }
+
+    type IconComponent = Component<{ size?: number; class?: string }>;
+
+    function getTypeIcon(col: ColumnInfo): IconComponent | null {
+        const t = col.sql_type.toUpperCase();
+        if (t.includes("TIMESTAMP") || t.includes("TIMESTAMPTZ")) return Clock;
+        if (t === "DATE") return Calendar;
+        if (t === "TIME") return Timer;
+        if (t.includes("INT") || t === "BIGINT" || t === "SMALLINT" || t === "INTEGER") return Hash;
+        if (t === "REAL" || t === "DOUBLE PRECISION" || t.includes("FLOAT") || t.includes("NUMERIC") || t.includes("DECIMAL")) return Hash;
+        if (t === "BOOLEAN" || t === "BOOL") return ToggleLeft;
+        if (t === "TEXT" || t.includes("VARCHAR") || t.includes("CHAR")) return TextT;
+        if (t === "BYTEA") return Binary;
+        return null;
     }
 
     function parseTimestamp(value: string): Date | null {
@@ -87,6 +112,39 @@
         }
         return null;
     }
+
+    // FK helpers
+    function getFkInfo(col: ColumnInfo): { fkTable: TableInfo; fkColumn: string } | null {
+        if (!table || !schema) return null;
+        const fk = getFkForColumn(table, col.name);
+        if (!fk) return null;
+        const targetTable = getTableByName(schema, fk.references_table);
+        if (!targetTable) return null;
+        // Get the corresponding FK column (same index as our column in the FK)
+        const colIndex = fk.columns.indexOf(col.name);
+        const fkColumn = fk.references_columns[colIndex] ?? fk.references_columns[0];
+        return { fkTable: targetTable, fkColumn };
+    }
+
+    function handleFkClick(targetTable: string, value: Value) {
+        if (value.tag !== "Null") {
+            onFkClick?.(targetTable, value);
+        }
+    }
+
+    function getRawValue(row: Row, col: ColumnInfo): Value {
+        const field = row.fields.find((f) => f.name === col.name);
+        return field?.value ?? { tag: "Null" };
+    }
+
+    // Get a cached FK row from the lookup
+    function getCachedFkRow(tableName: string, value: Value): Row | undefined {
+        if (!fkLookup || value.tag === "Null") return undefined;
+        const tableCache = fkLookup.get(tableName);
+        if (!tableCache) return undefined;
+        const pkStr = typeof value.value === "bigint" ? value.value.toString() : String(value.value);
+        return tableCache.get(pkStr);
+    }
 </script>
 
 <div class="flex-1 overflow-auto">
@@ -138,11 +196,32 @@
                 >
                     {#each columns as col}
                         {@const cell = getRowValue(row, col)}
+                        {@const TypeIcon = getTypeIcon(col)}
+                        {@const fkInfo = getFkInfo(col)}
+                        {@const rawValue = getRawValue(row, col)}
                         <td
                             class="px-4 py-3 text-sm max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap"
                             class:text-neutral-600={cell.isNull}
                         >
-                            {cell.value}
+                            <span class="inline-flex items-center gap-1.5">
+                                {#if TypeIcon}
+                                    <TypeIcon size={12} class="text-neutral-600 flex-shrink-0" />
+                                {/if}
+                                {#if fkInfo && client && databaseUrl && rawValue.tag !== "Null"}
+                                    {@const cachedRow = getCachedFkRow(fkInfo.fkTable.name, rawValue)}
+                                    <FkCell
+                                        value={rawValue}
+                                        fkTable={fkInfo.fkTable}
+                                        fkColumn={fkInfo.fkColumn}
+                                        {client}
+                                        {databaseUrl}
+                                        onClick={() => handleFkClick(fkInfo.fkTable.name, rawValue)}
+                                        {cachedRow}
+                                    />
+                                {:else}
+                                    {cell.value}
+                                {/if}
+                            </span>
                         </td>
                     {/each}
                 </tr>

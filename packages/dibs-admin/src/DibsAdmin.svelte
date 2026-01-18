@@ -16,7 +16,10 @@
     import FilterBar from "./components/FilterBar.svelte";
     import Pagination from "./components/Pagination.svelte";
     import RowEditor from "./components/RowEditor.svelte";
+    import Breadcrumb from "./components/Breadcrumb.svelte";
     import { Button } from "./lib/components/ui/index.js";
+    import type { BreadcrumbEntry } from "./lib/fk-utils.js";
+    import { createBreadcrumbLabel, getTableByName, getPkValue } from "./lib/fk-utils.js";
 
     interface Props {
         client: SquelClient;
@@ -46,6 +49,12 @@
     let isCreating = $state(false);
     let saving = $state(false);
     let deleting = $state(false);
+
+    // Breadcrumb navigation state
+    let breadcrumbs = $state<BreadcrumbEntry[]>([]);
+
+    // FK lookup cache: table name -> pk string -> Row
+    let fkLookup = $state<Map<string, Map<string, Row>>>(new Map());
 
     // Derived
     let currentTable = $derived(schema?.tables.find((t) => t.name === selectedTable) ?? null);
@@ -90,6 +99,9 @@
             if (result.ok) {
                 rows = result.value.rows;
                 totalRows = result.value.total ?? null;
+
+                // Load FK display values in the background
+                loadFkDisplayValues(result.value.rows);
             } else {
                 error = formatError(result.error);
                 rows = [];
@@ -102,13 +114,194 @@
         }
     }
 
+    // Load display values for FK columns
+    async function loadFkDisplayValues(loadedRows: Row[]) {
+        if (!currentTable || !schema || loadedRows.length === 0) return;
+
+        // Collect FK values grouped by referenced table
+        const fkValuesByTable = new Map<string, Set<string>>();
+
+        for (const fk of currentTable.foreign_keys) {
+            const colName = fk.columns[0]; // For simplicity, handle single-column FKs
+            const refTable = fk.references_table;
+
+            if (!fkValuesByTable.has(refTable)) {
+                fkValuesByTable.set(refTable, new Set());
+            }
+
+            for (const row of loadedRows) {
+                const field = row.fields.find(f => f.name === colName);
+                if (field && field.value.tag !== "Null") {
+                    const pkStr = formatPkValue(field.value);
+                    fkValuesByTable.get(refTable)!.add(pkStr);
+                }
+            }
+        }
+
+        // Fetch rows from each referenced table using IN filter (single query per table)
+        const newLookup = new Map(fkLookup);
+
+        const fetchPromises: Promise<void>[] = [];
+
+        for (const [tableName, pkValues] of fkValuesByTable) {
+            if (pkValues.size === 0) continue;
+
+            const tableInfo = schema.tables.find(t => t.name === tableName);
+            if (!tableInfo) continue;
+
+            const pkCol = tableInfo.columns.find(c => c.primary_key);
+            if (!pkCol) continue;
+
+            if (!newLookup.has(tableName)) {
+                newLookup.set(tableName, new Map());
+            }
+            const tableCache = newLookup.get(tableName)!;
+
+            // Filter out already-cached values
+            const uncachedPks = [...pkValues].filter(pk => !tableCache.has(pk));
+            if (uncachedPks.length === 0) continue;
+
+            // Convert to Value array for IN filter
+            const inValues = uncachedPks.map(pk => parsePkValue(pk, pkCol.sql_type));
+
+            // Single batch fetch using IN filter
+            fetchPromises.push(
+                client.list({
+                    database_url: databaseUrl,
+                    table: tableName,
+                    filters: [{
+                        field: pkCol.name,
+                        op: { tag: "In" },
+                        value: { tag: "Null" }, // Not used for In
+                        values: inValues,
+                    }],
+                    sort: [],
+                    limit: inValues.length,
+                    offset: null,
+                    select: [],
+                }).then(result => {
+                    if (result.ok) {
+                        // Add each fetched row to cache
+                        for (const row of result.value.rows) {
+                            const pkField = row.fields.find(f => f.name === pkCol.name);
+                            if (pkField) {
+                                const pkStr = formatPkValue(pkField.value);
+                                tableCache.set(pkStr, row);
+                            }
+                        }
+                    }
+                }).catch(() => {
+                    // Ignore fetch errors for display values
+                })
+            );
+        }
+
+        // Wait for all fetches to complete (one per referenced table)
+        await Promise.all(fetchPromises);
+        fkLookup = newLookup;
+    }
+
+    function formatPkValue(value: Value): string {
+        if (value.tag === "Null") return "";
+        if (typeof value.value === "bigint") return value.value.toString();
+        return String(value.value);
+    }
+
+    function parsePkValue(str: string, sqlType: string): Value {
+        const typeLower = sqlType.toLowerCase();
+        if (typeLower.includes("int8") || typeLower === "bigint" || typeLower === "bigserial") {
+            return { tag: "I64", value: BigInt(str) };
+        }
+        if (typeLower.includes("int")) {
+            return { tag: "I32", value: parseInt(str, 10) };
+        }
+        return { tag: "String", value: str };
+    }
+
     function formatError(err: { tag: string; value: string }): string {
         return `${err.tag}: ${err.value}`;
     }
 
-    function selectTable(tableName: string) {
+    function selectTable(tableName: string, resetBreadcrumbs = true) {
         selectedTable = tableName;
         filters = [];
+        sort = null;
+        offset = 0;
+        if (resetBreadcrumbs) {
+            breadcrumbs = [{ table: tableName, label: tableName }];
+        }
+        loadData();
+    }
+
+    // Navigate to an FK target
+    async function navigateToFk(targetTable: string, pkValue: Value) {
+        if (!schema) return;
+
+        const table = getTableByName(schema, targetTable);
+        if (!table) return;
+
+        // Find the PK column
+        const pkCol = table.columns.find(c => c.primary_key);
+        if (!pkCol) return;
+
+        // Add to breadcrumbs with a label we'll update after loading
+        const newEntry: BreadcrumbEntry = {
+            table: targetTable,
+            label: `${targetTable} #${pkValue.tag !== "Null" ? (typeof pkValue.value === "bigint" ? pkValue.value.toString() : String(pkValue.value)) : "?"}`,
+            pkValue,
+        };
+
+        breadcrumbs = [...breadcrumbs, newEntry];
+
+        // Navigate to the table with a filter for the specific row
+        selectedTable = targetTable;
+        filters = [{
+            field: pkCol.name,
+            op: { tag: "Eq" },
+            value: pkValue,
+            values: [],
+        }];
+        sort = null;
+        offset = 0;
+
+        await loadData();
+
+        // Update the breadcrumb label with the actual display value
+        if (rows.length > 0 && currentTable) {
+            const label = createBreadcrumbLabel(currentTable, rows[0]);
+            breadcrumbs = breadcrumbs.map((b, i) =>
+                i === breadcrumbs.length - 1 ? { ...b, label } : b
+            );
+        }
+    }
+
+    // Navigate back via breadcrumb
+    function navigateToBreadcrumb(index: number) {
+        if (index < 0 || index >= breadcrumbs.length) return;
+
+        const entry = breadcrumbs[index];
+        breadcrumbs = breadcrumbs.slice(0, index + 1);
+
+        selectedTable = entry.table;
+
+        // If there's a PK value, filter to that row; otherwise show all
+        if (entry.pkValue) {
+            const table = schema?.tables.find(t => t.name === entry.table);
+            const pkCol = table?.columns.find(c => c.primary_key);
+            if (pkCol) {
+                filters = [{
+                    field: pkCol.name,
+                    op: { tag: "Eq" },
+                    value: entry.pkValue,
+                    values: [],
+                }];
+            } else {
+                filters = [];
+            }
+        } else {
+            filters = [];
+        }
+
         sort = null;
         offset = 0;
         loadData();
@@ -179,7 +372,7 @@
         return field?.value ?? null;
     }
 
-    async function saveRow(data: Row) {
+    async function saveRow(data: Row, dirtyFields?: Set<string>) {
         if (!selectedTable) return;
 
         saving = true;
@@ -202,11 +395,17 @@
                     error = "Could not determine primary key";
                     return;
                 }
+
+                // For updates, only send the modified fields
+                const updateData: Row = dirtyFields
+                    ? { fields: data.fields.filter(f => dirtyFields.has(f.name)) }
+                    : data;
+
                 const result = await client.update({
                     database_url: databaseUrl,
                     table: selectedTable,
                     pk,
-                    data,
+                    data: updateData,
                 });
                 if (!result.ok) {
                     error = formatError(result.error);
@@ -265,6 +464,8 @@
 
             <section class="p-8 overflow-auto flex flex-col">
                 {#if selectedTable && currentTable}
+                    <Breadcrumb entries={breadcrumbs} onNavigate={navigateToBreadcrumb} />
+
                     <div class="flex justify-between items-center mb-8">
                         <h2 class="text-lg font-medium text-white uppercase tracking-wide">{selectedTable}</h2>
                         <Button onclick={openCreateDialog}>
@@ -302,6 +503,12 @@
                             {sort}
                             onSort={handleSort}
                             onRowClick={openEditor}
+                            table={currentTable}
+                            {schema}
+                            {client}
+                            {databaseUrl}
+                            onFkClick={navigateToFk}
+                            {fkLookup}
                         />
 
                         <Pagination
@@ -335,6 +542,10 @@
             onClose={closeEditor}
             {saving}
             {deleting}
+            table={currentTable ?? undefined}
+            schema={schema ?? undefined}
+            {client}
+            {databaseUrl}
         />
     {/if}
 </div>

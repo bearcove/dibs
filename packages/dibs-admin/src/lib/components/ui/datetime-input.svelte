@@ -12,14 +12,16 @@
     let { value = $bindable(""), id, disabled = false, class: className, onchange }: Props = $props();
 
     // Convert PostgreSQL timestamp to datetime-local format
-    // Input: "2026-01-18 15:31:19.006542+01" or ISO format
+    // Input: "2026-01-18T19:13:05.123456+00:00" (RFC 3339) or "2026-01-18 15:31:19.006542+01"
     // Output: "2026-01-18T15:31:19" (for datetime-local input)
     function toDatetimeLocal(pg: string): string {
         if (!pg) return "";
-        // Remove timezone and microseconds, replace space with T
+        // Remove timezone (Z, +00:00, +01, etc.) and microseconds
         const cleaned = pg
-            .replace(/\.\d+/, "") // remove microseconds
-            .replace(/[+-]\d{2}$/, "") // remove timezone offset like +01
+            .replace(/\.\d+/, "") // remove microseconds/nanoseconds
+            .replace(/Z$/, "") // remove Z timezone
+            .replace(/[+-]\d{2}:\d{2}$/, "") // remove RFC 3339 timezone like +00:00
+            .replace(/[+-]\d{2}$/, "") // remove short timezone like +01
             .replace(" ", "T"); // space to T for ISO
         return cleaned;
     }

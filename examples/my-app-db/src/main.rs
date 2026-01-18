@@ -232,11 +232,13 @@ async fn seed() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for (id, author_id, category_id, title, slug, excerpt, body, published, view_count) in posts {
+        let view_count_i64 = view_count as i64;
+        let days_ago = (14 - id) as f64;
         client
             .execute(
                 "INSERT INTO posts (id, author_id, category_id, title, slug, excerpt, body, published, view_count, published_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $8 THEN now() - interval '1 day' * (14 - $1::int) ELSE NULL END)",
-                &[&id, &author_id, &category_id, &title, &slug, &excerpt, &body, &published, &view_count],
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $8 THEN now() - interval '1 day' * $10 ELSE NULL END)",
+                &[&id, &author_id, &category_id, &title, &slug, &excerpt, &body, &published, &view_count_i64, &days_ago],
             )
             .await?;
         let status = if published { "✓" } else { "📝" };

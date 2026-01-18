@@ -40,6 +40,7 @@
         ILike: "ILIKE",
         IsNull: "IS NULL",
         IsNotNull: "IS NOT NULL",
+        In: "IN",
     };
 
     const needsValue: Set<FilterOp["tag"]> = new Set([
@@ -51,6 +52,7 @@
         "Gte",
         "Like",
         "ILike",
+        // Note: "In" needs special handling with multiple values, not yet implemented in UI
     ]);
 
     function getColumnType(colName: string): string {
@@ -108,6 +110,7 @@
             field: selectedField,
             op,
             value,
+            values: [],
         });
 
         filterValue = "";
