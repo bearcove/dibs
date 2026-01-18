@@ -42,12 +42,16 @@ export function getPkValue(table: TableInfo, row: Row): Value | null {
 
 /**
  * Determine the best "display" column for a table.
- * Priority: name > title > label > first text column > first column
+ * Priority: explicit label > name > title > label > first text column > first column
  */
 export function getDisplayColumn(table: TableInfo): ColumnInfo | null {
+    // First check for explicit label annotation
+    const labelCol = table.columns.find(c => c.label);
+    if (labelCol) return labelCol;
+
     const preferredNames = ['name', 'title', 'label', 'display_name', 'username', 'email', 'slug'];
 
-    // Try preferred names first
+    // Try preferred names
     for (const name of preferredNames) {
         const col = table.columns.find(c => c.name.toLowerCase() === name);
         if (col) return col;

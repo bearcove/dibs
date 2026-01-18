@@ -9,6 +9,7 @@
     import { Checkbox } from "../lib/components/ui/index.js";
     import { Label } from "../lib/components/ui/index.js";
     import { Dialog } from "../lib/components/ui/index.js";
+    import { Select } from "../lib/components/ui/index.js";
     import { getFkForColumn, getTableByName } from "../lib/fk-utils.js";
     import FkSelect from "./FkSelect.svelte";
 
@@ -205,8 +206,13 @@
     });
 
     // Determine what type of control to use for a column
-    function getControlType(col: ColumnInfo): "checkbox" | "number" | "datetime" | "textarea" | "text" {
+    function getControlType(col: ColumnInfo): "checkbox" | "number" | "datetime" | "textarea" | "text" | "enum" {
         const typeLower = col.sql_type.toLowerCase();
+
+        // Enum columns with variants get a dropdown
+        if (col.enum_variants.length > 0) {
+            return "enum";
+        }
 
         if (typeLower.includes("bool")) {
             return "checkbox";
@@ -231,7 +237,8 @@
             return "number";
         }
 
-        if (typeLower === "text" || typeLower.includes("json")) {
+        // Long text fields or JSON get textarea
+        if (col.long || typeLower.includes("json")) {
             return "textarea";
         }
 
@@ -354,6 +361,22 @@
                         disabled={disabled || false}
                         rows={3}
                     />
+                {:else if controlType === "enum"}
+                    <Select
+                        value={getFormValue(col.name)}
+                        {disabled}
+                        onchange={() => {
+                            const el = document.getElementById(col.name) as HTMLSelectElement;
+                            if (el) setFormValue(col.name, el.value);
+                        }}
+                    >
+                        {#if col.nullable}
+                            <option value="">-- None --</option>
+                        {/if}
+                        {#each col.enum_variants as variant}
+                            <option value={variant}>{variant}</option>
+                        {/each}
+                    </Select>
                 {:else}
                     <Input
                         id={col.name}

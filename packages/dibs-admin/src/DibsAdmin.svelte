@@ -44,6 +44,10 @@
     let limit = $state(25);
     let offset = $state(0);
 
+    // Router state - prevent infinite loops
+    let isUpdatingFromHash = false;
+    let isUpdatingHash = false;
+
     // Editor state
     let editingRow = $state<Row | null>(null);
     let isCreating = $state(false);
@@ -60,6 +64,175 @@
     let currentTable = $derived(schema?.tables.find((t) => t.name === selectedTable) ?? null);
     let columns = $derived(currentTable?.columns ?? []);
 
+    // ==========================================================================
+    // Hash-based routing
+    // ==========================================================================
+
+    // Op tags to URL-safe strings
+    const opToString: Record<string, string> = {
+        Eq: "eq", Ne: "ne", Lt: "lt", Lte: "lte", Gt: "gt", Gte: "gte",
+        Like: "like", ILike: "ilike", IsNull: "null", IsNotNull: "notnull", In: "in"
+    };
+    const stringToOp: Record<string, string> = Object.fromEntries(
+        Object.entries(opToString).map(([k, v]) => [v, k])
+    );
+
+    function encodeHash(): string {
+        if (!selectedTable) return "";
+        let hash = `#/${encodeURIComponent(selectedTable)}`;
+        const params = new URLSearchParams();
+
+        for (const f of filters) {
+            const opStr = opToString[f.op.tag] ?? "eq";
+            const key = `${f.field}__${opStr}`;
+            if (f.op.tag === "In") {
+                // Encode In values as comma-separated
+                const vals = f.values.map(v => encodeValue(v)).join(",");
+                params.append(key, vals);
+            } else if (f.op.tag === "IsNull" || f.op.tag === "IsNotNull") {
+                params.append(key, "");
+            } else {
+                params.append(key, encodeValue(f.value));
+            }
+        }
+
+        if (sort) {
+            params.append("_sort", `${sort.field}__${sort.dir.tag.toLowerCase()}`);
+        }
+        if (offset > 0) {
+            params.append("_offset", String(offset));
+        }
+
+        const qs = params.toString();
+        return qs ? `${hash}?${qs}` : hash;
+    }
+
+    function encodeValue(v: Value): string {
+        if (v.tag === "Null") return "";
+        if (typeof v.value === "bigint") return v.value.toString();
+        return String(v.value);
+    }
+
+    function decodeHash(hash: string, schemaInfo?: SchemaInfo | null): { table: string; filters: Filter[]; sort: Sort | null; offset: number } | null {
+        if (!hash || !hash.startsWith("#/")) return null;
+
+        const withoutHash = hash.slice(2); // Remove "#/"
+        const [tablePart, queryPart] = withoutHash.split("?");
+        const table = decodeURIComponent(tablePart);
+
+        if (!table) return null;
+
+        // Find table info for type inference
+        const tableInfo = schemaInfo?.tables.find(t => t.name === table) ?? currentTable;
+
+        const filters: Filter[] = [];
+        let sort: Sort | null = null;
+        let offset = 0;
+
+        if (queryPart) {
+            const params = new URLSearchParams(queryPart);
+            for (const [key, value] of params.entries()) {
+                if (key === "_sort") {
+                    const [field, dir] = value.split("__");
+                    if (field && dir) {
+                        sort = { field, dir: dir === "desc" ? { tag: "Desc" } : { tag: "Asc" } };
+                    }
+                } else if (key === "_offset") {
+                    offset = parseInt(value, 10) || 0;
+                } else if (key.includes("__")) {
+                    const [field, opStr] = key.split("__");
+                    const opTag = stringToOp[opStr];
+                    if (field && opTag) {
+                        const op = { tag: opTag } as Filter["op"];
+                        if (opTag === "In") {
+                            const values = value.split(",").map(v => decodeValue(v, field, tableInfo));
+                            filters.push({ field, op, value: { tag: "Null" }, values });
+                        } else if (opTag === "IsNull" || opTag === "IsNotNull") {
+                            filters.push({ field, op, value: { tag: "Null" }, values: [] });
+                        } else {
+                            filters.push({ field, op, value: decodeValue(value, field, tableInfo), values: [] });
+                        }
+                    }
+                }
+            }
+        }
+
+        return { table, filters, sort, offset };
+    }
+
+    function decodeValue(str: string, field: string, tableInfo?: TableInfo | null): Value {
+        if (str === "") return { tag: "Null" };
+        // Try to detect type from the table schema
+        const col = tableInfo?.columns.find(c => c.name === field);
+        if (col) {
+            const typeLower = col.sql_type.toLowerCase();
+            if (typeLower.includes("int8") || typeLower === "bigint" || typeLower === "bigserial") {
+                return { tag: "I64", value: BigInt(str) };
+            }
+            if (typeLower.includes("int")) {
+                return { tag: "I32", value: parseInt(str, 10) };
+            }
+            if (typeLower.includes("bool")) {
+                return { tag: "Bool", value: str === "true" || str === "1" };
+            }
+        }
+        // Default to string
+        return { tag: "String", value: str };
+    }
+
+    function updateHash() {
+        if (isUpdatingFromHash) return;
+        isUpdatingHash = true;
+        const newHash = encodeHash();
+        if (window.location.hash !== newHash) {
+            window.history.pushState(null, "", newHash || window.location.pathname);
+        }
+        isUpdatingHash = false;
+    }
+
+    function applyHash() {
+        const decoded = decodeHash(window.location.hash, schema);
+        if (!decoded) return;
+
+        isUpdatingFromHash = true;
+
+        // Only apply if different from current state
+        if (decoded.table !== selectedTable) {
+            selectedTable = decoded.table;
+            breadcrumbs = [{ table: decoded.table, label: decoded.table }];
+        }
+
+        filters = decoded.filters;
+        sort = decoded.sort;
+        offset = decoded.offset;
+
+        isUpdatingFromHash = false;
+    }
+
+    // Listen for popstate (back/forward)
+    $effect(() => {
+        function handlePopState() {
+            if (isUpdatingHash) return;
+            applyHash();
+            loadData();
+        }
+        window.addEventListener("popstate", handlePopState);
+        return () => window.removeEventListener("popstate", handlePopState);
+    });
+
+    // Update hash when state changes
+    $effect(() => {
+        // Depend on these values
+        void selectedTable;
+        void filters;
+        void sort;
+        void offset;
+        // Update hash (but not during initial load or when applying hash)
+        if (schema && selectedTable) {
+            updateHash();
+        }
+    });
+
     // Load schema on mount
     $effect(() => {
         loadSchema();
@@ -71,7 +244,22 @@
         try {
             schema = await client.schema();
             if (schema.tables.length > 0) {
-                selectTable(schema.tables[0].name);
+                // Check if there's a hash to apply
+                const decoded = decodeHash(window.location.hash, schema);
+                if (decoded && schema.tables.some(t => t.name === decoded.table)) {
+                    // Apply hash state
+                    isUpdatingFromHash = true;
+                    selectedTable = decoded.table;
+                    filters = decoded.filters;
+                    sort = decoded.sort;
+                    offset = decoded.offset;
+                    breadcrumbs = [{ table: decoded.table, label: decoded.table }];
+                    isUpdatingFromHash = false;
+                    await loadData();
+                } else {
+                    // Default to first table
+                    selectTable(schema.tables[0].name);
+                }
             }
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);

@@ -48,6 +48,9 @@ export interface ColumnInfo {
   primary_key: boolean;
   unique: boolean;
   auto_generated: boolean;
+  long: boolean;
+  label: boolean;
+  enum_variants: string[];
   doc: string | null;
 }
 
