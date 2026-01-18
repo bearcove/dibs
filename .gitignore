@@ -1,8 +1,15 @@
 /target
 Cargo.lock
 .cache
--e 
+
 # Dodeca docs
 docs/public/
 docs/.cache/
 docs/.dodeca.db/
+
+# Node
+packages/*/node_modules/
+examples/*/node_modules/
+
+# Local env
+examples/.env
