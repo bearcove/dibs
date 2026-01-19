@@ -76,18 +76,17 @@ fn install() {
 }
 
 /// Find the workspace root by walking up from the current directory
-/// looking for a Cargo.toml with [workspace].
+/// looking for a Cargo.toml with `[workspace]`.
 fn find_workspace_root() -> Option<PathBuf> {
     let mut dir = std::env::current_dir().ok()?;
 
     loop {
         let cargo_toml = dir.join("Cargo.toml");
-        if cargo_toml.exists() {
-            if let Ok(contents) = std::fs::read_to_string(&cargo_toml) {
-                if contents.contains("[workspace]") {
-                    return Some(dir);
-                }
-            }
+        if cargo_toml.exists()
+            && let Ok(contents) = std::fs::read_to_string(&cargo_toml)
+            && contents.contains("[workspace]")
+        {
+            return Some(dir);
         }
 
         if !dir.pop() {
