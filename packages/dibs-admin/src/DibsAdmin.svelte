@@ -15,7 +15,7 @@
     } from "./types.js";
     import TableList from "./components/TableList.svelte";
     import DataTable from "./components/DataTable.svelte";
-    import FilterBar from "./components/FilterBar.svelte";
+    import FilterInput from "./components/FilterInput.svelte";
     import Pagination from "./components/Pagination.svelte";
     import RowEditor from "./components/RowEditor.svelte";
     import Breadcrumb from "./components/Breadcrumb.svelte";
@@ -657,6 +657,12 @@
         loadData();
     }
 
+    function setFilters(newFilters: Filter[]) {
+        filters = newFilters;
+        offset = 0;
+        loadData();
+    }
+
     function nextPage() {
         offset += limit;
         loadData();
@@ -826,12 +832,10 @@
                             </p>
                         {/if}
 
-                        <FilterBar
+                        <FilterInput
                             {columns}
                             {filters}
-                            onAddFilter={addFilter}
-                            onRemoveFilter={removeFilter}
-                            onClearFilters={clearFilters}
+                            onFiltersChange={setFilters}
                         />
 
                         {#if loading}
