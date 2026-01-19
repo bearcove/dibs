@@ -13,6 +13,11 @@
     "declaration": true,
     "declarationMap": true,
     "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"]
+    }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*"]
 }

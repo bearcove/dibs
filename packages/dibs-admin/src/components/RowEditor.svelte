@@ -311,7 +311,7 @@
                         <Checkbox
                             id={col.name}
                             checked={getBooleanValue(col.name)}
-                            onchange={(checked: boolean) => setBooleanValue(col.name, checked)}
+                            onCheckedChange={(checked) => setBooleanValue(col.name, checked === true)}
                             {disabled}
                         />
                         <span class="text-sm text-neutral-500">

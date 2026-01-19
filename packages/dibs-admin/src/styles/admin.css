@@ -1,16 +1,6 @@
 /* DibsAdmin component styles */
 
 .dibs-admin {
-    --da-bg-primary: #1a1a2e;
-    --da-bg-secondary: #16213e;
-    --da-bg-tertiary: #0f3460;
-    --da-text-primary: #eee;
-    --da-text-secondary: #aaa;
-    --da-accent: #e94560;
-    --da-border: #0f3460;
-    --da-error: #e94560;
-    --da-success: #4ade80;
-
     font-family:
         system-ui,
         -apple-system,
@@ -116,7 +106,7 @@
 }
 
 .dibs-admin button:hover:not(:disabled) {
-    background: #1a4a7a;
+    background: var(--da-bg-hover);
 }
 
 .dibs-admin button:disabled {
@@ -130,7 +120,7 @@
 }
 
 .dibs-admin button.primary:hover:not(:disabled) {
-    background: #c93850;
+    background: var(--da-accent-hover);
 }
 
 .dibs-admin button.danger {
@@ -140,7 +130,7 @@
 }
 
 .dibs-admin button.danger:hover:not(:disabled) {
-    background: rgba(233, 69, 96, 0.1);
+    background: var(--da-accent-bg);
 }
 
 .dibs-admin button.icon-btn {
@@ -156,7 +146,7 @@
 /* Error message */
 .dibs-admin .error {
     color: var(--da-error);
-    background: rgba(233, 69, 96, 0.1);
+    background: var(--da-accent-bg);
     padding: 0.75rem 1rem;
     border-radius: 4px;
     margin: 0 0 1rem;
@@ -208,7 +198,7 @@
 }
 
 .dibs-admin th:hover {
-    background: #1a4a7a;
+    background: var(--da-bg-hover);
 }
 
 .dibs-admin th .sort-indicator {
@@ -239,7 +229,7 @@
 }
 
 .dibs-admin tr.clickable:hover td {
-    background: rgba(15, 52, 96, 0.5);
+    background: var(--da-bg-row-hover);
 }
 
 /* Pagination */
@@ -323,7 +313,7 @@
 .dibs-admin .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--da-bg-backdrop);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -338,7 +328,7 @@
     max-width: 90vw;
     max-height: 85vh;
     overflow-y: auto;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 60px var(--da-shadow);
 }
 
 .dibs-admin .modal h3 {
