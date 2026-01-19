@@ -95,7 +95,7 @@ pub struct ResultMapping {
 pub struct RelationMapping {
     /// Relation name
     pub name: String,
-    /// Whether it's first (Option<T>) or many (Vec<T>)
+    /// Whether it's first (`Option<T>`) or many (`Vec<T>`)
     pub first: bool,
     /// Column mappings within this relation
     pub columns: HashMap<String, String>,
