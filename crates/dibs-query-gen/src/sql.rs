@@ -92,7 +92,11 @@ pub fn generate_simple_sql(query: &Query) -> GeneratedSql {
     GeneratedSql { sql, param_order }
 }
 
-fn format_filter(filter: &Filter, mut param_idx: usize, param_order: &mut Vec<String>) -> (String, usize) {
+fn format_filter(
+    filter: &Filter,
+    mut param_idx: usize,
+    param_order: &mut Vec<String>,
+) -> (String, usize) {
     let col = format!("\"{}\"", filter.column);
 
     let result = match (&filter.op, &filter.value) {
@@ -184,10 +188,7 @@ AllProducts @query{
         let file = parse_query_file(source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
-        assert_eq!(
-            sql.sql,
-            r#"SELECT "id", "handle", "status" FROM "product""#
-        );
+        assert_eq!(sql.sql, r#"SELECT "id", "handle", "status" FROM "product""#);
         assert!(sql.param_order.is_empty());
     }
 

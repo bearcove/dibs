@@ -35,40 +35,172 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // Product name components for generating realistic names
 const ADJECTIVES: &[&str] = &[
-    "Abstract", "Vintage", "Modern", "Classic", "Rustic", "Elegant", "Bold", "Serene",
-    "Vibrant", "Minimal", "Cozy", "Artistic", "Natural", "Urban", "Coastal", "Mountain",
-    "Forest", "Desert", "Tropical", "Nordic", "Japanese", "Bohemian", "Industrial",
-    "Retro", "Contemporary", "Traditional", "Luxurious", "Simple", "Geometric", "Floral",
-    "Watercolor", "Monochrome", "Colorful", "Pastel", "Earthy", "Celestial", "Mystical",
-    "Whimsical", "Dramatic", "Peaceful", "Dynamic", "Harmonious", "Textured", "Smooth",
-    "Raw", "Polished", "Handcrafted", "Artisan", "Premium", "Essential",
+    "Abstract",
+    "Vintage",
+    "Modern",
+    "Classic",
+    "Rustic",
+    "Elegant",
+    "Bold",
+    "Serene",
+    "Vibrant",
+    "Minimal",
+    "Cozy",
+    "Artistic",
+    "Natural",
+    "Urban",
+    "Coastal",
+    "Mountain",
+    "Forest",
+    "Desert",
+    "Tropical",
+    "Nordic",
+    "Japanese",
+    "Bohemian",
+    "Industrial",
+    "Retro",
+    "Contemporary",
+    "Traditional",
+    "Luxurious",
+    "Simple",
+    "Geometric",
+    "Floral",
+    "Watercolor",
+    "Monochrome",
+    "Colorful",
+    "Pastel",
+    "Earthy",
+    "Celestial",
+    "Mystical",
+    "Whimsical",
+    "Dramatic",
+    "Peaceful",
+    "Dynamic",
+    "Harmonious",
+    "Textured",
+    "Smooth",
+    "Raw",
+    "Polished",
+    "Handcrafted",
+    "Artisan",
+    "Premium",
+    "Essential",
 ];
 
 const SUBJECTS: &[&str] = &[
-    "Sunset", "Sunrise", "Mountains", "Ocean", "Forest", "City", "Garden", "Sky",
-    "Stars", "Moon", "Waves", "Trees", "Flowers", "Birds", "Landscape", "Portrait",
-    "Still Life", "Architecture", "Bridge", "Tower", "Lighthouse", "Cabin", "Cottage",
-    "Meadow", "Valley", "River", "Lake", "Waterfall", "Canyon", "Desert", "Beach",
-    "Island", "Jungle", "Savanna", "Tundra", "Aurora", "Galaxy", "Nebula", "Planet",
-    "Cosmos", "Horizon", "Silhouette", "Reflection", "Shadow", "Light", "Pattern",
-    "Texture", "Lines", "Shapes", "Colors", "Dreams", "Memory", "Journey", "Adventure",
+    "Sunset",
+    "Sunrise",
+    "Mountains",
+    "Ocean",
+    "Forest",
+    "City",
+    "Garden",
+    "Sky",
+    "Stars",
+    "Moon",
+    "Waves",
+    "Trees",
+    "Flowers",
+    "Birds",
+    "Landscape",
+    "Portrait",
+    "Still Life",
+    "Architecture",
+    "Bridge",
+    "Tower",
+    "Lighthouse",
+    "Cabin",
+    "Cottage",
+    "Meadow",
+    "Valley",
+    "River",
+    "Lake",
+    "Waterfall",
+    "Canyon",
+    "Desert",
+    "Beach",
+    "Island",
+    "Jungle",
+    "Savanna",
+    "Tundra",
+    "Aurora",
+    "Galaxy",
+    "Nebula",
+    "Planet",
+    "Cosmos",
+    "Horizon",
+    "Silhouette",
+    "Reflection",
+    "Shadow",
+    "Light",
+    "Pattern",
+    "Texture",
+    "Lines",
+    "Shapes",
+    "Colors",
+    "Dreams",
+    "Memory",
+    "Journey",
+    "Adventure",
 ];
 
 const PRODUCT_TYPES: &[(&str, &[&str], (f64, f64))] = &[
-    ("Print", &["Small (8x10)", "Medium (12x16)", "Large (18x24)", "XL (24x36)"], (19.99, 89.99)),
-    ("Canvas", &["Small (16x20)", "Medium (24x30)", "Large (30x40)", "XL (40x60)"], (49.99, 199.99)),
-    ("Poster", &["Standard (18x24)", "Large (24x36)"], (14.99, 29.99)),
-    ("Framed Print", &["Small (8x10)", "Medium (12x16)", "Large (18x24)"], (39.99, 129.99)),
-    ("Metal Print", &["Small (12x12)", "Medium (16x20)", "Large (24x36)"], (59.99, 179.99)),
-    ("Acrylic", &["Small (12x12)", "Medium (16x20)", "Large (24x36)"], (69.99, 199.99)),
+    (
+        "Print",
+        &[
+            "Small (8x10)",
+            "Medium (12x16)",
+            "Large (18x24)",
+            "XL (24x36)",
+        ],
+        (19.99, 89.99),
+    ),
+    (
+        "Canvas",
+        &[
+            "Small (16x20)",
+            "Medium (24x30)",
+            "Large (30x40)",
+            "XL (40x60)",
+        ],
+        (49.99, 199.99),
+    ),
+    (
+        "Poster",
+        &["Standard (18x24)", "Large (24x36)"],
+        (14.99, 29.99),
+    ),
+    (
+        "Framed Print",
+        &["Small (8x10)", "Medium (12x16)", "Large (18x24)"],
+        (39.99, 129.99),
+    ),
+    (
+        "Metal Print",
+        &["Small (12x12)", "Medium (16x20)", "Large (24x36)"],
+        (59.99, 179.99),
+    ),
+    (
+        "Acrylic",
+        &["Small (12x12)", "Medium (16x20)", "Large (24x36)"],
+        (69.99, 199.99),
+    ),
     ("T-Shirt", &["S", "M", "L", "XL", "2XL"], (24.99, 29.99)),
     ("Hoodie", &["S", "M", "L", "XL", "2XL"], (44.99, 49.99)),
     ("Mug", &["11oz", "15oz"], (14.99, 17.99)),
     ("Tote Bag", &["Standard"], (19.99, 19.99)),
-    ("Phone Case", &["iPhone 14", "iPhone 15", "Samsung S23", "Samsung S24"], (24.99, 29.99)),
+    (
+        "Phone Case",
+        &["iPhone 14", "iPhone 15", "Samsung S23", "Samsung S24"],
+        (24.99, 29.99),
+    ),
     ("Throw Pillow", &["16x16", "18x18", "20x20"], (29.99, 44.99)),
     ("Blanket", &["50x60", "60x80"], (54.99, 79.99)),
-    ("Sticker", &["Small (2\")", "Medium (3\")", "Large (4\")"], (3.99, 6.99)),
+    (
+        "Sticker",
+        &["Small (2\")", "Medium (3\")", "Large (4\")"],
+        (3.99, 6.99),
+    ),
     ("Notebook", &["A5", "A4"], (12.99, 16.99)),
 ];
 
@@ -91,7 +223,11 @@ fn generate_sku(product_type: &str, product_id: i64, variant_idx: usize) -> Stri
         .take(3)
         .collect();
     let prefix = if prefix.is_empty() {
-        product_type.chars().take(3).collect::<String>().to_uppercase()
+        product_type
+            .chars()
+            .take(3)
+            .collect::<String>()
+            .to_uppercase()
     } else {
         prefix
     };
@@ -125,10 +261,22 @@ async fn seed() -> Result<(), Box<dyn std::error::Error>> {
 
     // Clear existing data
     println!("Clearing existing data...");
-    client.execute("DELETE FROM \"product_translation\"", &[]).await.ok();
-    client.execute("DELETE FROM \"product_source\"", &[]).await.ok();
-    client.execute("DELETE FROM \"variant_price\"", &[]).await.ok();
-    client.execute("DELETE FROM \"product_variant\"", &[]).await.ok();
+    client
+        .execute("DELETE FROM \"product_translation\"", &[])
+        .await
+        .ok();
+    client
+        .execute("DELETE FROM \"product_source\"", &[])
+        .await
+        .ok();
+    client
+        .execute("DELETE FROM \"variant_price\"", &[])
+        .await
+        .ok();
+    client
+        .execute("DELETE FROM \"product_variant\"", &[])
+        .await
+        .ok();
     client.execute("DELETE FROM \"product\"", &[]).await.ok();
     println!();
 
@@ -148,11 +296,16 @@ async fn seed() -> Result<(), Box<dyn std::error::Error>> {
             product_id += 1;
 
             // Pick a product type based on hash
-            let type_idx = (simple_hash(&format!("{}{}", adj, subject)) as usize) % PRODUCT_TYPES.len();
+            let type_idx =
+                (simple_hash(&format!("{}{}", adj, subject)) as usize) % PRODUCT_TYPES.len();
             let (product_type, variants, (min_price, max_price)) = PRODUCT_TYPES[type_idx];
 
             let handle = generate_handle(adj, subject, product_type, product_id as usize);
-            let status = if product_id % 10 == 0 { "draft" } else { "published" };
+            let status = if product_id % 10 == 0 {
+                "draft"
+            } else {
+                "published"
+            };
             let active = status == "published";
 
             // Insert product
@@ -188,7 +341,9 @@ async fn seed() -> Result<(), Box<dyn std::error::Error>> {
                 let eur_price = Decimal::from_str(&format!("{:.2}", base_price))?;
                 let usd_price = Decimal::from_str(&format!("{:.2}", base_price * 1.1))?; // USD ~10% more
 
-                for (currency, amount, region) in [("EUR", eur_price, "EU"), ("USD", usd_price, "US")] {
+                for (currency, amount, region) in
+                    [("EUR", eur_price, "EU"), ("USD", usd_price, "US")]
+                {
                     price_id += 1;
                     client
                         .execute(
@@ -259,7 +414,7 @@ async fn seed() -> Result<(), Box<dyn std::error::Error>> {
 
             // Progress indicator
             let current = adj_idx * SUBJECTS.len() + subj_idx + 1;
-            if current % progress_interval == 0 || current == total_products {
+            if current.is_multiple_of(progress_interval) || current == total_products {
                 let pct = (current * 100) / total_products;
                 print!("\r  Progress: {}% ({}/{})", pct, current, total_products);
                 use std::io::Write;
@@ -274,7 +429,12 @@ async fn seed() -> Result<(), Box<dyn std::error::Error>> {
     println!("═══════════════════════════════════════════════════════");
     println!("Seeding complete!");
     println!("═══════════════════════════════════════════════════════");
-    println!("  {} products ({} published, {} draft)", product_id, product_id - product_id / 10, product_id / 10);
+    println!(
+        "  {} products ({} published, {} draft)",
+        product_id,
+        product_id - product_id / 10,
+        product_id / 10
+    );
     println!("  {} variants", variant_id);
     println!("  {} prices", price_id);
     println!("  {} vendor sources", source_id);

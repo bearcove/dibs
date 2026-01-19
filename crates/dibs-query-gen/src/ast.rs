@@ -64,10 +64,7 @@ pub enum ParamType {
 #[derive(Debug, Clone)]
 pub enum Field {
     /// Simple column reference.
-    Column {
-        name: String,
-        span: Option<Span>,
-    },
+    Column { name: String, span: Option<Span> },
     /// Relation (nested query via FK).
     Relation {
         name: String,

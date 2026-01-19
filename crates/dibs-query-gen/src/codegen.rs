@@ -35,7 +35,7 @@ pub struct TableInfo {
 pub struct ColumnInfo {
     /// Rust type name (e.g., "i64", "String", "bool").
     pub rust_type: String,
-    /// Whether the column is nullable (Option<T>).
+    /// Whether the column is nullable (`Option<T>`).
     pub nullable: bool,
 }
 
@@ -158,10 +158,7 @@ fn generate_result_struct(
     if !query.is_raw() {
         for field in fields {
             if let Field::Relation {
-                name,
-                select,
-                from,
-                ..
+                name, select, from, ..
             } = field
             {
                 let nested_name = to_pascal_case(name);
@@ -169,7 +166,7 @@ fn generate_result_struct(
                 let rel_table = from.as_deref().unwrap_or(name);
                 code.push('\n');
                 code.push_str("#[derive(Debug, Clone, Facet)]\n");
-    code.push_str("#[facet(crate = dibs_runtime::facet)]\n");
+                code.push_str("#[facet(crate = dibs_runtime::facet)]\n");
                 code.push_str(&format!("pub struct {} {{\n", nested_name));
                 for f in select {
                     if let Field::Column { name, .. } = f {

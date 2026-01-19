@@ -1,6 +1,4 @@
-use dibs::{
-    generate_rust_code_with_schema, parse_query_file, ColumnInfo, SchemaInfo, TableInfo,
-};
+use dibs::{ColumnInfo, SchemaInfo, TableInfo, generate_rust_code_with_schema, parse_query_file};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -34,12 +32,19 @@ fn main() {
 fn collect_schema() -> SchemaInfo {
     let dibs_schema = dibs::Schema::collect();
 
-    eprintln!("cargo::warning=Found {} tables in schema", dibs_schema.tables.len());
+    eprintln!(
+        "cargo::warning=Found {} tables in schema",
+        dibs_schema.tables.len()
+    );
 
     let mut tables = HashMap::new();
 
     for table in &dibs_schema.tables {
-        eprintln!("cargo::warning=Table: {} with {} columns", table.name, table.columns.len());
+        eprintln!(
+            "cargo::warning=Table: {} with {} columns",
+            table.name,
+            table.columns.len()
+        );
         let mut columns = HashMap::new();
 
         for col in &table.columns {

@@ -38,7 +38,7 @@ pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
         let name = entry
             .key
             .as_str()
-            .ok_or_else(|| ParseError::ExpectedScalar)?
+            .ok_or(ParseError::ExpectedScalar)?
             .to_string();
 
         if entry.value.tag_name() != Some("query") {
@@ -183,18 +183,18 @@ fn parse_param_type(value: &Value) -> Result<ParamType, ParseError> {
         Some("timestamp") => Ok(ParamType::Timestamp),
         Some("optional") => {
             // @optional(@string) - payload is a sequence with one item
-            if let Some(Payload::Sequence(seq)) = &value.payload {
-                if let Some(inner) = seq.items.first() {
-                    let inner_ty = parse_param_type(inner)?;
-                    return Ok(ParamType::Optional(Box::new(inner_ty)));
-                }
+            if let Some(Payload::Sequence(seq)) = &value.payload
+                && let Some(inner) = seq.items.first()
+            {
+                let inner_ty = parse_param_type(inner)?;
+                return Ok(ParamType::Optional(Box::new(inner_ty)));
             }
             // @optional{...} - payload is object, look for inner type
-            if let Some(Payload::Object(obj)) = &value.payload {
-                if let Some(inner) = obj.entries.first() {
-                    let inner_ty = parse_param_type(&inner.value)?;
-                    return Ok(ParamType::Optional(Box::new(inner_ty)));
-                }
+            if let Some(Payload::Object(obj)) = &value.payload
+                && let Some(inner) = obj.entries.first()
+            {
+                let inner_ty = parse_param_type(&inner.value)?;
+                return Ok(ParamType::Optional(Box::new(inner_ty)));
             }
             Err(ParseError::UnknownParamType {
                 tag: "optional (no inner type)".to_string(),
@@ -243,37 +243,37 @@ fn parse_filter_value(value: &Value) -> Result<(FilterOp, Expr), ParseError> {
         Some("null") => return Ok((FilterOp::IsNull, Expr::Null)),
         Some("ilike") => {
             // @ilike($param) or @ilike("pattern")
-            if let Some(Payload::Sequence(seq)) = &value.payload {
-                if let Some(inner) = seq.items.first() {
-                    let expr = parse_expr(inner)?;
-                    return Ok((FilterOp::ILike, expr));
-                }
+            if let Some(Payload::Sequence(seq)) = &value.payload
+                && let Some(inner) = seq.items.first()
+            {
+                let expr = parse_expr(inner)?;
+                return Ok((FilterOp::ILike, expr));
             }
             return Ok((FilterOp::ILike, Expr::String("%".to_string())));
         }
         Some("like") => {
-            if let Some(Payload::Sequence(seq)) = &value.payload {
-                if let Some(inner) = seq.items.first() {
-                    let expr = parse_expr(inner)?;
-                    return Ok((FilterOp::Like, expr));
-                }
+            if let Some(Payload::Sequence(seq)) = &value.payload
+                && let Some(inner) = seq.items.first()
+            {
+                let expr = parse_expr(inner)?;
+                return Ok((FilterOp::Like, expr));
             }
             return Ok((FilterOp::Like, Expr::String("%".to_string())));
         }
         Some("gt") => {
-            if let Some(Payload::Sequence(seq)) = &value.payload {
-                if let Some(inner) = seq.items.first() {
-                    let expr = parse_expr(inner)?;
-                    return Ok((FilterOp::Gt, expr));
-                }
+            if let Some(Payload::Sequence(seq)) = &value.payload
+                && let Some(inner) = seq.items.first()
+            {
+                let expr = parse_expr(inner)?;
+                return Ok((FilterOp::Gt, expr));
             }
         }
         Some("lt") => {
-            if let Some(Payload::Sequence(seq)) = &value.payload {
-                if let Some(inner) = seq.items.first() {
-                    let expr = parse_expr(inner)?;
-                    return Ok((FilterOp::Lt, expr));
-                }
+            if let Some(Payload::Sequence(seq)) = &value.payload
+                && let Some(inner) = seq.items.first()
+            {
+                let expr = parse_expr(inner)?;
+                return Ok((FilterOp::Lt, expr));
             }
         }
         _ => {}
@@ -294,8 +294,8 @@ fn parse_expr(value: &Value) -> Result<Expr, ParseError> {
     let text = value.scalar_text().ok_or(ParseError::ExpectedScalar)?;
 
     // Check for parameter reference
-    if text.starts_with('$') {
-        return Ok(Expr::Param(text[1..].to_string()));
+    if let Some(param_name) = text.strip_prefix('$') {
+        return Ok(Expr::Param(param_name.to_string()));
     }
 
     // Check for boolean
@@ -414,7 +414,7 @@ fn parse_relation(name: &str, value: &Value) -> Result<Field, ParseError> {
                 order_by: Vec::new(),
                 first: false,
                 select: Vec::new(),
-            })
+            });
         }
     };
 
