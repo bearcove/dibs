@@ -28,7 +28,8 @@
         const currentToken = lastSpace >= 0 ? input.slice(lastSpace + 1) : input;
 
         // Check for operator patterns
-        const opMatch = currentToken.match(/^([a-zA-Z_][a-zA-Z0-9_]*)([:=~!<>]=?|[?!])?(.*)$/);
+        // Operators: : = != ~ ~~ < <= > >= ? !
+        const opMatch = currentToken.match(/^([a-zA-Z_][a-zA-Z0-9_]*)(~~|[:=~<>]=?|!=|[?!])?(.*)$/);
 
         if (!opMatch) {
             return { type: "column", partial: currentToken };
@@ -53,6 +54,7 @@
         "=": "Eq",
         "!=": "Ne",
         "~": "ILike",
+        "~~": "Like",
         "<": "Lt",
         "<=": "Lte",
         ">": "Gt",
@@ -63,7 +65,8 @@
 
     const operatorHelp = [
         { op: ":", desc: "equals", example: "name:john" },
-        { op: "~", desc: "contains", example: "name~john" },
+        { op: "~", desc: "contains (case-insensitive)", example: "name~john" },
+        { op: "~~", desc: "contains (case-sensitive)", example: "name~~John" },
         { op: ">", desc: "greater than", example: "age>18" },
         { op: ">=", desc: "greater or equal", example: "age>=18" },
         { op: "<", desc: "less than", example: "age<100" },
@@ -143,7 +146,7 @@
 
     // Parse a single filter token
     function parseFilterToken(token: string): Filter | null {
-        const match = token.match(/^([a-zA-Z_][a-zA-Z0-9_]*)([:=~!<>]=?|[?!])(.*)$/);
+        const match = token.match(/^([a-zA-Z_][a-zA-Z0-9_]*)(~~|[:=~<>]=?|!=|[?!])(.*)$/);
         if (!match) return null;
 
         const [, colName, op, value] = match;
