@@ -86,6 +86,7 @@ fn parse_query(name: &str, value: &Value) -> Result<Query, ParseError> {
             filters: Vec::new(),
             order_by: Vec::new(),
             limit: None,
+            offset: None,
             first: false,
             select: Vec::new(),
             raw_sql: Some(raw_sql),
@@ -119,6 +120,9 @@ fn parse_query(name: &str, value: &Value) -> Result<Query, ParseError> {
     // Parse limit
     let limit = obj.get("limit").map(parse_expr).transpose()?;
 
+    // Parse offset
+    let offset = obj.get("offset").map(parse_expr).transpose()?;
+
     // Parse first
     let first = obj
         .get("first")
@@ -143,6 +147,7 @@ fn parse_query(name: &str, value: &Value) -> Result<Query, ParseError> {
         filters,
         order_by,
         limit,
+        offset,
         first,
         select,
         raw_sql: None,

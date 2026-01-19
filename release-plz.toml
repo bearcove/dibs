@@ -1,0 +1,29 @@
+# release-plz configuration
+# https://release-plz.ieni.dev/docs/config
+
+[workspace]
+# Changelog generation settings
+changelog_include = ["user_facing_changes"]
+
+# Packages to exclude from release management
+# dibs-cli has local dependencies that only work on the development machine
+[[package]]
+name = "dibs-cli"
+release = false
+changelog_update = false
+
+# Examples should not be released to crates.io
+[[package]]
+name = "my-app"
+release = false
+changelog_update = false
+
+[[package]]
+name = "my-app-db"
+release = false
+changelog_update = false
+
+[[package]]
+name = "my-app-queries"
+release = false
+changelog_update = false

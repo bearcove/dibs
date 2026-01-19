@@ -27,6 +27,8 @@ pub struct Query {
     pub order_by: Vec<OrderBy>,
     /// LIMIT clause.
     pub limit: Option<Expr>,
+    /// OFFSET clause.
+    pub offset: Option<Expr>,
     /// Whether to return first row only (vs Vec).
     pub first: bool,
     /// Fields to select.

@@ -5,9 +5,11 @@
 mod ast;
 mod codegen;
 mod parse;
+mod planner;
 mod sql;
 
 pub use ast::*;
 pub use codegen::*;
 pub use parse::*;
+pub use planner::*;
 pub use sql::*;

@@ -81,6 +81,23 @@ async fn setup_schema(client: &tokio_postgres::Client) {
         )
         .await
         .expect("Failed to create product table");
+
+    // Create the product_translation table
+    client
+        .execute(
+            r#"
+            CREATE TABLE "product_translation" (
+                "id" BIGSERIAL PRIMARY KEY,
+                "product_id" BIGINT NOT NULL REFERENCES "product"("id"),
+                "locale" TEXT NOT NULL,
+                "title" TEXT NOT NULL,
+                "description" TEXT
+            )
+            "#,
+            &[],
+        )
+        .await
+        .expect("Failed to create product_translation table");
 }
 
 async fn insert_test_data(client: &tokio_postgres::Client) {
@@ -111,6 +128,29 @@ async fn insert_test_data(client: &tokio_postgres::Client) {
         )
         .await
         .expect("Failed to insert deleted product");
+
+    // Insert translations for some products
+    // widget-a has an English translation with description
+    client
+        .execute(
+            r#"INSERT INTO "product_translation" ("product_id", "locale", "title", "description")
+               SELECT id, 'en', 'Widget Alpha', 'The original widget' FROM "product" WHERE handle = 'widget-a'"#,
+            &[],
+        )
+        .await
+        .expect("Failed to insert widget-a translation");
+
+    // widget-b has a French translation without description
+    client
+        .execute(
+            r#"INSERT INTO "product_translation" ("product_id", "locale", "title", "description")
+               SELECT id, 'fr', 'Widget Bêta', NULL FROM "product" WHERE handle = 'widget-b'"#,
+            &[],
+        )
+        .await
+        .expect("Failed to insert widget-b translation");
+
+    // gadget-x has no translation (to test LEFT JOIN returning None)
 }
 
 #[tokio::test]
@@ -234,4 +274,122 @@ async fn test_search_products() {
     let q = "%WIDGET%".to_string();
     let results = my_app_queries::search_products(&client, &q).await.unwrap();
     assert_eq!(results.len(), 2, "ILIKE should be case-insensitive");
+}
+
+#[tokio::test]
+async fn test_products_paginated() {
+    let (_container, client) = create_postgres_container().await;
+    setup_schema(&client).await;
+    insert_test_data(&client).await;
+
+    // Get first page (2 items)
+    let page_size = 2i64;
+    let page_offset = 0i64;
+    let results = my_app_queries::products_paginated(&client, &page_size, &page_offset)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 2, "First page should have 2 items");
+    // Results ordered by handle ASC
+    assert_eq!(results[0].handle, "gadget-x");
+    assert_eq!(results[1].handle, "old-product");
+
+    // Get second page (2 items, offset 2)
+    let page_offset = 2i64;
+    let results = my_app_queries::products_paginated(&client, &page_size, &page_offset)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 2, "Second page should have 2 items");
+    assert_eq!(results[0].handle, "prototype-z");
+    assert_eq!(results[1].handle, "widget-a");
+
+    // Get third page (1 item remaining, offset 4)
+    let page_offset = 4i64;
+    let results = my_app_queries::products_paginated(&client, &page_size, &page_offset)
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1, "Third page should have 1 item");
+    assert_eq!(results[0].handle, "widget-b");
+
+    // Get page beyond data (offset 10)
+    let page_offset = 10i64;
+    let results = my_app_queries::products_paginated(&client, &page_size, &page_offset)
+        .await
+        .unwrap();
+
+    assert!(results.is_empty(), "Page beyond data should be empty");
+}
+
+#[tokio::test]
+async fn test_product_with_translation() {
+    let (_container, client) = create_postgres_container().await;
+    setup_schema(&client).await;
+    insert_test_data(&client).await;
+
+    // Test product with translation that has description
+    let handle = "widget-a".to_string();
+    let result = my_app_queries::product_with_translation(&client, &handle)
+        .await
+        .unwrap();
+
+    assert!(result.is_some(), "Expected to find widget-a");
+    let product = result.unwrap();
+    assert_eq!(product.handle, "widget-a");
+    assert_eq!(product.status, "published");
+
+    // Check nested translation
+    assert!(
+        product.translation.is_some(),
+        "Expected translation for widget-a"
+    );
+    let translation = product.translation.unwrap();
+    assert_eq!(translation.locale, "en");
+    assert_eq!(translation.title, "Widget Alpha");
+    assert_eq!(
+        translation.description,
+        Some("The original widget".to_string())
+    );
+
+    // Test product with translation that has NULL description
+    let handle = "widget-b".to_string();
+    let result = my_app_queries::product_with_translation(&client, &handle)
+        .await
+        .unwrap();
+
+    assert!(result.is_some(), "Expected to find widget-b");
+    let product = result.unwrap();
+    assert!(
+        product.translation.is_some(),
+        "Expected translation for widget-b"
+    );
+    let translation = product.translation.unwrap();
+    assert_eq!(translation.locale, "fr");
+    assert_eq!(translation.title, "Widget Bêta");
+    assert!(
+        translation.description.is_none(),
+        "widget-b translation should have no description"
+    );
+
+    // Test product without translation (LEFT JOIN returns None)
+    let handle = "gadget-x".to_string();
+    let result = my_app_queries::product_with_translation(&client, &handle)
+        .await
+        .unwrap();
+
+    assert!(result.is_some(), "Expected to find gadget-x");
+    let product = result.unwrap();
+    assert_eq!(product.handle, "gadget-x");
+    assert!(
+        product.translation.is_none(),
+        "gadget-x should have no translation"
+    );
+
+    // Test non-existent product
+    let handle = "does-not-exist".to_string();
+    let result = my_app_queries::product_with_translation(&client, &handle)
+        .await
+        .unwrap();
+    assert!(result.is_none(), "Expected None for non-existent product");
 }

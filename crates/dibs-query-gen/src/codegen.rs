@@ -3,7 +3,8 @@
 //! TODO: Replace manual string building with the `codegen` crate for cleaner code generation.
 
 use crate::ast::*;
-use crate::sql::generate_simple_sql;
+use crate::planner::PlannerSchema;
+use crate::sql::{generate_simple_sql, generate_sql_with_joins};
 use std::collections::HashMap;
 
 /// Generated Rust code for a query file.
@@ -60,6 +61,7 @@ impl SchemaInfo {
 /// Context for code generation.
 struct CodegenContext<'a> {
     schema: &'a SchemaInfo,
+    planner_schema: Option<&'a PlannerSchema>,
 }
 
 /// Generate Rust code for a query file.
@@ -69,7 +71,22 @@ pub fn generate_rust_code(file: &QueryFile) -> GeneratedCode {
 
 /// Generate Rust code for a query file with schema information.
 pub fn generate_rust_code_with_schema(file: &QueryFile, schema: &SchemaInfo) -> GeneratedCode {
-    let ctx = CodegenContext { schema };
+    generate_rust_code_with_planner(file, schema, None)
+}
+
+/// Generate Rust code for a query file with full schema and planner info.
+///
+/// When `planner_schema` is provided, queries with relations will generate
+/// JOINs and proper result assembly code.
+pub fn generate_rust_code_with_planner(
+    file: &QueryFile,
+    schema: &SchemaInfo,
+    planner_schema: Option<&PlannerSchema>,
+) -> GeneratedCode {
+    let ctx = CodegenContext {
+        schema,
+        planner_schema,
+    };
     let mut code = String::new();
 
     // Imports
@@ -92,7 +109,7 @@ fn generate_query_code(ctx: &CodegenContext, query: &Query, code: &mut String) {
     code.push('\n');
 
     // Generate query function
-    generate_query_function(query, &struct_name, code);
+    generate_query_function(ctx, query, &struct_name, code);
 
     code.push('\n');
 }
@@ -183,7 +200,7 @@ fn generate_result_struct(
     }
 }
 
-fn generate_query_function(query: &Query, struct_name: &str, code: &mut String) {
+fn generate_query_function(ctx: &CodegenContext, query: &Query, struct_name: &str, code: &mut String) {
     let fn_name = to_snake_case(&query.name);
 
     // Function signature
@@ -211,11 +228,255 @@ fn generate_query_function(query: &Query, struct_name: &str, code: &mut String) 
         // Raw SQL query
         generate_raw_query_body(query, raw_sql, code);
     } else {
-        // Generated SQL
-        generate_simple_query_body(query, code);
+        // Check if query has relations and we have planner schema
+        let has_relations = query
+            .select
+            .iter()
+            .any(|f| matches!(f, Field::Relation { .. }));
+
+        if has_relations && ctx.planner_schema.is_some() {
+            // Generate JOIN-based query with result assembly
+            generate_join_query_body(ctx, query, struct_name, code);
+        } else {
+            // Simple query - no JOINs needed
+            generate_simple_query_body(query, code);
+        }
     }
 
     code.push_str("}\n");
+}
+
+/// Generate query body for queries with JOINs.
+///
+/// This generates:
+/// 1. The SQL with JOINs
+/// 2. A flat row struct matching the JOIN result columns
+/// 3. Assembly code to convert flat rows to nested result structs
+fn generate_join_query_body(
+    ctx: &CodegenContext,
+    query: &Query,
+    struct_name: &str,
+    code: &mut String,
+) {
+    let planner_schema = ctx.planner_schema.unwrap();
+
+    // Generate SQL with JOINs
+    let generated = match generate_sql_with_joins(query, planner_schema) {
+        Ok(g) => g,
+        Err(e) => {
+            // Fall back to simple SQL on planning error
+            code.push_str(&format!(
+                "    // Warning: JOIN planning failed: {}\n",
+                e
+            ));
+            generate_simple_query_body(query, code);
+            return;
+        }
+    };
+
+    let plan = generated.plan.as_ref().unwrap();
+
+    code.push_str(&format!(
+        "    const SQL: &str = r#\"{}\"#;\n\n",
+        generated.sql
+    ));
+
+    // Build params array
+    let params: Vec<_> = generated
+        .param_order
+        .iter()
+        .filter(|p| !p.starts_with("__literal_"))
+        .collect();
+
+    if params.is_empty() {
+        code.push_str("    let rows = client.query(SQL, &[]).await?;\n\n");
+    } else {
+        code.push_str("    let rows = client.query(SQL, &[");
+        for (i, param_name) in params.iter().enumerate() {
+            if i > 0 {
+                code.push_str(", ");
+            }
+            code.push_str(param_name);
+        }
+        code.push_str("]).await?;\n\n");
+    }
+
+    // Generate assembly code
+    code.push_str("    // Assemble flat rows into nested structs\n");
+    code.push_str("    let results: Result<Vec<_>, QueryError> = rows.iter().map(|row| {\n");
+
+    // Extract base table columns
+    for field in &query.select {
+        if let Field::Column { name, .. } = field {
+            let rust_ty = ctx
+                .schema
+                .column_type(&query.from, name)
+                .unwrap_or_else(|| "String".to_string());
+            code.push_str(&format!(
+                "        let {}: {} = row.get(\"{}\");\n",
+                name, rust_ty, name
+            ));
+        }
+    }
+
+    // Extract relation columns and build nested structs
+    for field in &query.select {
+        if let Field::Relation {
+            name,
+            first,
+            select,
+            from,
+            ..
+        } = field
+        {
+            let rel_table = from.as_deref().unwrap_or(name);
+            let nested_name = to_pascal_case(name);
+
+            // Extract each column from the relation
+            for f in select {
+                if let Field::Column {
+                    name: col_name, ..
+                } = f
+                {
+                    let rust_ty = ctx
+                        .schema
+                        .column_type(rel_table, col_name)
+                        .unwrap_or_else(|| "String".to_string());
+                    let alias = format!("{}_{}", name, col_name);
+                    // LEFT JOIN columns are always nullable
+                    // If the type is already Option<T>, don't wrap it again
+                    let wrapped_ty = if rust_ty.starts_with("Option<") {
+                        rust_ty.clone()
+                    } else {
+                        format!("Option<{}>", rust_ty)
+                    };
+                    code.push_str(&format!(
+                        "        let {}: {} = row.get(\"{}\");\n",
+                        alias, wrapped_ty, alias
+                    ));
+                }
+            }
+
+            // Build the nested struct (Option for first=true, Vec for first=false)
+            if *first {
+                // For first=true, check if the first column is Some
+                let first_col = select
+                    .iter()
+                    .find_map(|f| {
+                        if let Field::Column { name, .. } = f {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                let first_alias = format!("{}_{}", name, first_col);
+
+                code.push_str(&format!(
+                    "        let {} = if {}.is_some() {{\n",
+                    name, first_alias
+                ));
+                code.push_str(&format!("            Some({} {{\n", nested_name));
+                for f in select {
+                    if let Field::Column {
+                        name: col_name, ..
+                    } = f
+                    {
+                        let alias = format!("{}_{}", name, col_name);
+                        // Check if the column is already nullable - if so, don't unwrap
+                        let rust_ty = ctx
+                            .schema
+                            .column_type(rel_table, col_name)
+                            .unwrap_or_else(|| "String".to_string());
+                        let value_expr = if rust_ty.starts_with("Option<") {
+                            alias.clone() // Already Option, pass directly
+                        } else {
+                            format!("{}.unwrap()", alias) // Unwrap the JOIN's Option wrapper
+                        };
+                        code.push_str(&format!(
+                            "                {}: {},\n",
+                            col_name, value_expr
+                        ));
+                    }
+                }
+                code.push_str("            })\n");
+                code.push_str("        } else {\n");
+                code.push_str("            None\n");
+                code.push_str("        };\n");
+            } else {
+                // For first=false (Vec), this is more complex - need to group by parent ID
+                // For now, just create a single-element vec if present
+                let first_col = select
+                    .iter()
+                    .find_map(|f| {
+                        if let Field::Column { name, .. } = f {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                let first_alias = format!("{}_{}", name, first_col);
+
+                code.push_str(&format!(
+                    "        let {} = if {}.is_some() {{\n",
+                    name, first_alias
+                ));
+                code.push_str(&format!("            vec![{} {{\n", nested_name));
+                for f in select {
+                    if let Field::Column {
+                        name: col_name, ..
+                    } = f
+                    {
+                        let alias = format!("{}_{}", name, col_name);
+                        // Check if the column is already nullable - if so, don't unwrap
+                        let rust_ty = ctx
+                            .schema
+                            .column_type(rel_table, col_name)
+                            .unwrap_or_else(|| "String".to_string());
+                        let value_expr = if rust_ty.starts_with("Option<") {
+                            alias.clone() // Already Option, pass directly
+                        } else {
+                            format!("{}.unwrap()", alias) // Unwrap the JOIN's Option wrapper
+                        };
+                        code.push_str(&format!(
+                            "                {}: {},\n",
+                            col_name, value_expr
+                        ));
+                    }
+                }
+                code.push_str("            }]\n");
+                code.push_str("        } else {\n");
+                code.push_str("            vec![]\n");
+                code.push_str("        };\n");
+            }
+        }
+    }
+
+    // Build the result struct
+    code.push_str(&format!("        Ok({} {{\n", struct_name));
+    for field in &query.select {
+        match field {
+            Field::Column { name, .. } | Field::Relation { name, .. } => {
+                code.push_str(&format!("            {},\n", name));
+            }
+            Field::Count { name, .. } => {
+                code.push_str(&format!("            {}: 0, // TODO: COUNT\n", name));
+            }
+        }
+    }
+    code.push_str("        })\n");
+    code.push_str("    }).collect();\n\n");
+
+    // Return based on first flag
+    if query.first {
+        code.push_str("    Ok(results?.into_iter().next())\n");
+    } else {
+        code.push_str("    results\n");
+    }
+
+    // Suppress unused warning for plan
+    let _ = plan;
 }
 
 fn generate_simple_query_body(query: &Query, code: &mut String) {
@@ -444,5 +705,122 @@ TrendingProducts @query{
     fn test_pascal_case() {
         assert_eq!(to_pascal_case("translation"), "Translation");
         assert_eq!(to_pascal_case("product_variant"), "ProductVariant");
+    }
+
+    #[test]
+    fn test_generate_join_query() {
+        use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+
+        let source = r#"
+ProductWithTranslation @query{
+  params{ handle @string }
+  from product
+  where{ handle $handle }
+  first true
+  select{
+    id
+    handle
+    translation @rel{
+      from product_translation
+      first true
+      select{ title, description }
+    }
+  }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+
+        // Build schema info (for types)
+        let mut schema = SchemaInfo::default();
+        let mut product_cols = HashMap::new();
+        product_cols.insert(
+            "id".to_string(),
+            ColumnInfo {
+                rust_type: "i64".to_string(),
+                nullable: false,
+            },
+        );
+        product_cols.insert(
+            "handle".to_string(),
+            ColumnInfo {
+                rust_type: "String".to_string(),
+                nullable: false,
+            },
+        );
+        schema.tables.insert(
+            "product".to_string(),
+            TableInfo {
+                columns: product_cols,
+            },
+        );
+
+        let mut translation_cols = HashMap::new();
+        translation_cols.insert(
+            "title".to_string(),
+            ColumnInfo {
+                rust_type: "String".to_string(),
+                nullable: false,
+            },
+        );
+        translation_cols.insert(
+            "description".to_string(),
+            ColumnInfo {
+                rust_type: "String".to_string(),
+                nullable: true,
+            },
+        );
+        schema.tables.insert(
+            "product_translation".to_string(),
+            TableInfo {
+                columns: translation_cols,
+            },
+        );
+
+        // Build planner schema (for FK relationships)
+        let mut planner_schema = PlannerSchema::default();
+        planner_schema.tables.insert(
+            "product".to_string(),
+            PlannerTable {
+                name: "product".to_string(),
+                columns: vec!["id".to_string(), "handle".to_string()],
+                foreign_keys: vec![],
+            },
+        );
+        planner_schema.tables.insert(
+            "product_translation".to_string(),
+            PlannerTable {
+                name: "product_translation".to_string(),
+                columns: vec![
+                    "id".to_string(),
+                    "product_id".to_string(),
+                    "title".to_string(),
+                    "description".to_string(),
+                ],
+                foreign_keys: vec![PlannerForeignKey {
+                    columns: vec!["product_id".to_string()],
+                    references_table: "product".to_string(),
+                    references_columns: vec!["id".to_string()],
+                }],
+            },
+        );
+
+        let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
+
+        // Check struct generation
+        assert!(code.code.contains("pub struct ProductWithTranslationResult"));
+        assert!(code.code.contains("pub id: i64"));
+        assert!(code.code.contains("pub handle: String"));
+        assert!(code.code.contains("pub translation: Option<Translation>"));
+        assert!(code.code.contains("pub struct Translation"));
+
+        // Check SQL generation with JOINs
+        assert!(code.code.contains("LEFT JOIN"));
+        assert!(code.code.contains("product_translation"));
+
+        // Check assembly code generation
+        assert!(code.code.contains("translation_title"));
+        assert!(code.code.contains("translation_description"));
+        assert!(code.code.contains("if translation_title.is_some()"));
+        assert!(code.code.contains("Some(Translation"));
     }
 }

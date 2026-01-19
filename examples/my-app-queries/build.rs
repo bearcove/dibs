@@ -1,4 +1,7 @@
-use dibs::{ColumnInfo, SchemaInfo, TableInfo, generate_rust_code_with_schema, parse_query_file};
+use dibs::{
+    ColumnInfo, PlannerForeignKey, PlannerSchema, PlannerTable, SchemaInfo, TableInfo,
+    generate_rust_code_with_planner, parse_query_file,
+};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -12,13 +15,13 @@ fn main() {
     let _ = std::any::TypeId::of::<my_app_db::Product>();
 
     // Collect schema from registered tables via inventory
-    let schema = collect_schema();
+    let (schema, planner_schema) = collect_schema();
 
     let queries_path = Path::new("queries.styx");
     let source = fs::read_to_string(queries_path).expect("Failed to read queries.styx");
 
     let file = parse_query_file(&source).expect("Failed to parse queries.styx");
-    let generated = generate_rust_code_with_schema(&file, &schema);
+    let generated = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
 
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = Path::new(&out_dir).join("queries.rs");
@@ -29,7 +32,8 @@ fn main() {
 }
 
 /// Collect schema information from dibs tables registered via inventory.
-fn collect_schema() -> SchemaInfo {
+/// Returns both SchemaInfo (for type info) and PlannerSchema (for FK relationships).
+fn collect_schema() -> (SchemaInfo, PlannerSchema) {
     let dibs_schema = dibs::Schema::collect();
 
     eprintln!(
@@ -37,15 +41,20 @@ fn collect_schema() -> SchemaInfo {
         dibs_schema.tables.len()
     );
 
-    let mut tables = HashMap::new();
+    let mut schema_tables = HashMap::new();
+    let mut planner_tables = HashMap::new();
 
     for table in &dibs_schema.tables {
         eprintln!(
-            "cargo::warning=Table: {} with {} columns",
+            "cargo::warning=Table: {} with {} columns, {} FKs",
             table.name,
-            table.columns.len()
+            table.columns.len(),
+            table.foreign_keys.len()
         );
+
+        // Build SchemaInfo table
         let mut columns = HashMap::new();
+        let mut column_names = Vec::new();
 
         for col in &table.columns {
             // Map PgType back to Rust type name for codegen
@@ -61,12 +70,40 @@ fn collect_schema() -> SchemaInfo {
                     nullable: col.nullable,
                 },
             );
+            column_names.push(col.name.clone());
         }
 
-        tables.insert(table.name.clone(), TableInfo { columns });
+        schema_tables.insert(table.name.clone(), TableInfo { columns });
+
+        // Build PlannerSchema table
+        let foreign_keys: Vec<PlannerForeignKey> = table
+            .foreign_keys
+            .iter()
+            .map(|fk| PlannerForeignKey {
+                columns: fk.columns.clone(),
+                references_table: fk.references_table.clone(),
+                references_columns: fk.references_columns.clone(),
+            })
+            .collect();
+
+        planner_tables.insert(
+            table.name.clone(),
+            PlannerTable {
+                name: table.name.clone(),
+                columns: column_names,
+                foreign_keys,
+            },
+        );
     }
 
-    SchemaInfo { tables }
+    (
+        SchemaInfo {
+            tables: schema_tables,
+        },
+        PlannerSchema {
+            tables: planner_tables,
+        },
+    )
 }
 
 /// Map PgType to a Rust type string.

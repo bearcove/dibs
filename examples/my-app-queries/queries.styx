@@ -33,20 +33,31 @@ SearchProducts @query{
   select{ id, handle, status }
 }
 
-// TODO: Relations require schema integration for FK resolution
-// ProductWithTranslation @query{
-//   params{ handle @string, locale @string }
-//   from product
-//   where{ handle $handle, deleted_at @null }
-//   first true
-//   select{
-//     id
-//     handle
-//     translation @rel{
-//       from product_translation
-//       where{ locale $locale }
-//       first true
-//       select{ title, description }
-//     }
-//   }
-// }
+// Paginated query with limit/offset parameters
+ProductsPaginated @query{
+  params{ page_size @int, page_offset @int }
+  from product
+  where{ deleted_at @null }
+  order_by{ handle asc }
+  limit $page_size
+  offset $page_offset
+  select{ id, handle, status, active }
+}
+
+// Query with JOIN - returns product with its first translation
+ProductWithTranslation @query{
+  params{ handle @string }
+  from product
+  where{ handle $handle, deleted_at @null }
+  first true
+  select{
+    id
+    handle
+    status
+    translation @rel{
+      from product_translation
+      first true
+      select{ locale, title, description }
+    }
+  }
+}
