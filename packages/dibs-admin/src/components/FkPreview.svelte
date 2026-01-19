@@ -48,25 +48,25 @@
     let previewFields = $derived(getPreviewFields());
 </script>
 
-<div class="bg-popover border border-border p-3 min-w-[200px] max-w-[300px] shadow-xl rounded-md">
+<div class="bg-popover border border-border min-w-[220px] max-w-[320px] shadow-xl rounded-lg overflow-hidden">
     {#if loading}
-        <div class="text-muted-foreground text-xs">Loading...</div>
+        <div class="text-muted-foreground text-xs p-3">Loading...</div>
     {:else if error}
-        <div class="text-destructive text-xs">{error}</div>
+        <div class="text-destructive text-xs p-3">{error}</div>
     {:else if row && table}
-        <div class="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-            <ArrowSquareOut size={12} />
-            {table.name}
+        <div class="bg-accent/50 px-3 py-2 border-b border-border flex items-center gap-2">
+            <ArrowSquareOut size={12} class="text-primary" />
+            <span class="text-xs font-medium text-accent-foreground">{table.name}</span>
         </div>
-        <div class="space-y-1">
-            {#each previewFields as field}
+        <div class="p-3 space-y-1.5">
+            {#each previewFields as field, i}
                 <div class="flex gap-2 text-sm">
-                    <span class="text-muted-foreground shrink-0">{field.name}:</span>
-                    <span class="text-popover-foreground truncate">{field.value}</span>
+                    <span class="text-muted-foreground shrink-0 min-w-[70px]">{field.name}</span>
+                    <span class="text-popover-foreground truncate font-medium">{field.value}</span>
                 </div>
             {/each}
         </div>
     {:else}
-        <div class="text-muted-foreground text-xs">No data</div>
+        <div class="text-muted-foreground text-xs p-3">No data</div>
     {/if}
 </div>
