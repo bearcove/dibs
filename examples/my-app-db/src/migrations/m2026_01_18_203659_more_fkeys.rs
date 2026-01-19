@@ -18,7 +18,8 @@ pub async fn migrate(ctx: &mut MigrationContext<'_>) -> MigrationResult<()> {
     ctx.execute("ALTER TABLE post_tags ADD CONSTRAINT post_tags_post_id_fkey FOREIGN KEY (post_id) REFERENCES posts (id)").await?;
     ctx.execute("ALTER TABLE post_tags ADD CONSTRAINT post_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES tags (id)").await?;
     // Table: posts
-    ctx.execute("ALTER TABLE posts ADD CONSTRAINT posts_slug_key UNIQUE (slug)").await?;
+    ctx.execute("ALTER TABLE posts ADD CONSTRAINT posts_slug_key UNIQUE (slug)")
+        .await?;
     // Table: user_follows
     ctx.execute("ALTER TABLE user_follows ADD CONSTRAINT user_follows_follower_id_fkey FOREIGN KEY (follower_id) REFERENCES users (id)").await?;
     ctx.execute("ALTER TABLE user_follows ADD CONSTRAINT user_follows_following_id_fkey FOREIGN KEY (following_id) REFERENCES users (id)").await?;

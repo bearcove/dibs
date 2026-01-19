@@ -1,18 +1,4 @@
 [workspace]
 members = ["crates/*", "examples/*"]
-exclude = ["examples/admin-ui"]
+exclude = ["examples/admin-ui", "crates/dibs-cli"]
 resolver = "3"
-
-# Use local dependencies for development
-[patch."https://github.com/bearcove/roam"]
-roam = { path = "/Users/amos/bearcove/roam/rust/roam" }
-roam-codegen = { path = "/Users/amos/bearcove/roam/rust/roam-codegen" }
-roam-schema = { path = "/Users/amos/bearcove/roam/rust/roam-schema" }
-roam-stream = { path = "/Users/amos/bearcove/roam/rust/roam-stream" }
-roam-websocket = { path = "/Users/amos/bearcove/roam/rust/roam-websocket" }
-roam-session = { path = "/Users/amos/bearcove/roam/rust/roam-session" }
-
-[patch."https://github.com/bearcove/arborium"]
-arborium = { path = "/Users/amos/bearcove/arborium/crates/arborium" }
-arborium-highlight = { path = "/Users/amos/bearcove/arborium/crates/arborium-highlight" }
-arborium-theme = { path = "/Users/amos/bearcove/arborium/crates/arborium-theme" }
