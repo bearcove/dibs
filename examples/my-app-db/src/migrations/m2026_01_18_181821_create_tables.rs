@@ -1,10 +1,10 @@
 //! Migration: create-tables
 //! Created: 2026-01-18 18:18:21 CET
 
-use dibs::{MigrationContext, Result};
+use dibs::{MigrationContext, MigrationResult};
 
 #[dibs::migration]
-pub async fn migrate(ctx: &mut MigrationContext<'_>) -> Result<()> {
+pub async fn migrate(ctx: &mut MigrationContext<'_>) -> MigrationResult<()> {
     // Table: posts
     ctx.execute(
         r#"

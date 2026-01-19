@@ -1,5 +1,7 @@
 <script lang="ts">
+    import { untrack } from "svelte";
     import { Plus } from "phosphor-svelte";
+    import DynamicIcon from "./components/DynamicIcon.svelte";
     import type {
         SquelClient,
         SchemaInfo,
@@ -18,6 +20,7 @@
     import RowEditor from "./components/RowEditor.svelte";
     import Breadcrumb from "./components/Breadcrumb.svelte";
     import { Button } from "./lib/components/ui/index.js";
+    import { Tooltip } from "./lib/components/ui/index.js";
     import type { BreadcrumbEntry } from "./lib/fk-utils.js";
     import { createBreadcrumbLabel, getTableByName, getPkValue } from "./lib/fk-utils.js";
 
@@ -47,9 +50,11 @@
     // Router state - prevent infinite loops
     let isUpdatingFromHash = false;
     let isUpdatingHash = false;
+    let schemaLoaded = false; // Prevent double-loading on mount
 
     // Editor state
     let editingRow = $state<Row | null>(null);
+    let editingPk = $state<string | null>(null); // PK value as string for URL
     let isCreating = $state(false);
     let saving = $state(false);
     let deleting = $state(false);
@@ -79,6 +84,18 @@
 
     function encodeHash(): string {
         if (!selectedTable) return "";
+
+        // Detail view: #/table/pk
+        if (editingPk !== null) {
+            return `#/${encodeURIComponent(selectedTable)}/${encodeURIComponent(editingPk)}`;
+        }
+
+        // Create view: #/table/new
+        if (isCreating) {
+            return `#/${encodeURIComponent(selectedTable)}/new`;
+        }
+
+        // List view: #/table?filters
         let hash = `#/${encodeURIComponent(selectedTable)}`;
         const params = new URLSearchParams();
 
@@ -113,14 +130,36 @@
         return String(v.value);
     }
 
-    function decodeHash(hash: string, schemaInfo?: SchemaInfo | null): { table: string; filters: Filter[]; sort: Sort | null; offset: number } | null {
+    type DecodedHash = {
+        table: string;
+        filters: Filter[];
+        sort: Sort | null;
+        offset: number;
+        rowPk: string | null; // If viewing a specific row
+        isCreating: boolean; // If creating a new row
+    };
+
+    function decodeHash(hash: string, schemaInfo?: SchemaInfo | null): DecodedHash | null {
         if (!hash || !hash.startsWith("#/")) return null;
 
         const withoutHash = hash.slice(2); // Remove "#/"
-        const [tablePart, queryPart] = withoutHash.split("?");
-        const table = decodeURIComponent(tablePart);
+        const [pathPart, queryPart] = withoutHash.split("?");
+        const pathSegments = pathPart.split("/").map(s => decodeURIComponent(s));
 
+        const table = pathSegments[0];
         if (!table) return null;
+
+        // Check for detail view: #/table/pk or #/table/new
+        let rowPk: string | null = null;
+        let isCreating = false;
+        if (pathSegments.length > 1) {
+            const secondSegment = pathSegments[1];
+            if (secondSegment === "new") {
+                isCreating = true;
+            } else if (secondSegment) {
+                rowPk = secondSegment;
+            }
+        }
 
         // Find table info for type inference
         const tableInfo = schemaInfo?.tables.find(t => t.name === table) ?? currentTable;
@@ -157,7 +196,7 @@
             }
         }
 
-        return { table, filters, sort, offset };
+        return { table, filters, sort, offset, rowPk, isCreating };
     }
 
     function decodeValue(str: string, field: string, tableInfo?: TableInfo | null): Value {
@@ -190,7 +229,7 @@
         isUpdatingHash = false;
     }
 
-    function applyHash() {
+    async function applyHash() {
         const decoded = decodeHash(window.location.hash, schema);
         if (!decoded) return;
 
@@ -206,7 +245,51 @@
         sort = decoded.sort;
         offset = decoded.offset;
 
+        // Handle detail view state
+        if (decoded.rowPk !== null) {
+            editingPk = decoded.rowPk;
+            isCreating = false;
+            // Load the specific row
+            await loadRowByPk(decoded.rowPk);
+        } else if (decoded.isCreating) {
+            editingPk = null;
+            editingRow = null;
+            isCreating = true;
+        } else {
+            editingPk = null;
+            editingRow = null;
+            isCreating = false;
+        }
+
         isUpdatingFromHash = false;
+    }
+
+    async function loadRowByPk(pkStr: string) {
+        if (!selectedTable || !currentTable) return;
+
+        const pkCol = currentTable.columns.find(c => c.primary_key);
+        if (!pkCol) return;
+
+        const pkValue = parsePkValue(pkStr, pkCol.sql_type);
+
+        try {
+            const result = await client.get({
+                database_url: databaseUrl,
+                table: selectedTable,
+                pk: pkValue,
+            });
+            if (result.ok && result.value) {
+                editingRow = result.value;
+            } else {
+                // Row not found, go back to list
+                editingPk = null;
+                editingRow = null;
+            }
+        } catch (e) {
+            console.error("Failed to load row:", e);
+            editingPk = null;
+            editingRow = null;
+        }
     }
 
     // Listen for popstate (back/forward)
@@ -227,6 +310,8 @@
         void filters;
         void sort;
         void offset;
+        void editingPk;
+        void isCreating;
         // Update hash (but not during initial load or when applying hash)
         if (schema && selectedTable) {
             updateHash();
@@ -235,10 +320,13 @@
 
     // Load schema on mount
     $effect(() => {
-        loadSchema();
+        untrack(() => loadSchema());
     });
 
     async function loadSchema() {
+        if (schemaLoaded) return;
+        schemaLoaded = true;
+
         loading = true;
         error = null;
         try {
@@ -254,8 +342,25 @@
                     sort = decoded.sort;
                     offset = decoded.offset;
                     breadcrumbs = [{ table: decoded.table, label: decoded.table }];
+
+                    // Handle detail/create views
+                    if (decoded.rowPk !== null) {
+                        editingPk = decoded.rowPk;
+                        isCreating = false;
+                    } else if (decoded.isCreating) {
+                        editingPk = null;
+                        isCreating = true;
+                    }
+
                     isUpdatingFromHash = false;
+
+                    // Load data first, then load specific row if needed
                     await loadData();
+
+                    // If viewing a specific row, load it
+                    if (decoded.rowPk !== null) {
+                        await loadRowByPk(decoded.rowPk);
+                    }
                 } else {
                     // Default to first table
                     selectTable(schema.tables[0].name);
@@ -436,6 +541,10 @@
         filters = [];
         sort = null;
         offset = 0;
+        // Clear detail/create view state
+        editingPk = null;
+        editingRow = null;
+        isCreating = false;
         if (resetBreadcrumbs) {
             breadcrumbs = [{ table: tableName, label: tableName }];
         }
@@ -561,15 +670,20 @@
     function openEditor(row: Row) {
         editingRow = row;
         isCreating = false;
+        // Set the pk for URL
+        const pk = getPrimaryKeyValue(row);
+        editingPk = pk ? formatPkValue(pk) : null;
     }
 
     function openCreateDialog() {
         editingRow = null;
+        editingPk = null;
         isCreating = true;
     }
 
     function closeEditor() {
         editingRow = null;
+        editingPk = null;
         isCreating = false;
     }
 
@@ -662,99 +776,108 @@
     }
 </script>
 
+<Tooltip.Provider>
 <div class="h-full bg-background text-foreground">
     {#if loading && !schema}
         <div class="flex items-center justify-center h-full p-8 text-muted-foreground">
             Loading schema...
         </div>
     {:else if schema}
-        <div class="grid grid-cols-[200px_1fr] h-full">
+        <div class="grid grid-cols-[200px_1fr] h-full max-h-screen">
             <TableList tables={schema.tables} selected={selectedTable} onSelect={selectTable} />
 
-            <section class="p-8 overflow-auto flex flex-col">
-                {#if selectedTable && currentTable}
-                    <Breadcrumb entries={breadcrumbs} onNavigate={navigateToBreadcrumb} />
+            {#if editingRow || isCreating}
+                <!-- Full-screen detail/create view -->
+                <RowEditor
+                    {columns}
+                    row={editingRow}
+                    onSave={saveRow}
+                    onDelete={editingRow ? deleteRow : undefined}
+                    onClose={closeEditor}
+                    {saving}
+                    {deleting}
+                    table={currentTable ?? undefined}
+                    schema={schema ?? undefined}
+                    {client}
+                    {databaseUrl}
+                    fullscreen={true}
+                    tableName={selectedTable ?? ""}
+                />
+            {:else}
+                <!-- Table list view -->
+                <section class="p-8 overflow-auto flex flex-col max-h-screen">
+                    {#if selectedTable && currentTable}
+                        <Breadcrumb entries={breadcrumbs} onNavigate={navigateToBreadcrumb} />
 
-                    <div class="flex justify-between items-center mb-8">
-                        <h2 class="text-lg font-medium text-foreground uppercase tracking-wide">{selectedTable}</h2>
-                        <Button onclick={openCreateDialog}>
-                            <Plus size={16} />
-                            New
-                        </Button>
-                    </div>
-
-                    {#if error}
-                        <p class="text-destructive mb-6 text-sm">
-                            {error}
-                        </p>
-                    {/if}
-
-                    <FilterBar
-                        {columns}
-                        {filters}
-                        onAddFilter={addFilter}
-                        onRemoveFilter={removeFilter}
-                        onClearFilters={clearFilters}
-                    />
-
-                    {#if loading}
-                        <div class="flex-1 flex items-center justify-center text-muted-foreground">
-                            Loading...
+                        <div class="flex justify-between items-center mb-8">
+                            <h2 class="text-lg font-medium text-foreground uppercase tracking-wide flex items-center gap-2">
+                                <DynamicIcon name={currentTable.icon ?? "table"} size={20} class="opacity-70" />
+                                {selectedTable}
+                            </h2>
+                            <Button onclick={openCreateDialog}>
+                                <Plus size={16} />
+                                New
+                            </Button>
                         </div>
-                    {:else if rows.length === 0}
-                        <div class="flex-1 flex items-center justify-center text-muted-foreground/60">
-                            No rows found.
-                        </div>
-                    {:else}
-                        <DataTable
+
+                        {#if error}
+                            <p class="text-destructive mb-6 text-sm">
+                                {error}
+                            </p>
+                        {/if}
+
+                        <FilterBar
                             {columns}
-                            {rows}
-                            {sort}
-                            onSort={handleSort}
-                            onRowClick={openEditor}
-                            table={currentTable}
-                            {schema}
-                            {client}
-                            {databaseUrl}
-                            onFkClick={navigateToFk}
-                            {fkLookup}
+                            {filters}
+                            onAddFilter={addFilter}
+                            onRemoveFilter={removeFilter}
+                            onClearFilters={clearFilters}
                         />
 
-                        <Pagination
-                            {offset}
-                            {limit}
-                            rowCount={rows.length}
-                            total={totalRows}
-                            onPrev={prevPage}
-                            onNext={nextPage}
-                        />
+                        {#if loading}
+                            <div class="flex-1 flex items-center justify-center text-muted-foreground">
+                                Loading...
+                            </div>
+                        {:else if rows.length === 0}
+                            <div class="flex-1 flex items-center justify-center text-muted-foreground/60">
+                                No rows found.
+                            </div>
+                        {:else}
+                            <DataTable
+                                {columns}
+                                {rows}
+                                {sort}
+                                onSort={handleSort}
+                                onRowClick={openEditor}
+                                table={currentTable}
+                                {schema}
+                                {client}
+                                {databaseUrl}
+                                onFkClick={navigateToFk}
+                                {fkLookup}
+                            />
+
+                            <Pagination
+                                {offset}
+                                {limit}
+                                rowCount={rows.length}
+                                total={totalRows}
+                                onPrev={prevPage}
+                                onNext={nextPage}
+                            />
+                        {/if}
+                    {:else}
+                        <div class="flex-1 flex items-center justify-center text-muted-foreground/60">
+                            Select a table
+                        </div>
                     {/if}
-                {:else}
-                    <div class="flex-1 flex items-center justify-center text-muted-foreground/60">
-                        Select a table
-                    </div>
-                {/if}
-            </section>
+                </section>
+            {/if}
         </div>
     {:else if error}
         <p class="text-destructive p-8 text-sm">
             {error}
         </p>
     {/if}
-
-    {#if editingRow || isCreating}
-        <RowEditor
-            {columns}
-            row={editingRow}
-            onSave={saveRow}
-            onDelete={editingRow ? deleteRow : undefined}
-            onClose={closeEditor}
-            {saving}
-            {deleting}
-            table={currentTable ?? undefined}
-            schema={schema ?? undefined}
-            {client}
-            {databaseUrl}
-        />
-    {/if}
 </div>
+</Tooltip.Provider>

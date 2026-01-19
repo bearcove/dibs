@@ -52,6 +52,12 @@ export interface ColumnInfo {
   label: boolean;
   enum_variants: string[];
   doc: string | null;
+  /** Language/format for code editor (e.g., "markdown", "json") */
+  lang: string | null;
+  /** Lucide icon name for display in admin UI */
+  icon: string | null;
+  /** Semantic subtype of the column (e.g., "email", "url", "password") */
+  subtype: string | null;
 }
 
 export interface ForeignKeyInfo {
@@ -74,6 +80,8 @@ export interface TableInfo {
   source_file: string | null;
   source_line: number | null;
   doc: string | null;
+  /** Lucide icon name for display in admin UI */
+  icon: string | null;
 }
 
 export interface SchemaInfo {

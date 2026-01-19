@@ -1,10 +1,10 @@
 //! Migration: lotsa-new-tables
 //! Created: 2026-01-18 19:37:41 CET
 
-use dibs::{MigrationContext, Result};
+use dibs::{MigrationContext, MigrationResult};
 
 #[dibs::migration]
-pub async fn migrate(ctx: &mut MigrationContext<'_>) -> Result<()> {
+pub async fn migrate(ctx: &mut MigrationContext<'_>) -> MigrationResult<()> {
     // Table: categories
     ctx.execute(r#"
 CREATE TABLE categories (

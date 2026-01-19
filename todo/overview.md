@@ -11,10 +11,17 @@ Schema-first Postgres toolkit for Rust, powered by facet reflection.
 - Migration execution with transactions (`dibs migrate`, `dibs status`)
 - TUI schema browser with FK navigation
 
+## In Progress
+
+- Table rename detection in diff (implemented, needs solver for correct ordering)
+
 ## TODO
 
 | File | Description |
 |------|-------------|
+| [008-TODO-migration-solver.md](./008-TODO-migration-solver.md) | **HIGH** - Correct ordering of migration operations |
+| [009-TODO-tui-improvements.md](./009-TODO-tui-improvements.md) | TUI error display and usability |
+| [010-TODO-integration-tests.md](./010-TODO-integration-tests.md) | Integration tests with real Postgres |
 | [006-TODO-query-building.md](./006-TODO-query-building.md) | Type-safe queries (stretch goal) |
 
 ## Design decisions

@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { TableInfo } from "../types.js";
+    import DynamicIcon from "./DynamicIcon.svelte";
 
     interface Props {
         tables: TableInfo[];
@@ -16,13 +17,14 @@
         {#each tables as table}
             <li>
                 <button
-                    class="w-full text-left px-3 py-2 text-sm rounded-md transition-all duration-150 {selected ===
+                    class="w-full text-left px-3 py-2 text-sm rounded-md transition-all duration-150 flex items-center gap-2 {selected ===
                     table.name
                         ? 'text-sidebar-primary-foreground bg-sidebar-primary font-medium'
                         : 'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent'}"
                     onclick={() => onSelect(table.name)}
                 >
-                    {table.name}
+                    <DynamicIcon name={table.icon ?? "table"} size={16} class="shrink-0 opacity-70" />
+                    <span class="truncate">{table.name}</span>
                 </button>
             </li>
         {/each}

@@ -1,0 +1,19 @@
+specs (
+  {
+    name dibs-admin
+    prefix r
+    include (docs/spec/**/*.md)
+    impls (
+      {
+        name main
+        include (
+          packages/dibs-admin/src/**/*.ts
+          packages/dibs-admin/src/**/*.svelte
+          crates/dibs-proto/src/**/*.rs
+        )
+        exclude ()
+        test_include ()
+      }
+    )
+  }
+)

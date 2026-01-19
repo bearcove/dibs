@@ -4,6 +4,7 @@
     import type { Component } from "svelte";
     import { getFkForColumn, getTableByName } from "../lib/fk-utils.js";
     import FkCell from "./FkCell.svelte";
+    import DynamicIcon from "./DynamicIcon.svelte";
 
     interface Props {
         columns: ColumnInfo[];
@@ -204,7 +205,9 @@
                             class:text-muted-foreground={cell.isNull}
                         >
                             <span class="inline-flex items-center gap-1.5">
-                                {#if TypeIcon}
+                                {#if col.icon}
+                                    <DynamicIcon name={col.icon} size={12} class="text-muted-foreground/60 flex-shrink-0" />
+                                {:else if TypeIcon}
                                     <TypeIcon size={12} class="text-muted-foreground/60 flex-shrink-0" />
                                 {/if}
                                 {#if fkInfo && client && databaseUrl && rawValue.tag !== "Null"}

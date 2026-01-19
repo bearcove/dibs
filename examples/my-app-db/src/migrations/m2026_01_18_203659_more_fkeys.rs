@@ -1,10 +1,10 @@
 //! Migration: more-fkeys
 //! Created: 2026-01-18 20:36:59 CET
 
-use dibs::{MigrationContext, Result};
+use dibs::{MigrationContext, MigrationResult};
 
 #[dibs::migration]
-pub async fn migrate(ctx: &mut MigrationContext<'_>) -> Result<()> {
+pub async fn migrate(ctx: &mut MigrationContext<'_>) -> MigrationResult<()> {
     // Table: categories
     ctx.execute("ALTER TABLE categories ADD CONSTRAINT categories_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES categories (id)").await?;
     // Table: comments

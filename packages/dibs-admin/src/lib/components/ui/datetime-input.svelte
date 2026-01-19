@@ -52,7 +52,9 @@
     {disabled}
     step="1"
     class={cn(
-        "flex h-9 w-full bg-input px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:bg-accent disabled:cursor-not-allowed disabled:opacity-40",
+        "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-xs",
+        "focus-visible:outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+        "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
         className,
     )}
 />

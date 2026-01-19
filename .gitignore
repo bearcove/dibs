@@ -14,3 +14,4 @@ examples/*/node_modules/
 # Local env
 examples/.env
 .handoffs
+.tracey/
