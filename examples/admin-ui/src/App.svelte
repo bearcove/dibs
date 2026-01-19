@@ -11,119 +11,113 @@
     // Database URL - matches my-app-db/.env default
     const DATABASE_URL = "postgres://localhost/dibs_test";
 
-    // Admin configuration
+    // Admin configuration for ecommerce schema
     const config: DibsAdminConfig = {
         dashboard: {
-            title: "Blog Admin",
+            title: "Ecommerce Admin",
             tiles: [
-                { type: "latest", table: "post", title: "Recent Posts", limit: 5 },
-                { type: "latest", table: "user", title: "New Users", limit: 5 },
-                { type: "latest", table: "comment", title: "Recent Comments", limit: 5 },
-                { type: "count", table: "post", title: "Total Posts", icon: "article" },
-                { type: "count", table: "user", title: "Total Users", icon: "users" },
-                { type: "count", table: "comment", title: "Total Comments", icon: "chat-circle" },
+                { type: "latest", table: "product", title: "Recent Products", limit: 5 },
+                { type: "latest", table: "product_variant", title: "Recent Variants", limit: 5 },
+                { type: "count", table: "product", title: "Total Products", icon: "package" },
+                { type: "count", table: "product_variant", title: "Total Variants", icon: "layers" },
+                { type: "count", table: "variant_price", title: "Total Prices", icon: "coins" },
                 {
                     type: "links",
                     title: "Quick Links",
                     links: [
-                        { label: "Published Posts", table: "post" },
-                        { label: "All Categories", table: "category" },
-                        { label: "All Tags", table: "tag" },
+                        { label: "All Products", table: "product" },
+                        { label: "All Variants", table: "product_variant" },
+                        { label: "Translations", table: "product_translation" },
                     ],
                 },
             ],
         },
 
         tables: {
-            user: {
-                label: "Users",
+            product: {
+                label: "Products",
                 list: {
-                    columns: ["id", "avatar_url", "name", "email", "is_admin", "created_at"],
+                    columns: ["id", "handle", "status", "active", "created_at"],
                     defaultSort: { field: "created_at", direction: "desc" },
-                    imageColumns: ["avatar_url"],
                 },
                 detail: {
                     fields: [
-                        { title: "Profile", fields: ["name", "email", "bio", "avatar_url"] },
-                        { title: "Settings", fields: ["is_admin", "last_login_at"], collapsed: true },
-                        { title: "Metadata", fields: ["id", "created_at"], collapsed: true },
+                        { title: "Basic Info", fields: ["handle", "status", "active"] },
+                        { title: "Metadata", fields: ["metadata"], collapsed: true },
+                        { title: "Timestamps", fields: ["id", "created_at", "updated_at", "deleted_at"], collapsed: true },
                     ],
-                    readOnly: ["id", "created_at"],
+                    readOnly: ["id", "created_at", "updated_at"],
                 },
                 relations: [
-                    { table: "post", via: "author_id", label: "Posts", limit: 10 },
-                    { table: "comment", via: "author_id", label: "Comments", limit: 10 },
+                    { table: "product_variant", via: "product_id", label: "Variants", limit: 10 },
+                    { table: "product_translation", via: "product_id", label: "Translations", limit: 10 },
+                    { table: "product_source", via: "product_id", label: "Sources", limit: 5 },
                 ],
             },
 
-            post: {
-                label: "Posts",
+            product_variant: {
+                label: "Variants",
                 list: {
-                    columns: ["id", "title", "author_id", "published", "view_count", "created_at"],
+                    columns: ["id", "product_id", "sku", "title", "manage_inventory", "sort_order"],
                     defaultSort: { field: "created_at", direction: "desc" },
-                    pageSize: 20,
-                    rowExpand: {
-                        field: "excerpt",
-                        render: "text",
-                        previewLines: 2,
-                    },
                 },
                 detail: {
                     fields: [
-                        { title: "Content", fields: ["title", "slug", "excerpt", "body"] },
-                        { title: "Publishing", fields: ["published", "published_at", "category_id", "featured_image_url"] },
-                        { title: "Stats", fields: ["view_count", "author_id"], collapsed: true },
-                        { title: "Timestamps", fields: ["created_at", "updated_at"], collapsed: true },
+                        { title: "Basic Info", fields: ["sku", "title", "product_id"] },
+                        { title: "Inventory", fields: ["manage_inventory", "allow_backorder", "sort_order"] },
+                        { title: "Attributes", fields: ["attributes"], collapsed: true },
+                        { title: "Timestamps", fields: ["id", "created_at", "updated_at", "deleted_at"], collapsed: true },
                     ],
-                    readOnly: ["id", "created_at", "updated_at", "view_count"],
+                    readOnly: ["id", "created_at", "updated_at"],
                 },
                 relations: [
-                    { table: "comment", via: "post_id", label: "Comments", limit: 20 },
+                    { table: "variant_price", via: "variant_id", label: "Prices", limit: 10 },
                 ],
             },
 
-            comment: {
-                label: "Comments",
+            variant_price: {
+                label: "Prices",
                 list: {
-                    columns: ["id", "post_id", "author_id", "is_approved", "created_at"],
+                    columns: ["id", "variant_id", "currency_code", "amount", "region"],
                     defaultSort: { field: "created_at", direction: "desc" },
-                    rowExpand: {
-                        field: "body",
-                        render: "markdown",
-                        previewLines: 2,
-                    },
                 },
                 detail: {
-                    readOnly: ["id", "created_at"],
+                    fields: [
+                        { title: "Price Info", fields: ["variant_id", "currency_code", "amount", "region"] },
+                        { title: "Timestamps", fields: ["id", "created_at", "updated_at"], collapsed: true },
+                    ],
+                    readOnly: ["id", "created_at", "updated_at"],
                 },
             },
 
-            category: {
-                label: "Categories",
+            product_source: {
+                label: "Sources",
                 list: {
-                    columns: ["id", "name", "slug", "parent_id", "sort_order"],
-                    defaultSort: { field: "sort_order", direction: "asc" },
+                    columns: ["id", "product_id", "vendor", "external_id", "last_synced_at"],
+                    defaultSort: { field: "last_synced_at", direction: "desc" },
                 },
                 detail: {
+                    fields: [
+                        { title: "Source Info", fields: ["product_id", "vendor", "external_id"] },
+                        { title: "Sync Info", fields: ["last_synced_at", "raw_data"], collapsed: true },
+                    ],
                     readOnly: ["id"],
                 },
             },
 
-            tag: {
-                label: "Tags",
+            product_translation: {
+                label: "Translations",
                 list: {
-                    columns: ["id", "name", "slug", "color"],
-                    defaultSort: { field: "name", direction: "asc" },
+                    columns: ["id", "product_id", "locale", "title"],
+                    defaultSort: { field: "locale", direction: "asc" },
                 },
                 detail: {
+                    fields: [
+                        { title: "Translation", fields: ["product_id", "locale", "title", "description"] },
+                    ],
                     readOnly: ["id"],
                 },
             },
-
-            // Hide junction tables from sidebar
-            post_tag: { hidden: true },
-            post_like: { hidden: true },
-            user_follow: { hidden: true },
         },
 
         defaults: {

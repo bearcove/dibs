@@ -302,51 +302,92 @@
         return getFieldValue(row, pkCol.name);
     }
 
+    // Check if a column should be excluded from display summary
+    function isBoringColumn(col: { name: string; sql_type: string; primary_key?: boolean }, relation: IncomingRelation): boolean {
+        // Skip PKs
+        if (col.primary_key) return true;
+        // Skip FK columns pointing back to current table
+        if (relation.fkColumns.includes(col.name)) return true;
+        // Skip timestamp columns
+        const nameLower = col.name.toLowerCase();
+        if (nameLower.includes('created_at') || nameLower.includes('updated_at') ||
+            nameLower.includes('deleted_at') || nameLower.includes('_at')) return true;
+        // Skip typical metadata columns
+        if (nameLower === 'metadata' || nameLower === 'raw_data') return true;
+        return false;
+    }
+
     // Get the best display string for a related row
     function getRowDisplayString(row: Row, relation: IncomingRelation): string {
-        const displayCol = getDisplayColumn(relation.table);
-        const displayValue = getFieldValue(row, displayCol);
-
-        // If we have a good display value that's not just the PK, use it
         const pkCol = relation.table.columns.find(c => c.primary_key);
-        if (displayValue && displayCol !== pkCol?.name) {
-            return formatValue(displayValue);
+
+        // First check if there's an explicit label column
+        const labelCol = relation.table.columns.find(c => c.label);
+        if (labelCol) {
+            const labelValue = getFieldValue(row, labelCol.name);
+            if (labelValue && labelValue.tag !== "Null") {
+                return formatValue(labelValue);
+            }
         }
 
         // For junction tables, try to show the "other" FK's resolved value
         const otherFks = getOtherFkColumns(relation);
-        const displayParts: string[] = [];
+        if (otherFks.length > 0) {
+            const displayParts: string[] = [];
 
-        for (const { col, refTable } of otherFks) {
-            const fkValue = getFieldValue(row, col);
-            if (!fkValue || fkValue.tag === "Null") continue;
+            for (const { col, refTable } of otherFks) {
+                const fkValue = getFieldValue(row, col);
+                if (!fkValue || fkValue.tag === "Null") continue;
 
-            const fkStr = formatValue(fkValue);
-            const tableCache = fkLookup.get(refTable);
-            const cachedRow = tableCache?.get(fkStr);
+                const fkStr = formatValue(fkValue);
+                const tableCache = fkLookup.get(refTable);
+                const cachedRow = tableCache?.get(fkStr);
 
-            if (cachedRow) {
-                // Get display value from cached row
-                const refTableInfo = schema.tables.find(t => t.name === refTable);
-                if (refTableInfo) {
-                    const refDisplayCol = getDisplayColumn(refTableInfo);
-                    const refDisplayValue = getFieldValue(cachedRow, refDisplayCol);
-                    if (refDisplayValue) {
-                        displayParts.push(formatValue(refDisplayValue));
-                        continue;
+                if (cachedRow) {
+                    const refTableInfo = schema.tables.find(t => t.name === refTable);
+                    if (refTableInfo) {
+                        const refDisplayCol = getDisplayColumn(refTableInfo);
+                        const refDisplayValue = getFieldValue(cachedRow, refDisplayCol);
+                        if (refDisplayValue) {
+                            displayParts.push(formatValue(refDisplayValue));
+                            continue;
+                        }
                     }
                 }
+
+                displayParts.push(`${refTable}#${fkStr}`);
             }
 
-            // Fallback: show table#pk
-            displayParts.push(`${refTable}#${fkStr}`);
+            if (displayParts.length > 0) {
+                return displayParts.join(" → ");
+            }
         }
 
-        if (displayParts.length > 0) {
-            return displayParts.join(" → ");
+        // For non-junction tables, show interesting columns combined
+        // E.g., for variant_price: "EUR 19.99" instead of just "EUR"
+        const interestingCols = relation.table.columns.filter(col => !isBoringColumn(col, relation));
+        const valueParts: string[] = [];
+
+        for (const col of interestingCols) {
+            const value = getFieldValue(row, col.name);
+            if (value && value.tag !== "Null") {
+                const formatted = formatValue(value);
+                // Skip empty strings
+                if (formatted && formatted !== "null") {
+                    valueParts.push(formatted);
+                }
+            }
+            // Limit to a few columns
+            if (valueParts.length >= 3) break;
         }
 
-        // Last resort: show PK
+        if (valueParts.length > 0) {
+            return valueParts.join(" · ");
+        }
+
+        // Last resort: show the display column
+        const displayCol = getDisplayColumn(relation.table);
+        const displayValue = getFieldValue(row, displayCol);
         return displayValue ? formatValue(displayValue) : "(no display value)";
     }
 

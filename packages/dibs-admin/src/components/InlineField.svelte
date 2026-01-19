@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Pencil, Check, X } from "phosphor-svelte";
+    import { Pencil } from "phosphor-svelte";
     import { Input, NumberInput, Checkbox, Textarea, Select, DatetimeInput } from "../lib/components/ui/index.js";
     import CodeMirrorEditor from "./CodeMirrorEditor.svelte";
 
@@ -13,7 +13,8 @@
         placeholder?: string;
         enumOptions?: string[];
         lang?: string | null;
-        onSave?: (newValue: string) => void | Promise<void>;
+        /** Called when value changes - parent tracks pending changes */
+        onchange?: (newValue: string) => void;
     }
 
     let {
@@ -24,12 +25,11 @@
         placeholder = "",
         enumOptions = [],
         lang = null,
-        onSave,
+        onchange,
     }: Props = $props();
 
     let isEditing = $state(false);
     let editValue = $state("");
-    let saving = $state(false);
 
     // Keep editValue in sync with value when not editing
     $effect(() => {
@@ -44,22 +44,11 @@
         isEditing = true;
     }
 
-    async function save() {
-        if (editValue === value) {
-            isEditing = false;
-            return;
+    function commitChange() {
+        if (editValue !== value) {
+            onchange?.(editValue);
         }
-
-        saving = true;
-        try {
-            await onSave?.(editValue);
-            isEditing = false;
-        } catch (e) {
-            console.error("Failed to save:", e);
-            // Keep editing on error
-        } finally {
-            saving = false;
-        }
+        isEditing = false;
     }
 
     function cancel() {
@@ -70,7 +59,7 @@
     function handleKeydown(e: KeyboardEvent) {
         if (e.key === "Enter" && type !== "textarea" && type !== "codemirror") {
             e.preventDefault();
-            save();
+            commitChange();
         } else if (e.key === "Escape") {
             e.preventDefault();
             cancel();
@@ -78,10 +67,10 @@
     }
 
     function handleBlur() {
-        // Don't auto-save on blur for textarea/codemirror (user might want to cancel)
+        // Commit on blur for simple fields
         if (type === "textarea" || type === "codemirror") return;
-        if (isEditing && !saving) {
-            save();
+        if (isEditing) {
+            commitChange();
         }
     }
 
@@ -105,6 +94,21 @@
 
     function setBoolValue(checked: boolean) {
         editValue = checked ? "true" : "false";
+        // For boolean, commit immediately but don't "save" - just report change
+        onchange?.(editValue);
+        isEditing = false;
+    }
+
+    function handleEnumChange(v: string) {
+        editValue = v;
+        onchange?.(editValue);
+        isEditing = false;
+    }
+
+    function handleDatetimeChange(v: string) {
+        editValue = v;
+        onchange?.(editValue);
+        isEditing = false;
     }
 </script>
 
@@ -115,16 +119,14 @@
                 <div class="flex items-center gap-3 h-9 px-3">
                     <Checkbox
                         checked={getBoolValue()}
-                        onCheckedChange={(checked) => {
-                            setBoolValue(checked === true);
-                            save();
-                        }}
+                        onCheckedChange={(checked) => setBoolValue(checked === true)}
                         {disabled}
                     />
                     <span class="text-sm">{getBoolValue() ? "Yes" : "No"}</span>
                 </div>
             {:else if type === "number"}
-                <NumberInput
+                <Input
+                    type="number"
                     value={editValue}
                     oninput={(e) => (editValue = e.currentTarget.value)}
                     onkeydown={handleKeydown}
@@ -136,10 +138,7 @@
             {:else if type === "datetime"}
                 <DatetimeInput
                     value={editValue}
-                    onchange={(v: string) => {
-                        editValue = v;
-                        save();
-                    }}
+                    onchange={handleDatetimeChange}
                     {disabled}
                 />
             {:else if type === "enum"}
@@ -147,10 +146,7 @@
                     type="single"
                     value={editValue}
                     {disabled}
-                    onValueChange={(v) => {
-                        editValue = v;
-                        save();
-                    }}
+                    onValueChange={handleEnumChange}
                 >
                     <Select.Trigger class="w-full">
                         {editValue || placeholder || "— Select —"}
@@ -168,27 +164,11 @@
                         value={editValue}
                         oninput={(e) => (editValue = e.currentTarget.value)}
                         onkeydown={handleKeydown}
+                        onblur={() => commitChange()}
                         {placeholder}
                         disabled={disabled || false}
                         rows={4}
                     />
-                    <div class="flex justify-end gap-2">
-                        <button
-                            type="button"
-                            class="text-muted-foreground hover:text-foreground p-1"
-                            onclick={cancel}
-                        >
-                            <X size={16} />
-                        </button>
-                        <button
-                            type="button"
-                            class="text-primary hover:text-primary/80 p-1"
-                            onclick={save}
-                            disabled={saving}
-                        >
-                            <Check size={16} />
-                        </button>
-                    </div>
                 </div>
             {:else if type === "codemirror"}
                 <div class="flex-1 flex flex-col gap-2">
@@ -197,25 +177,12 @@
                         {lang}
                         {disabled}
                         {placeholder}
-                        onchange={(v) => (editValue = v)}
+                        onchange={(v) => {
+                            editValue = v;
+                            // For codemirror, commit changes as user types
+                            onchange?.(v);
+                        }}
                     />
-                    <div class="flex justify-end gap-2">
-                        <button
-                            type="button"
-                            class="text-muted-foreground hover:text-foreground p-1"
-                            onclick={cancel}
-                        >
-                            <X size={16} />
-                        </button>
-                        <button
-                            type="button"
-                            class="text-primary hover:text-primary/80 p-1"
-                            onclick={save}
-                            disabled={saving}
-                        >
-                            <Check size={16} />
-                        </button>
-                    </div>
                 </div>
             {:else}
                 <Input

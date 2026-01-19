@@ -14,28 +14,12 @@ Schema-first Postgres toolkit for Rust, powered by facet reflection.
 - Query builder (SELECT, INSERT, UPDATE, DELETE with filters)
 - Backoffice service (generic CRUD over roam)
 - Admin UI (dibs-admin) with dashboard, list/detail views, inline editing
+- Integration tests with testcontainers (rename execution, type changes, column defaults)
+- TUI with schema browser, diff visualization, ariadne error display, syntax highlighting
 
 ## Next Up
 
-### 1. Integration Tests
-
-Real Postgres tests using testcontainers. The infrastructure exists but tests aren't written.
-
-**Test categories:**
-- Introspection accuracy (all column types, constraints, indices)
-- Diff detection (all change types including renames)
-- Migration execution (correct ordering with FK dependencies)
-- End-to-end workflow (define → generate → migrate → verify)
-
-**Location:** `crates/dibs/tests/`
-
-### 2. TUI Polish
-
-- Migration SQL preview before running ('p' key)
-- Better error display with source highlighting (ariadne infrastructure exists)
-- Diff visualization
-
-### 3. Query Builder Completion
+### 1. Query Builder Completion
 
 Current: basic SELECT/INSERT/UPDATE/DELETE with filters and pagination.
 
@@ -45,7 +29,7 @@ Missing:
 - Subqueries
 - Type-safe API (in addition to dynamic)
 
-### 4. Hooks System
+### 2. Hooks System
 
 Business logic callbacks for mutations:
 

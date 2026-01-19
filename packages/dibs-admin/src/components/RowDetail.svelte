@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Trash, ArrowLeft, Check } from "phosphor-svelte";
+    import { Trash, ArrowLeft, FloppyDisk, ArrowCounterClockwise } from "phosphor-svelte";
     import type { Row, RowField, ColumnInfo, Value, TableInfo, SchemaInfo, SquelClient } from "../types.js";
     import type { DibsAdminConfig, DetailConfig, FieldGroupConfig } from "../types/config.js";
     import { Button } from "../lib/components/ui/index.js";
@@ -12,6 +12,7 @@
     import FkSelect from "./FkSelect.svelte";
     import DynamicIcon from "./DynamicIcon.svelte";
     import RelatedTables from "./RelatedTables.svelte";
+    import ConfirmChangesDialog from "./ConfirmChangesDialog.svelte";
 
     interface Props {
         columns: ColumnInfo[];
@@ -72,9 +73,32 @@
         return null;
     });
 
-    // Status for auto-save feedback
-    let lastSaved = $state<string | null>(null);
+    // Track pending changes (field name -> new string value)
+    let pendingChanges = $state<Map<string, string>>(new Map());
+
+    // Confirmation dialog state
+    let showConfirmDialog = $state(false);
+    let saving = $state(false);
     let saveError = $state<string | null>(null);
+
+    // Check if there are unsaved changes
+    let hasChanges = $derived(pendingChanges.size > 0);
+
+    // Build the list of changes for the confirmation dialog
+    let changesList = $derived.by(() => {
+        const list: { field: string; label: string; oldValue: string; newValue: string }[] = [];
+        for (const [fieldName, newValue] of pendingChanges) {
+            const col = columns.find(c => c.name === fieldName);
+            const oldValue = getOriginalFieldValue(fieldName);
+            list.push({
+                field: fieldName,
+                label: col?.doc || fieldName,
+                oldValue,
+                newValue,
+            });
+        }
+        return list;
+    });
 
     // Determine visible columns based on config
     let visibleColumns = $derived(() => {
@@ -145,9 +169,18 @@
         return { tag: "String", value: str };
     }
 
-    function getFieldValue(colName: string): string {
+    // Get the ORIGINAL field value from the row (not pending changes)
+    function getOriginalFieldValue(colName: string): string {
         const field = row.fields.find((f) => f.name === colName);
         return field ? valueToString(field.value) : "";
+    }
+
+    // Get the CURRENT field value (considering pending changes)
+    function getFieldValue(colName: string): string {
+        if (pendingChanges.has(colName)) {
+            return pendingChanges.get(colName)!;
+        }
+        return getOriginalFieldValue(colName);
     }
 
     function getControlType(
@@ -218,18 +251,52 @@
         return isFieldReadOnly(col.name, detailConfig);
     }
 
-    async function handleFieldSave(col: ColumnInfo, newStrValue: string) {
+    // Track a pending change (don't save yet)
+    function handleFieldChange(colName: string, newStrValue: string) {
+        const originalValue = getOriginalFieldValue(colName);
+        if (newStrValue === originalValue) {
+            // Value reverted to original - remove from pending changes
+            pendingChanges.delete(colName);
+            pendingChanges = new Map(pendingChanges); // trigger reactivity
+        } else {
+            pendingChanges.set(colName, newStrValue);
+            pendingChanges = new Map(pendingChanges); // trigger reactivity
+        }
         saveError = null;
+    }
+
+    // Discard all pending changes
+    function discardChanges() {
+        pendingChanges = new Map();
+        saveError = null;
+    }
+
+    // Show confirmation dialog
+    function handleSaveClick() {
+        showConfirmDialog = true;
+    }
+
+    // Actually save all pending changes
+    async function confirmSave() {
+        saving = true;
+        saveError = null;
+
         try {
-            const newValue = stringToValue(newStrValue, col.sql_type);
-            await onFieldSave?.(col.name, newValue);
-            lastSaved = col.name;
-            // Clear the "saved" indicator after a short delay
-            setTimeout(() => {
-                if (lastSaved === col.name) lastSaved = null;
-            }, 2000);
+            // Save each changed field
+            for (const [fieldName, newStrValue] of pendingChanges) {
+                const col = columns.find(c => c.name === fieldName);
+                if (col) {
+                    const newValue = stringToValue(newStrValue, col.sql_type);
+                    await onFieldSave?.(fieldName, newValue);
+                }
+            }
+            // Clear pending changes on success
+            pendingChanges = new Map();
+            showConfirmDialog = false;
         } catch (e) {
             saveError = e instanceof Error ? e.message : String(e);
+        } finally {
+            saving = false;
         }
     }
 
@@ -284,17 +351,23 @@
             </div>
         </div>
 
-        <!-- Status indicators -->
-        <div class="flex items-center gap-4">
-            {#if lastSaved}
-                <span class="text-xs text-chart-4 flex items-center gap-1">
-                    <Check size={12} weight="bold" />
-                    Saved
-                </span>
-            {/if}
+        <!-- Actions -->
+        <div class="flex items-center gap-3">
             {#if saveError}
                 <span class="text-xs text-destructive">{saveError}</span>
             {/if}
+
+            {#if hasChanges}
+                <Button variant="ghost" size="sm" onclick={discardChanges}>
+                    <ArrowCounterClockwise size={16} />
+                    Discard
+                </Button>
+                <Button variant="default" size="sm" onclick={handleSaveClick}>
+                    <FloppyDisk size={16} />
+                    Save Changes ({pendingChanges.size})
+                </Button>
+            {/if}
+
             {#if onDelete}
                 <Button variant="destructive" size="sm" onclick={handleDelete} disabled={deleting}>
                     <Trash size={16} />
@@ -316,9 +389,10 @@
                     {@const fkInfo = getFkInfo(col)}
                     {@const langIcon = getLangIcon(col.lang)}
                     {@const fieldValue = getFieldValue(col.name)}
+                    {@const isModified = pendingChanges.has(col.name)}
                     {@const tooltipContent = [col.sql_type, col.primary_key ? "primary key" : null, col.doc].filter(Boolean).join(" · ")}
 
-                    <div class="py-3 border-b border-border/50 last:border-b-0">
+                    <div class="py-3 border-b border-border/50 last:border-b-0 {isModified ? 'bg-accent/20 -mx-3 px-3 rounded-md' : ''}">
                         <div class="flex items-start gap-4">
                             <div class="w-40 shrink-0 pt-2">
                                 <div class="flex items-center gap-1.5">
@@ -327,7 +401,10 @@
                                     {:else if col.icon}
                                         <DynamicIcon name={col.icon} size={14} class="text-muted-foreground/60" />
                                     {/if}
-                                    <Label class="text-sm font-medium">{col.doc || col.name}</Label>
+                                    <Label class="text-sm font-medium {isModified ? 'text-primary' : ''}">{col.doc || col.name}</Label>
+                                    {#if isModified}
+                                        <span class="text-[10px] text-primary font-medium">modified</span>
+                                    {/if}
                                     <Tooltip.Root>
                                         <Tooltip.Trigger>
                                             {#snippet child({ props })}
@@ -353,7 +430,7 @@
                                         {client}
                                         {databaseUrl}
                                         disabled={readOnly}
-                                        onchange={(v) => handleFieldSave(col, v)}
+                                        onchange={(v) => handleFieldChange(col.name, v)}
                                     />
                                 {:else}
                                     <InlineField
@@ -363,7 +440,7 @@
                                         placeholder={col.nullable ? "null" : ""}
                                         enumOptions={col.enum_variants}
                                         lang={col.lang}
-                                        onSave={(v) => handleFieldSave(col, v)}
+                                        onchange={(v) => handleFieldChange(col.name, v)}
                                     />
                                 {/if}
                             </div>
@@ -385,11 +462,17 @@
                                     {@const readOnly = isColumnReadOnly(col)}
                                     {@const fkInfo = getFkInfo(col)}
                                     {@const fieldValue = getFieldValue(col.name)}
+                                    {@const isModified = pendingChanges.has(col.name)}
 
-                                    <div class="py-2">
+                                    <div class="py-2 {isModified ? 'bg-accent/20 -mx-3 px-3 rounded-md' : ''}">
                                         <div class="flex items-start gap-4">
                                             <div class="w-36 shrink-0 pt-2">
-                                                <Label class="text-sm font-medium">{col.doc || col.name}</Label>
+                                                <Label class="text-sm font-medium {isModified ? 'text-primary' : ''}">
+                                                    {col.doc || col.name}
+                                                    {#if isModified}
+                                                        <span class="text-[10px] text-primary font-medium ml-1">modified</span>
+                                                    {/if}
+                                                </Label>
                                             </div>
                                             <div class="flex-1 min-w-0">
                                                 {#if fkInfo && !readOnly}
@@ -399,7 +482,7 @@
                                                         {client}
                                                         {databaseUrl}
                                                         disabled={readOnly}
-                                                        onchange={(v) => handleFieldSave(col, v)}
+                                                        onchange={(v) => handleFieldChange(col.name, v)}
                                                     />
                                                 {:else}
                                                     <InlineField
@@ -409,7 +492,7 @@
                                                         placeholder={col.nullable ? "null" : ""}
                                                         enumOptions={col.enum_variants}
                                                         lang={col.lang}
-                                                        onSave={(v) => handleFieldSave(col, v)}
+                                                        onchange={(v) => handleFieldChange(col.name, v)}
                                                     />
                                                 {/if}
                                             </div>
@@ -438,3 +521,12 @@
         {/if}
     </div>
 </div>
+
+<!-- Confirmation dialog -->
+<ConfirmChangesDialog
+    bind:open={showConfirmDialog}
+    changes={changesList}
+    {saving}
+    onconfirm={confirmSave}
+    oncancel={() => (showConfirmDialog = false)}
+/>

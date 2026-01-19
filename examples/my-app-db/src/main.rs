@@ -1,23 +1,22 @@
-//! Database service binary for my-app.
+//! Database service binary for my-app (ecommerce).
 //!
 //! Usage:
 //!   my-app-db          - Run the dibs service (connects back to CLI via roam)
-//!   my-app-db seed     - Seed the database with sample data
+//!   my-app-db seed     - Seed the database with sample data (~2000 products)
 
-use my_app_db::{Category, Comment, Post, PostLike, PostTag, Tag, User, UserFollow};
+use my_app_db::{Product, ProductSource, ProductTranslation, ProductVariant, VariantPrice};
+use rust_decimal::Decimal;
+use std::str::FromStr;
 use tokio_postgres::NoTls;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Touch the types so they're not dead code eliminated
     let _ = (
-        std::any::type_name::<User>(),
-        std::any::type_name::<Post>(),
-        std::any::type_name::<Category>(),
-        std::any::type_name::<Tag>(),
-        std::any::type_name::<PostTag>(),
-        std::any::type_name::<Comment>(),
-        std::any::type_name::<PostLike>(),
-        std::any::type_name::<UserFollow>(),
+        std::any::type_name::<Product>(),
+        std::any::type_name::<ProductVariant>(),
+        std::any::type_name::<VariantPrice>(),
+        std::any::type_name::<ProductSource>(),
+        std::any::type_name::<ProductTranslation>(),
     );
 
     let args: Vec<String> = std::env::args().collect();
@@ -34,664 +33,253 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Product name components for generating realistic names
+const ADJECTIVES: &[&str] = &[
+    "Abstract", "Vintage", "Modern", "Classic", "Rustic", "Elegant", "Bold", "Serene",
+    "Vibrant", "Minimal", "Cozy", "Artistic", "Natural", "Urban", "Coastal", "Mountain",
+    "Forest", "Desert", "Tropical", "Nordic", "Japanese", "Bohemian", "Industrial",
+    "Retro", "Contemporary", "Traditional", "Luxurious", "Simple", "Geometric", "Floral",
+    "Watercolor", "Monochrome", "Colorful", "Pastel", "Earthy", "Celestial", "Mystical",
+    "Whimsical", "Dramatic", "Peaceful", "Dynamic", "Harmonious", "Textured", "Smooth",
+    "Raw", "Polished", "Handcrafted", "Artisan", "Premium", "Essential",
+];
+
+const SUBJECTS: &[&str] = &[
+    "Sunset", "Sunrise", "Mountains", "Ocean", "Forest", "City", "Garden", "Sky",
+    "Stars", "Moon", "Waves", "Trees", "Flowers", "Birds", "Landscape", "Portrait",
+    "Still Life", "Architecture", "Bridge", "Tower", "Lighthouse", "Cabin", "Cottage",
+    "Meadow", "Valley", "River", "Lake", "Waterfall", "Canyon", "Desert", "Beach",
+    "Island", "Jungle", "Savanna", "Tundra", "Aurora", "Galaxy", "Nebula", "Planet",
+    "Cosmos", "Horizon", "Silhouette", "Reflection", "Shadow", "Light", "Pattern",
+    "Texture", "Lines", "Shapes", "Colors", "Dreams", "Memory", "Journey", "Adventure",
+];
+
+const PRODUCT_TYPES: &[(&str, &[&str], (f64, f64))] = &[
+    ("Print", &["Small (8x10)", "Medium (12x16)", "Large (18x24)", "XL (24x36)"], (19.99, 89.99)),
+    ("Canvas", &["Small (16x20)", "Medium (24x30)", "Large (30x40)", "XL (40x60)"], (49.99, 199.99)),
+    ("Poster", &["Standard (18x24)", "Large (24x36)"], (14.99, 29.99)),
+    ("Framed Print", &["Small (8x10)", "Medium (12x16)", "Large (18x24)"], (39.99, 129.99)),
+    ("Metal Print", &["Small (12x12)", "Medium (16x20)", "Large (24x36)"], (59.99, 179.99)),
+    ("Acrylic", &["Small (12x12)", "Medium (16x20)", "Large (24x36)"], (69.99, 199.99)),
+    ("T-Shirt", &["S", "M", "L", "XL", "2XL"], (24.99, 29.99)),
+    ("Hoodie", &["S", "M", "L", "XL", "2XL"], (44.99, 49.99)),
+    ("Mug", &["11oz", "15oz"], (14.99, 17.99)),
+    ("Tote Bag", &["Standard"], (19.99, 19.99)),
+    ("Phone Case", &["iPhone 14", "iPhone 15", "Samsung S23", "Samsung S24"], (24.99, 29.99)),
+    ("Throw Pillow", &["16x16", "18x18", "20x20"], (29.99, 44.99)),
+    ("Blanket", &["50x60", "60x80"], (54.99, 79.99)),
+    ("Sticker", &["Small (2\")", "Medium (3\")", "Large (4\")"], (3.99, 6.99)),
+    ("Notebook", &["A5", "A4"], (12.99, 16.99)),
+];
+
+const VENDORS: &[&str] = &["printify", "gelato", "printful", "gooten"];
+
+fn generate_handle(adj: &str, subject: &str, product_type: &str, index: usize) -> String {
+    format!(
+        "{}-{}-{}-{}",
+        adj.to_lowercase().replace(' ', "-"),
+        subject.to_lowercase().replace(' ', "-"),
+        product_type.to_lowercase().replace(' ', "-"),
+        index
+    )
+}
+
+fn generate_sku(product_type: &str, product_id: i64, variant_idx: usize) -> String {
+    let prefix: String = product_type
+        .chars()
+        .filter(|c| c.is_uppercase())
+        .take(3)
+        .collect();
+    let prefix = if prefix.is_empty() {
+        product_type.chars().take(3).collect::<String>().to_uppercase()
+    } else {
+        prefix
+    };
+    format!("{}-{:05}-{:02}", prefix, product_id, variant_idx)
+}
+
+fn simple_hash(s: &str) -> u64 {
+    let mut h: u64 = 0;
+    for b in s.bytes() {
+        h = h.wrapping_mul(31).wrapping_add(b as u64);
+    }
+    h
+}
+
 async fn seed() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dotenvy::dotenv();
 
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://localhost/dibs_test".to_string());
 
-    println!("🌱 Seeding database: {}", database_url);
+    println!("Seeding database: {}", database_url);
     println!();
 
     let (client, connection) = tokio_postgres::connect(&database_url, NoTls).await?;
 
-    // Spawn connection handler
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("Connection error: {}", e);
         }
     });
 
-    // Clear existing data (in reverse FK order to respect constraints)
-    println!("🗑️  Clearing existing data...");
-    client.execute("DELETE FROM post_likes", &[]).await.ok();
-    client.execute("DELETE FROM comments", &[]).await.ok();
-    client.execute("DELETE FROM post_tags", &[]).await.ok();
-    client.execute("DELETE FROM posts", &[]).await.ok();
-    client.execute("DELETE FROM tags", &[]).await.ok();
-    client.execute("DELETE FROM categories", &[]).await.ok();
-    client.execute("DELETE FROM user_follows", &[]).await.ok();
-    client.execute("DELETE FROM users", &[]).await.ok();
+    // Clear existing data
+    println!("Clearing existing data...");
+    client.execute("DELETE FROM \"product_translation\"", &[]).await.ok();
+    client.execute("DELETE FROM \"product_source\"", &[]).await.ok();
+    client.execute("DELETE FROM \"variant_price\"", &[]).await.ok();
+    client.execute("DELETE FROM \"product_variant\"", &[]).await.ok();
+    client.execute("DELETE FROM \"product\"", &[]).await.ok();
     println!();
 
-    // ===== USERS =====
-    println!("👥 Creating users...");
-    let users = [
-        (
-            1i64,
-            "alice@example.com",
-            "Alice Chen",
-            Some("Senior software engineer. Rust enthusiast. Building cool stuff."),
-            Some("https://api.dicebear.com/7.x/avataaars/svg?seed=alice"),
-            true,
-        ),
-        (
-            2i64,
-            "bob@example.com",
-            "Bob Martinez",
-            Some("Full-stack developer. Coffee addict. Open source contributor."),
-            Some("https://api.dicebear.com/7.x/avataaars/svg?seed=bob"),
-            false,
-        ),
-        (
-            3i64,
-            "charlie@example.com",
-            "Charlie Kim",
-            Some("DevOps engineer. Kubernetes wizard. Automation fanatic."),
-            Some("https://api.dicebear.com/7.x/avataaars/svg?seed=charlie"),
-            false,
-        ),
-        (
-            4i64,
-            "diana@example.com",
-            "Diana Patel",
-            Some("Frontend specialist. React & Svelte. Design systems advocate."),
-            Some("https://api.dicebear.com/7.x/avataaars/svg?seed=diana"),
-            false,
-        ),
-        (
-            5i64,
-            "eve@example.com",
-            "Eve Thompson",
-            Some("Security researcher. Bug bounty hunter. CTF player."),
-            Some("https://api.dicebear.com/7.x/avataaars/svg?seed=eve"),
-            true,
-        ),
-        (
-            6i64,
-            "frank@example.com",
-            "Frank Wilson",
-            None::<&str>,
-            None::<&str>,
-            false,
-        ),
-        (
-            7i64,
-            "grace@example.com",
-            "Grace Lee",
-            Some("Data scientist. ML/AI explorer. Python & Rust."),
-            Some("https://api.dicebear.com/7.x/avataaars/svg?seed=grace"),
-            false,
-        ),
-        (
-            8i64,
-            "henry@example.com",
-            "Henry O'Brien",
-            Some("Backend engineer. Database nerd. Performance optimization."),
-            Some("https://api.dicebear.com/7.x/avataaars/svg?seed=henry"),
-            false,
-        ),
-    ];
+    let mut product_id: i64 = 0;
+    let mut variant_id: i64 = 0;
+    let mut price_id: i64 = 0;
+    let mut source_id: i64 = 0;
+    let mut translation_id: i64 = 0;
 
-    for (id, email, name, bio, avatar_url, is_admin) in users {
-        client
-            .execute(
-                "INSERT INTO users (id, email, name, bio, avatar_url, is_admin) VALUES ($1, $2, $3, $4, $5, $6)",
-                &[&id, &email, &name, &bio, &avatar_url, &is_admin],
-            )
-            .await?;
-        let admin_badge = if is_admin { " 👑" } else { "" };
-        println!("  {} <{}>{}", name, email, admin_badge);
+    let total_products = ADJECTIVES.len() * SUBJECTS.len(); // ~2500 products
+    println!("Generating {} products...", total_products);
+
+    let progress_interval = total_products / 20;
+
+    for (adj_idx, adj) in ADJECTIVES.iter().enumerate() {
+        for (subj_idx, subject) in SUBJECTS.iter().enumerate() {
+            product_id += 1;
+
+            // Pick a product type based on hash
+            let type_idx = (simple_hash(&format!("{}{}", adj, subject)) as usize) % PRODUCT_TYPES.len();
+            let (product_type, variants, (min_price, max_price)) = PRODUCT_TYPES[type_idx];
+
+            let handle = generate_handle(adj, subject, product_type, product_id as usize);
+            let status = if product_id % 10 == 0 { "draft" } else { "published" };
+            let active = status == "published";
+
+            // Insert product
+            client
+                .execute(
+                    r#"INSERT INTO "product" (id, handle, status, active) VALUES ($1, $2, $3, $4)"#,
+                    &[&product_id, &handle, &status, &active],
+                )
+                .await?;
+
+            // Insert variants
+            let price_step = if variants.len() > 1 {
+                (max_price - min_price) / (variants.len() - 1) as f64
+            } else {
+                0.0
+            };
+
+            for (v_idx, variant_name) in variants.iter().enumerate() {
+                variant_id += 1;
+                let sku = generate_sku(product_type, product_id, v_idx);
+                let title = format!("{} {} {} - {}", adj, subject, product_type, variant_name);
+
+                client
+                    .execute(
+                        r#"INSERT INTO "product_variant" (id, product_id, sku, title, sort_order)
+                           VALUES ($1, $2, $3, $4, $5)"#,
+                        &[&variant_id, &product_id, &sku, &title, &(v_idx as i32)],
+                    )
+                    .await?;
+
+                // Insert prices (EUR and USD)
+                let base_price = min_price + (price_step * v_idx as f64);
+                let eur_price = Decimal::from_str(&format!("{:.2}", base_price))?;
+                let usd_price = Decimal::from_str(&format!("{:.2}", base_price * 1.1))?; // USD ~10% more
+
+                for (currency, amount, region) in [("EUR", eur_price, "EU"), ("USD", usd_price, "US")] {
+                    price_id += 1;
+                    client
+                        .execute(
+                            r#"INSERT INTO "variant_price" (id, variant_id, currency_code, amount, region)
+                               VALUES ($1, $2, $3, $4, $5)"#,
+                            &[&price_id, &variant_id, &currency, &amount, &Some(region)],
+                        )
+                        .await?;
+                }
+            }
+
+            // Insert product source
+            source_id += 1;
+            let vendor = VENDORS[(simple_hash(&handle) as usize) % VENDORS.len()];
+            let external_id = format!("{}_prod_{:08x}", &vendor[..3], simple_hash(&handle));
+            client
+                .execute(
+                    r#"INSERT INTO "product_source" (id, product_id, vendor, external_id, last_synced_at)
+                       VALUES ($1, $2, $3, $4, now() - interval '1 hour' * $5)"#,
+                    &[&source_id, &product_id, &vendor, &external_id, &((product_id % 48) as f64)],
+                )
+                .await?;
+
+            // Insert translations (English always, French/German for some)
+            let title_en = format!("{} {} {}", adj, subject, product_type);
+            let desc_en = format!(
+                "Beautiful {} artwork featuring {} themes. Perfect for {} lovers. High-quality {} ready to ship.",
+                adj.to_lowercase(),
+                subject.to_lowercase(),
+                subject.to_lowercase(),
+                product_type.to_lowercase()
+            );
+
+            translation_id += 1;
+            client
+                .execute(
+                    r#"INSERT INTO "product_translation" (id, product_id, locale, title, description)
+                       VALUES ($1, $2, $3, $4, $5)"#,
+                    &[&translation_id, &product_id, &"en", &title_en, &Some(&desc_en)],
+                )
+                .await?;
+
+            // French for ~30% of products
+            if product_id % 3 == 0 {
+                translation_id += 1;
+                let title_fr = format!("{} {} {}", adj, subject, product_type); // Simplified
+                client
+                    .execute(
+                        r#"INSERT INTO "product_translation" (id, product_id, locale, title, description)
+                           VALUES ($1, $2, $3, $4, NULL)"#,
+                        &[&translation_id, &product_id, &"fr", &title_fr],
+                    )
+                    .await?;
+            }
+
+            // German for ~20% of products
+            if product_id % 5 == 0 {
+                translation_id += 1;
+                let title_de = format!("{} {} {}", adj, subject, product_type);
+                client
+                    .execute(
+                        r#"INSERT INTO "product_translation" (id, product_id, locale, title, description)
+                           VALUES ($1, $2, $3, $4, NULL)"#,
+                        &[&translation_id, &product_id, &"de", &title_de],
+                    )
+                    .await?;
+            }
+
+            // Progress indicator
+            let current = adj_idx * SUBJECTS.len() + subj_idx + 1;
+            if current % progress_interval == 0 || current == total_products {
+                let pct = (current * 100) / total_products;
+                print!("\r  Progress: {}% ({}/{})", pct, current, total_products);
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+            }
+        }
     }
     println!();
-
-    // ===== USER FOLLOWS =====
-    println!("🔗 Creating follow relationships...");
-    let follows = [
-        (2i64, 1i64), // Bob follows Alice
-        (3i64, 1i64), // Charlie follows Alice
-        (4i64, 1i64), // Diana follows Alice
-        (5i64, 1i64), // Eve follows Alice
-        (6i64, 1i64), // Frank follows Alice
-        (7i64, 1i64), // Grace follows Alice
-        (1i64, 5i64), // Alice follows Eve
-        (2i64, 5i64), // Bob follows Eve
-        (3i64, 2i64), // Charlie follows Bob
-        (4i64, 3i64), // Diana follows Charlie
-        (7i64, 8i64), // Grace follows Henry
-        (8i64, 7i64), // Henry follows Grace
-    ];
-
-    for (follower_id, following_id) in follows {
-        client
-            .execute(
-                "INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2)",
-                &[&follower_id, &following_id],
-            )
-            .await?;
-    }
-    println!("  Created {} follow relationships", follows.len());
     println!();
 
-    // ===== CATEGORIES =====
-    println!("📁 Creating categories...");
-    let categories = [
-        (
-            1i64,
-            "Programming",
-            "programming",
-            Some("All about writing code"),
-            None::<i64>,
-            1,
-        ),
-        (
-            2i64,
-            "Rust",
-            "rust",
-            Some("The Rust programming language"),
-            Some(1i64),
-            1,
-        ),
-        (
-            3i64,
-            "Web Development",
-            "web-dev",
-            Some("Frontend and backend web technologies"),
-            Some(1i64),
-            2,
-        ),
-        (
-            4i64,
-            "DevOps",
-            "devops",
-            Some("Infrastructure, CI/CD, and operations"),
-            None::<i64>,
-            2,
-        ),
-        (
-            5i64,
-            "Kubernetes",
-            "kubernetes",
-            Some("Container orchestration with K8s"),
-            Some(4i64),
-            1,
-        ),
-        (
-            6i64,
-            "Security",
-            "security",
-            Some("Application and infrastructure security"),
-            None::<i64>,
-            3,
-        ),
-        (
-            7i64,
-            "Tutorials",
-            "tutorials",
-            Some("Step-by-step guides and how-tos"),
-            None::<i64>,
-            4,
-        ),
-        (
-            8i64,
-            "Opinion",
-            "opinion",
-            Some("Thoughts and perspectives on tech"),
-            None::<i64>,
-            5,
-        ),
-    ];
-
-    for (id, name, slug, description, parent_id, sort_order) in categories {
-        client
-            .execute(
-                "INSERT INTO categories (id, name, slug, description, parent_id, sort_order) VALUES ($1, $2, $3, $4, $5, $6)",
-                &[&id, &name, &slug, &description, &parent_id, &sort_order],
-            )
-            .await?;
-        let indent = if parent_id.is_some() {
-            "    └─ "
-        } else {
-            "  "
-        };
-        println!("{}{}", indent, name);
-    }
-    println!();
-
-    // ===== TAGS =====
-    println!("🏷️  Creating tags...");
-    let tags = [
-        (1i64, "rust", "rust", Some("#DEA584")),
-        (2i64, "async", "async", Some("#4B8BBE")),
-        (3i64, "performance", "performance", Some("#E74C3C")),
-        (4i64, "tutorial", "tutorial", Some("#2ECC71")),
-        (5i64, "beginner", "beginner", Some("#9B59B6")),
-        (6i64, "advanced", "advanced", Some("#E67E22")),
-        (7i64, "web", "web", Some("#3498DB")),
-        (8i64, "database", "database", Some("#1ABC9C")),
-        (9i64, "security", "security", Some("#C0392B")),
-        (10i64, "kubernetes", "kubernetes", Some("#326CE5")),
-        (11i64, "docker", "docker", Some("#2496ED")),
-        (12i64, "testing", "testing", Some("#F39C12")),
-    ];
-
-    for (id, name, slug, color) in tags {
-        client
-            .execute(
-                "INSERT INTO tags (id, name, slug, color) VALUES ($1, $2, $3, $4)",
-                &[&id, &name, &slug, &color],
-            )
-            .await?;
-    }
-    println!("  Created {} tags", tags.len());
-    println!();
-
-    // ===== POSTS =====
-    println!("📝 Creating posts...");
-    let posts = [
-        (
-            1i64,
-            1i64,
-            Some(2i64),
-            "Getting Started with Rust",
-            "getting-started-with-rust",
-            Some("A beginner-friendly introduction to the Rust programming language."),
-            "# Getting Started with Rust\n\nRust is a systems programming language that runs blazingly fast, prevents segfaults, and guarantees thread safety.\n\n## Why Rust?\n\n- Memory safety without garbage collection\n- Concurrency without data races\n- Zero-cost abstractions\n\n## Your First Program\n\n```rust\nfn main() {\n    println!(\"Hello, world!\");\n}\n```\n\nLet's dive in!",
-            true,
-            1523,
-        ),
-        (
-            2i64,
-            1i64,
-            Some(2i64),
-            "Async Rust: A Deep Dive",
-            "async-rust-deep-dive",
-            Some("Understanding async/await, futures, and the tokio runtime."),
-            "# Async Rust: A Deep Dive\n\nAsync programming in Rust is powerful but can be confusing at first. Let's break it down.\n\n## The Basics\n\nAsync functions return a `Future` that must be awaited...",
-            true,
-            892,
-        ),
-        (
-            3i64,
-            1i64,
-            Some(2i64),
-            "Zero-Cost Abstractions in Rust",
-            "zero-cost-abstractions",
-            Some("How Rust achieves high-level ergonomics with low-level performance."),
-            "# Zero-Cost Abstractions\n\nOne of Rust's core principles is that abstractions should have no runtime cost...",
-            true,
-            654,
-        ),
-        (
-            4i64,
-            2i64,
-            Some(3i64),
-            "Building Modern Web Apps with Rust",
-            "modern-web-apps-rust",
-            Some("A guide to building full-stack web applications using Rust."),
-            "# Building Modern Web Apps with Rust\n\nRust isn't just for systems programming - it's great for web development too!\n\n## The Stack\n\n- Axum for the backend\n- SQLx for database access\n- HTMX for interactivity\n\nLet's build something awesome.",
-            true,
-            2341,
-        ),
-        (
-            5i64,
-            2i64,
-            Some(3i64),
-            "HTMX + Rust: A Perfect Match",
-            "htmx-rust-perfect-match",
-            Some("Why HTMX and Rust backends work so well together."),
-            "# HTMX + Rust: A Perfect Match\n\nForget complex JavaScript frameworks. HTMX lets you build dynamic UIs with simple HTML attributes...",
-            true,
-            1876,
-        ),
-        (
-            6i64,
-            3i64,
-            Some(5i64),
-            "Kubernetes for Developers",
-            "kubernetes-for-developers",
-            Some("A practical introduction to Kubernetes from a developer's perspective."),
-            "# Kubernetes for Developers\n\nYou don't need to be a DevOps expert to understand Kubernetes. Here's what developers need to know...",
-            true,
-            3102,
-        ),
-        (
-            7i64,
-            3i64,
-            Some(4i64),
-            "GitOps with ArgoCD",
-            "gitops-argocd",
-            Some("Implementing GitOps workflows using ArgoCD."),
-            "# GitOps with ArgoCD\n\nGitOps is a way of implementing continuous deployment for cloud native applications...",
-            true,
-            987,
-        ),
-        (
-            8i64,
-            5i64,
-            Some(6i64),
-            "Web Security Fundamentals",
-            "web-security-fundamentals",
-            Some("Essential security concepts every developer should know."),
-            "# Web Security Fundamentals\n\nSecurity isn't just for security teams. Every developer should understand these basics...\n\n## OWASP Top 10\n\n1. Injection\n2. Broken Authentication\n3. ...",
-            true,
-            4521,
-        ),
-        (
-            9i64,
-            5i64,
-            Some(6i64),
-            "Rust Memory Safety Deep Dive",
-            "rust-memory-safety",
-            Some("How Rust prevents common memory vulnerabilities."),
-            "# Rust Memory Safety Deep Dive\n\nLet's explore how Rust's ownership system prevents buffer overflows, use-after-free, and other memory bugs...",
-            true,
-            2134,
-        ),
-        (
-            10i64,
-            4i64,
-            Some(3i64),
-            "CSS Grid Mastery",
-            "css-grid-mastery",
-            Some("Everything you need to know about CSS Grid layout."),
-            "# CSS Grid Mastery\n\nCSS Grid has revolutionized web layout. Here's how to use it effectively...",
-            true,
-            1654,
-        ),
-        (
-            11i64,
-            7i64,
-            Some(8i64),
-            "The Future of AI in Development",
-            "future-ai-development",
-            Some("How AI tools are changing the way we write code."),
-            "# The Future of AI in Development\n\nAI coding assistants are here. What does this mean for developers?",
-            true,
-            5432,
-        ),
-        (
-            12i64,
-            8i64,
-            Some(8i64),
-            "PostgreSQL Performance Tips",
-            "postgresql-performance-tips",
-            Some("Optimize your PostgreSQL queries and configuration."),
-            "# PostgreSQL Performance Tips\n\nDatabase performance can make or break your application. Here are my top tips...\n\n## Indexing Strategies\n\n## Query Optimization\n\n## Configuration Tuning",
-            true,
-            2876,
-        ),
-        (
-            13i64,
-            1i64,
-            Some(2i64),
-            "Draft: Rust 2024 Edition Preview",
-            "rust-2024-edition-preview",
-            None::<&str>,
-            "# Rust 2024 Edition Preview\n\n[DRAFT - Work in progress]\n\nNotes on what's coming in the next Rust edition...",
-            false,
-            0,
-        ),
-        (
-            14i64,
-            2i64,
-            Some(7i64),
-            "Draft: WebAssembly Tutorial",
-            "wasm-tutorial-draft",
-            None::<&str>,
-            "# WebAssembly with Rust\n\n[DRAFT]\n\nOutline:\n- What is WASM?\n- Setting up\n- Building your first module",
-            false,
-            0,
-        ),
-    ];
-
-    for (id, author_id, category_id, title, slug, excerpt, body, published, view_count) in posts {
-        let view_count_i64 = view_count as i64;
-        let days_ago = (14 - id) as f64;
-        client
-            .execute(
-                "INSERT INTO posts (id, author_id, category_id, title, slug, excerpt, body, published, view_count, published_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $8 THEN now() - interval '1 day' * $10 ELSE NULL END)",
-                &[&id, &author_id, &category_id, &title, &slug, &excerpt, &body, &published, &view_count_i64, &days_ago],
-            )
-            .await?;
-        let status = if published { "✓" } else { "📝" };
-        println!("  {} \"{}\" (views: {})", status, title, view_count);
-    }
-    println!();
-
-    // ===== POST TAGS =====
-    println!("🔖 Tagging posts...");
-    let post_tags = [
-        (1i64, 1i64),
-        (1, 4),
-        (1, 5), // Post 1: rust, tutorial, beginner
-        (2i64, 1i64),
-        (2, 2),
-        (2, 6), // Post 2: rust, async, advanced
-        (3i64, 1i64),
-        (3, 3),
-        (3, 6), // Post 3: rust, performance, advanced
-        (4i64, 1i64),
-        (4, 7),
-        (4, 8), // Post 4: rust, web, database
-        (5i64, 7i64),
-        (5, 1), // Post 5: web, rust
-        (6i64, 10i64),
-        (6, 11),
-        (6, 4), // Post 6: kubernetes, docker, tutorial
-        (7i64, 10i64),
-        (7, 11), // Post 7: kubernetes, docker
-        (8i64, 9i64),
-        (8, 7),
-        (8, 4), // Post 8: security, web, tutorial
-        (9i64, 9i64),
-        (9, 1),
-        (9, 6), // Post 9: security, rust, advanced
-        (10i64, 7i64),
-        (10, 4),       // Post 10: web, tutorial
-        (11i64, 6i64), // Post 11: advanced
-        (12i64, 8i64),
-        (12, 3), // Post 12: database, performance
-    ];
-
-    for (post_id, tag_id) in post_tags {
-        client
-            .execute(
-                "INSERT INTO post_tags (post_id, tag_id) VALUES ($1, $2)",
-                &[&post_id, &tag_id],
-            )
-            .await?;
-    }
-    println!("  Created {} post-tag associations", post_tags.len());
-    println!();
-
-    // ===== COMMENTS =====
-    println!("💬 Creating comments...");
-    let comments = [
-        (
-            1i64,
-            1i64,
-            2i64,
-            None::<i64>,
-            "Great introduction! This helped me finally understand ownership.",
-        ),
-        (
-            2i64,
-            1i64,
-            4i64,
-            None::<i64>,
-            "Clear and concise. Would love to see a follow-up on lifetimes!",
-        ),
-        (
-            3i64,
-            1i64,
-            1i64,
-            Some(2i64),
-            "Thanks Diana! Lifetimes article is in the works 😊",
-        ),
-        (
-            4i64,
-            2i64,
-            3i64,
-            None::<i64>,
-            "The tokio examples were super helpful. Bookmarked!",
-        ),
-        (
-            5i64,
-            2i64,
-            7i64,
-            None::<i64>,
-            "Can you do a comparison with async-std?",
-        ),
-        (
-            6i64,
-            4i64,
-            8i64,
-            None::<i64>,
-            "This convinced me to try Rust for my next web project.",
-        ),
-        (
-            7i64,
-            4i64,
-            3i64,
-            Some(6i64),
-            "Do it! The ecosystem has matured a lot recently.",
-        ),
-        (
-            8i64,
-            6i64,
-            4i64,
-            None::<i64>,
-            "Finally a K8s tutorial that doesn't assume I'm already a DevOps expert!",
-        ),
-        (
-            9i64,
-            6i64,
-            2i64,
-            None::<i64>,
-            "The diagrams really helped visualize the concepts.",
-        ),
-        (
-            10i64,
-            8i64,
-            1i64,
-            None::<i64>,
-            "Good overview of the OWASP top 10. Security should be taught more.",
-        ),
-        (
-            11i64,
-            8i64,
-            5i64,
-            Some(10i64),
-            "Agreed. Too many devs treat security as an afterthought.",
-        ),
-        (
-            12i64,
-            11i64,
-            6i64,
-            None::<i64>,
-            "Hot take: AI will never replace the need to understand fundamentals.",
-        ),
-        (
-            13i64,
-            11i64,
-            7i64,
-            Some(12i64),
-            "True, but it's a great learning accelerator!",
-        ),
-        (
-            14i64,
-            12i64,
-            8i64,
-            None::<i64>,
-            "The index optimization tips saved us hours of debugging. Thanks!",
-        ),
-    ];
-
-    for (id, post_id, author_id, parent_id, body) in comments {
-        client
-            .execute(
-                "INSERT INTO comments (id, post_id, author_id, parent_id, body) VALUES ($1, $2, $3, $4, $5)",
-                &[&id, &post_id, &author_id, &parent_id, &body],
-            )
-            .await?;
-    }
-    println!(
-        "  Created {} comments ({} replies)",
-        comments.len(),
-        comments.iter().filter(|c| c.3.is_some()).count()
-    );
-    println!();
-
-    // ===== POST LIKES =====
-    println!("❤️  Creating likes...");
-    let likes = [
-        (2i64, 1i64),
-        (3, 1),
-        (4, 1),
-        (5, 1),
-        (6, 1),
-        (7, 1), // Post 1 popular
-        (1i64, 2i64),
-        (3, 2),
-        (7, 2), // Post 2
-        (2i64, 4i64),
-        (4, 4),
-        (6, 4),
-        (8, 4), // Post 4
-        (1i64, 6i64),
-        (2, 6),
-        (4, 6),
-        (5, 6),
-        (7, 6), // Post 6 popular
-        (1i64, 8i64),
-        (2, 8),
-        (3, 8),
-        (4, 8),
-        (6, 8),
-        (7, 8),
-        (8, 8), // Post 8 very popular
-        (3i64, 11i64),
-        (4, 11),
-        (5, 11),
-        (6, 11),
-        (7, 11),
-        (8, 11), // Post 11 AI article popular
-        (1i64, 12i64),
-        (3, 12),
-        (7, 12), // Post 12
-    ];
-
-    for (user_id, post_id) in likes {
-        client
-            .execute(
-                "INSERT INTO post_likes (user_id, post_id) VALUES ($1, $2)",
-                &[&user_id, &post_id],
-            )
-            .await?;
-    }
-    println!("  Created {} likes", likes.len());
-    println!();
-
-    // ===== SUMMARY =====
-    println!("═══════════════════════════════════════");
-    println!("🎉 Seeding complete!");
-    println!("═══════════════════════════════════════");
-    println!("  👥 {} users (2 admins)", users.len());
-    println!("  🔗 {} follow relationships", follows.len());
-    println!("  📁 {} categories", categories.len());
-    println!("  🏷️  {} tags", tags.len());
-    println!(
-        "  📝 {} posts ({} published, {} drafts)",
-        posts.len(),
-        posts.iter().filter(|p| p.7).count(),
-        posts.iter().filter(|p| !p.7).count()
-    );
-    println!("  🔖 {} post-tag associations", post_tags.len());
-    println!("  💬 {} comments", comments.len());
-    println!("  ❤️  {} likes", likes.len());
-    println!("═══════════════════════════════════════");
+    // Summary
+    println!("═══════════════════════════════════════════════════════");
+    println!("Seeding complete!");
+    println!("═══════════════════════════════════════════════════════");
+    println!("  {} products ({} published, {} draft)", product_id, product_id - product_id / 10, product_id / 10);
+    println!("  {} variants", variant_id);
+    println!("  {} prices", price_id);
+    println!("  {} vendor sources", source_id);
+    println!("  {} translations", translation_id);
+    println!("═══════════════════════════════════════════════════════");
 
     Ok(())
 }

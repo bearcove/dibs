@@ -10,13 +10,13 @@
     "codegen": "cargo run -p dibs-codegen --manifest-path ../../Cargo.toml -- --typescript --service squel --output src/lib/generated"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/vite": "^4.1.18",
     "svelte": "^5.0.0",
     "svelte-check": "^4.2.1",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^7.3.1"
   },
   "dependencies": {
     "@bearcove/dibs-admin": "link:../../packages/dibs-admin",

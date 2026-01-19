@@ -13,7 +13,9 @@ path = "src/lib.rs"
 [dependencies]
 dibs = { path = "../../crates/dibs" }
 dotenvy = "0.15"
-facet = { git = "https://github.com/facet-rs/facet", branch = "main", features = ["jiff02"] }
+facet = { git = "https://github.com/facet-rs/facet", branch = "main", features = ["jiff02", "rust_decimal"] }
 jiff = "0.2.18"
+rust_decimal = "1"
+rust_decimal_macros = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-postgres = "0.7"

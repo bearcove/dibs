@@ -23,10 +23,13 @@ fn install() {
     // Find workspace root by looking for Cargo.toml with [workspace]
     let workspace_root = find_workspace_root().expect("Could not find workspace root");
 
-    // Build release binary
+    // dibs-cli is excluded from workspace, so build it directly from its directory
+    let dibs_cli_dir = workspace_root.join("crates/dibs-cli");
+
+    println!("Building dibs-cli...");
     let status = Command::new("cargo")
-        .args(["build", "--release", "-p", "dibs-cli"])
-        .current_dir(&workspace_root)
+        .args(["build", "--release"])
+        .current_dir(&dibs_cli_dir)
         .status()
         .expect("Failed to run cargo build");
 
@@ -34,7 +37,8 @@ fn install() {
         std::process::exit(status.code().unwrap_or(1));
     }
 
-    let src = workspace_root.join("target/release/dibs");
+    // dibs-cli has its own target directory since it's excluded from workspace
+    let src = dibs_cli_dir.join("target/release/dibs");
 
     // Copy to ~/.cargo/bin
     let home = std::env::var("HOME").expect("HOME not set");
