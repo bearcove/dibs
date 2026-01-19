@@ -306,6 +306,8 @@
     async function loadFkDisplayValues(loadedRows: Row[]) {
         if (!currentTable || !schema || loadedRows.length === 0) return;
 
+        console.log(`[FK lookup] Starting for table ${currentTable.name}, FKs:`, currentTable.foreign_keys.map(fk => `${fk.columns[0]} -> ${fk.references_table}`));
+
         // Collect FK values grouped by referenced table
         const fkValuesByTable = new Map<string, Set<string>>();
 
@@ -325,6 +327,8 @@
                 }
             }
         }
+
+        console.log(`[FK lookup] Collected values:`, Object.fromEntries([...fkValuesByTable.entries()].map(([k, v]) => [k, [...v]])));
 
         // Fetch rows from each referenced table using IN filter (single query per table)
         const newLookup = new Map(fkLookup);
@@ -352,7 +356,20 @@
             // Convert to Value array for IN filter
             const inValues = uncachedPks.map(pk => parsePkValue(pk, pkCol.sql_type));
 
+            // Find the label column for this table
+            const labelCol = tableInfo.columns.find(c => c.label);
+            const displayCol = labelCol ?? tableInfo.columns.find(c =>
+                ['name', 'title', 'label', 'display_name', 'username', 'email', 'slug'].includes(c.name.toLowerCase())
+            );
+
+            // Only select PK and display columns to optimize the query
+            const selectCols = [pkCol.name];
+            if (displayCol && displayCol.name !== pkCol.name) {
+                selectCols.push(displayCol.name);
+            }
+
             // Single batch fetch using IN filter
+            const startTime = performance.now();
             fetchPromises.push(
                 client.list({
                     database_url: databaseUrl,
@@ -366,8 +383,10 @@
                     sort: [],
                     limit: inValues.length,
                     offset: null,
-                    select: [],
+                    select: selectCols,
                 }).then(result => {
+                    const elapsed = performance.now() - startTime;
+                    console.log(`[FK lookup] ${tableName}: fetched ${result.ok ? result.value.rows.length : 0} rows in ${elapsed.toFixed(0)}ms`);
                     if (result.ok) {
                         // Add each fetched row to cache
                         for (const row of result.value.rows) {
@@ -377,9 +396,11 @@
                                 tableCache.set(pkStr, row);
                             }
                         }
+                    } else {
+                        console.error(`[FK lookup] ${tableName} error:`, result.error);
                     }
-                }).catch(() => {
-                    // Ignore fetch errors for display values
+                }).catch((e) => {
+                    console.error(`[FK lookup] ${tableName} exception:`, e);
                 })
             );
         }

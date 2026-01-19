@@ -78,14 +78,16 @@
         onClick();
     }
 
-    // Compute display value: use cached row's display column if available, otherwise just the PK
+    // Compute display value: use cached row or preview row's display column if available, otherwise just the PK
     let displayValue = $derived.by(() => {
         const pkStr = formatValueForDisplay(value);
 
-        if (cachedRow) {
+        // Use cachedRow (from batch lookup) or previewRow (from hover fetch) as fallback
+        const rowData = cachedRow ?? previewRow;
+        if (rowData) {
             const displayCol = getDisplayColumn(fkTable);
             if (displayCol) {
-                const displayField = cachedRow.fields.find(f => f.name === displayCol.name);
+                const displayField = rowData.fields.find(f => f.name === displayCol.name);
                 if (displayField && displayField.value.tag !== "Null") {
                     return formatValueForDisplay(displayField.value);
                 }
