@@ -37,8 +37,19 @@ pub struct Query {
     /// Return only the first result.
     pub first: Option<bool>,
 
+    /// Order by clause.
+    pub order_by: Option<OrderBy>,
+
     /// Fields to select.
     pub select: Select,
+}
+
+/// ORDER BY clause.
+#[derive(Debug, Facet)]
+pub struct OrderBy {
+    /// Column name -> direction ("asc" or "desc", None means asc)
+    #[facet(flatten)]
+    pub columns: HashMap<String, Option<String>>,
 }
 
 /// WHERE clause - filter conditions.
@@ -76,6 +87,8 @@ pub enum ParamType {
     Uuid,
     Decimal,
     Timestamp,
+    /// Optional type: @optional(@string) -> Optional(vec![String])
+    Optional(Vec<ParamType>),
 }
 
 /// SELECT clause.
@@ -180,6 +193,35 @@ ProductByHandle @query{
     }
 
     #[test]
+    fn test_parse_query_with_optional_param() {
+        let source = r#"
+SearchProducts @query{
+    params{
+        query @string
+        limit @optional(@int)
+    }
+    from product
+    select{ id }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("SearchProducts").unwrap();
+
+        let params = q.params.as_ref().expect("should have params");
+        assert_eq!(params.params.len(), 2);
+        assert!(matches!(params.params.get("query"), Some(ParamType::String)));
+
+        // @optional(@int) should parse as Optional(vec![Int])
+        match params.params.get("limit") {
+            Some(ParamType::Optional(inner)) => {
+                assert_eq!(inner.len(), 1);
+                assert!(matches!(inner[0], ParamType::Int));
+            }
+            other => panic!("expected Optional, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_parse_query_with_where() {
         let source = r#"
 ProductByHandle @query{
@@ -213,6 +255,24 @@ SingleProduct @query{
         let Decl::Query(q) = file.decls.get("SingleProduct").unwrap();
 
         assert_eq!(q.first, Some(true));
+    }
+
+    #[test]
+    fn test_parse_query_with_order_by() {
+        let source = r#"
+ProductsSorted @query{
+    from product
+    order_by{ created_at desc, name }
+    select{ id, name }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("ProductsSorted").unwrap();
+
+        let order_by = q.order_by.as_ref().expect("should have order_by");
+        assert_eq!(order_by.columns.len(), 2);
+        assert_eq!(order_by.columns.get("created_at"), Some(&Some("desc".to_string())));
+        assert_eq!(order_by.columns.get("name"), Some(&None)); // no direction = asc
     }
 
     #[test]
