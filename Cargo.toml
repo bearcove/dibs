@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/*", "examples/*"]
-exclude = ["examples/admin-ui"]
+exclude = ["examples/admin-ui", "examples/my-app-queries"]
 resolver = "3"
 
 [workspace.dependencies]
@@ -95,3 +95,11 @@ facet-testhelpers = { path = "/Users/amos/bearcove/facet/facet-testhelpers" }
 facet-tokio-postgres = { path = "/Users/amos/bearcove/facet/facet-tokio-postgres" }
 facet-toml = { path = "/Users/amos/bearcove/facet/facet-toml" }
 facet-value = { path = "/Users/amos/bearcove/facet/facet-value" }
+
+[patch."https://github.com/bearcove/styx"]
+facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
+styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
+styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
+styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
+styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
+styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
