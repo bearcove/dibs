@@ -6,6 +6,7 @@ mod ast;
 mod codegen;
 mod parse;
 mod planner;
+pub mod schema;
 mod sql;
 
 pub use ast::*;

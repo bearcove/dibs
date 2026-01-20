@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+facet = { git = "https://github.com/facet-rs/facet", branch = "main" }
+facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx", features = ["tracing"] }
 styx-tree = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-parse = { git = "https://github.com/bearcove/styx", branch = "main" }
 thiserror = "2"
