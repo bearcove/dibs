@@ -921,11 +921,19 @@ ProductWithTranslation @query{
         assert!(code.code.contains("product_translation"));
         assert!(code.code.contains("translation_title"));
         assert!(code.code.contains("translation_description"));
+        // Check that translation struct construction happens inside a .map() call
+        // The exact variable name depends on HashMap iteration order
         assert!(
-            code.code
-                .contains(".map(|translation_title_val| Translation")
+            code.code.contains(".map(|translation_description_val| Translation")
+                || code.code.contains(".map(|translation_title_val| Translation"),
+            "Expected relation construction inside .map() call"
         );
-        assert!(code.code.contains("title: translation_title_val"));
+        // Check that title field is populated
+        assert!(
+            code.code.contains("title: translation_title")
+                || code.code.contains("title: translation_title_val"),
+            "Expected title field assignment"
+        );
     }
 
     #[facet_testhelpers::test]

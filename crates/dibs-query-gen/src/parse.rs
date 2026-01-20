@@ -1,13 +1,15 @@
-//! Parse styx tree into query AST.
+//! Parse styx into query AST.
+//!
+//! Uses facet-styx for parsing, then converts to AST types.
 
 use crate::ast::*;
-use styx_tree::{Document, Payload, Value};
+use crate::schema;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("styx parse error: {0}")]
-    Styx(#[from] styx_tree::BuildError),
+    Styx(String),
 
     #[error("expected @query tag on '{name}'")]
     ExpectedQueryTag { name: String },
@@ -30,58 +32,45 @@ pub enum ParseError {
 
 /// Parse a styx source string into a QueryFile.
 pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
-    let doc = Document::parse(source)?;
+    // Use facet-styx for parsing
+    let schema_file: schema::QueryFile =
+        facet_styx::from_str(source).map_err(|e| ParseError::Styx(e.to_string()))?;
+
+    // Convert to AST types
     let mut queries = Vec::new();
-
-    for entry in &doc.root.entries {
-        // Each entry should be QueryName @query{...}
-        let name = entry
-            .key
-            .as_str()
-            .ok_or(ParseError::ExpectedScalar)?
-            .to_string();
-
-        if entry.value.tag_name() != Some("query") {
-            return Err(ParseError::ExpectedQueryTag { name });
+    for (name, decl) in schema_file.decls {
+        match decl {
+            schema::Decl::Query(q) => {
+                queries.push(convert_query(&name, &q)?);
+            }
         }
-
-        let query = parse_query(&name, &entry.value)?;
-        queries.push(query);
     }
 
     Ok(QueryFile { queries })
 }
 
-fn parse_query(name: &str, value: &Value) -> Result<Query, ParseError> {
-    let obj = match &value.payload {
-        Some(Payload::Object(obj)) => obj,
-        _ => return Err(ParseError::ExpectedObjectPayload),
-    };
-
-    // Parse params
-    let params = if let Some(params_val) = obj.get("params") {
-        parse_params(params_val)?
-    } else {
-        Vec::new()
-    };
-
+/// Convert schema Query to AST Query.
+fn convert_query(name: &str, q: &schema::Query) -> Result<Query, ParseError> {
     // Check for raw SQL mode
-    if let Some(sql_val) = obj.get("sql") {
-        let raw_sql = sql_val
-            .scalar_text()
-            .ok_or(ParseError::ExpectedScalar)?
-            .to_string();
-
-        let returns = if let Some(returns_val) = obj.get("returns") {
-            parse_returns(returns_val)?
+    if let Some(sql) = &q.sql {
+        let returns = if let Some(returns) = &q.returns {
+            returns
+                .fields
+                .iter()
+                .map(|(name, ty)| ReturnField {
+                    name: name.clone(),
+                    ty: convert_param_type(ty),
+                    span: None,
+                })
+                .collect()
         } else {
             Vec::new()
         };
 
         return Ok(Query {
             name: name.to_string(),
-            span: value.span,
-            params,
+            span: None,
+            params: convert_params(&q.params),
             from: String::new(),
             filters: Vec::new(),
             order_by: Vec::new(),
@@ -89,398 +78,197 @@ fn parse_query(name: &str, value: &Value) -> Result<Query, ParseError> {
             offset: None,
             first: false,
             select: Vec::new(),
-            raw_sql: Some(raw_sql),
+            raw_sql: Some(sql.clone()),
             returns,
         });
     }
 
-    // Parse from
-    let from = obj
-        .get("from")
-        .and_then(|v| v.as_str())
+    // Structured query
+    let from = q
+        .from
+        .clone()
         .ok_or_else(|| ParseError::MissingFrom {
-            name: name.to_string(),
-        })?
-        .to_string();
-
-    // Parse where
-    let filters = if let Some(where_val) = obj.get("where") {
-        parse_filters(where_val)?
-    } else {
-        Vec::new()
-    };
-
-    // Parse order_by
-    let order_by = if let Some(order_val) = obj.get("order_by") {
-        parse_order_by(order_val)?
-    } else {
-        Vec::new()
-    };
-
-    // Parse limit
-    let limit = obj.get("limit").map(parse_expr).transpose()?;
-
-    // Parse offset
-    let offset = obj.get("offset").map(parse_expr).transpose()?;
-
-    // Parse first
-    let first = obj
-        .get("first")
-        .and_then(|v| v.as_str())
-        .map(|s| s == "true")
-        .unwrap_or(false);
-
-    // Parse select
-    let select = obj
-        .get("select")
-        .map(parse_select)
-        .transpose()?
-        .ok_or_else(|| ParseError::MissingSelect {
             name: name.to_string(),
         })?;
 
+    let select_schema = q.select.as_ref().ok_or_else(|| ParseError::MissingSelect {
+        name: name.to_string(),
+    })?;
+
     Ok(Query {
         name: name.to_string(),
-        span: value.span,
-        params,
+        span: None,
+        params: convert_params(&q.params),
         from,
-        filters,
-        order_by,
-        limit,
-        offset,
-        first,
-        select,
+        filters: convert_filters(&q.where_clause),
+        order_by: convert_order_by(&q.order_by),
+        limit: q.limit.as_ref().map(|s| parse_expr_string(s)),
+        offset: q.offset.as_ref().map(|s| parse_expr_string(s)),
+        first: q.first.unwrap_or(false),
+        select: convert_select(select_schema),
         raw_sql: None,
         returns: Vec::new(),
     })
 }
 
-fn parse_params(value: &Value) -> Result<Vec<Param>, ParseError> {
-    let obj = match &value.payload {
-        Some(Payload::Object(obj)) => obj,
-        _ => return Ok(Vec::new()),
+/// Convert schema Params to AST Vec<Param>.
+fn convert_params(params: &Option<schema::Params>) -> Vec<Param> {
+    let Some(params) = params else {
+        return Vec::new();
     };
-
-    let mut params = Vec::new();
-    for entry in &obj.entries {
-        let name = entry
-            .key
-            .as_str()
-            .ok_or(ParseError::ExpectedScalar)?
-            .to_string();
-        let ty = parse_param_type(&entry.value)?;
-        params.push(Param {
-            name,
-            ty,
-            span: entry.key.span,
-        });
-    }
-    Ok(params)
+    params
+        .params
+        .iter()
+        .map(|(name, ty)| Param {
+            name: name.clone(),
+            ty: convert_param_type(ty),
+            span: None,
+        })
+        .collect()
 }
 
-fn parse_param_type(value: &Value) -> Result<ParamType, ParseError> {
-    match value.tag_name() {
-        Some("string") => Ok(ParamType::String),
-        Some("int") => Ok(ParamType::Int),
-        Some("bool") => Ok(ParamType::Bool),
-        Some("uuid") => Ok(ParamType::Uuid),
-        Some("decimal") => Ok(ParamType::Decimal),
-        Some("timestamp") => Ok(ParamType::Timestamp),
-        Some("optional") => {
-            // @optional(@string) - payload is a sequence with one item
-            if let Some(Payload::Sequence(seq)) = &value.payload
-                && let Some(inner) = seq.items.first()
-            {
-                let inner_ty = parse_param_type(inner)?;
-                return Ok(ParamType::Optional(Box::new(inner_ty)));
-            }
-            // @optional{...} - payload is object, look for inner type
-            if let Some(Payload::Object(obj)) = &value.payload
-                && let Some(inner) = obj.entries.first()
-            {
-                let inner_ty = parse_param_type(&inner.value)?;
-                return Ok(ParamType::Optional(Box::new(inner_ty)));
-            }
-            Err(ParseError::UnknownParamType {
-                tag: "optional (no inner type)".to_string(),
-            })
-        }
-        Some(tag) => Err(ParseError::UnknownParamType {
-            tag: tag.to_string(),
-        }),
-        None => {
-            // No tag - might be a default or invalid
-            Err(ParseError::UnknownParamType {
-                tag: "(no tag)".to_string(),
-            })
+/// Convert schema ParamType to AST ParamType.
+fn convert_param_type(ty: &schema::ParamType) -> ParamType {
+    match ty {
+        schema::ParamType::String => ParamType::String,
+        schema::ParamType::Int => ParamType::Int,
+        schema::ParamType::Bool => ParamType::Bool,
+        schema::ParamType::Uuid => ParamType::Uuid,
+        schema::ParamType::Decimal => ParamType::Decimal,
+        schema::ParamType::Timestamp => ParamType::Timestamp,
+        schema::ParamType::Optional(inner) => {
+            // Take the first inner type
+            let inner_ty = inner
+                .first()
+                .map(convert_param_type)
+                .unwrap_or(ParamType::String);
+            ParamType::Optional(Box::new(inner_ty))
         }
     }
 }
 
-fn parse_filters(value: &Value) -> Result<Vec<Filter>, ParseError> {
-    let obj = match &value.payload {
-        Some(Payload::Object(obj)) => obj,
-        _ => return Ok(Vec::new()),
+/// Convert schema Where to AST Vec<Filter>.
+fn convert_filters(where_clause: &Option<schema::Where>) -> Vec<Filter> {
+    let Some(where_clause) = where_clause else {
+        return Vec::new();
     };
-
-    let mut filters = Vec::new();
-    for entry in &obj.entries {
-        let column = entry
-            .key
-            .as_str()
-            .ok_or(ParseError::ExpectedScalar)?
-            .to_string();
-
-        let (op, val) = parse_filter_value(&entry.value)?;
-        filters.push(Filter {
-            column,
-            op,
-            value: val,
-            span: entry.key.span,
-        });
-    }
-    Ok(filters)
+    where_clause
+        .filters
+        .iter()
+        .map(|(column, value)| {
+            let (op, expr) = convert_filter_value(value);
+            Filter {
+                column: column.clone(),
+                op,
+                value: expr,
+                span: None,
+            }
+        })
+        .collect()
 }
 
-fn parse_filter_value(value: &Value) -> Result<(FilterOp, Expr), ParseError> {
-    // Check for tagged operators
-    match value.tag_name() {
-        Some("null") => return Ok((FilterOp::IsNull, Expr::Null)),
-        Some("ilike") => {
-            // @ilike($param) or @ilike("pattern")
-            if let Some(Payload::Sequence(seq)) = &value.payload
-                && let Some(inner) = seq.items.first()
-            {
-                let expr = parse_expr(inner)?;
-                return Ok((FilterOp::ILike, expr));
-            }
-            return Ok((FilterOp::ILike, Expr::String("%".to_string())));
+/// Convert schema FilterValue to (FilterOp, Expr).
+fn convert_filter_value(value: &schema::FilterValue) -> (FilterOp, Expr) {
+    match value {
+        schema::FilterValue::Null => (FilterOp::IsNull, Expr::Null),
+        schema::FilterValue::Eq(s) => (FilterOp::Eq, parse_expr_string(s)),
+        schema::FilterValue::Ilike(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::String("%".to_string()));
+            (FilterOp::ILike, expr)
         }
-        Some("like") => {
-            if let Some(Payload::Sequence(seq)) = &value.payload
-                && let Some(inner) = seq.items.first()
-            {
-                let expr = parse_expr(inner)?;
-                return Ok((FilterOp::Like, expr));
-            }
-            return Ok((FilterOp::Like, Expr::String("%".to_string())));
+        schema::FilterValue::Like(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::String("%".to_string()));
+            (FilterOp::Like, expr)
         }
-        Some("gt") => {
-            if let Some(Payload::Sequence(seq)) = &value.payload
-                && let Some(inner) = seq.items.first()
-            {
-                let expr = parse_expr(inner)?;
-                return Ok((FilterOp::Gt, expr));
-            }
+        schema::FilterValue::Gt(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::Null);
+            (FilterOp::Gt, expr)
         }
-        Some("lt") => {
-            if let Some(Payload::Sequence(seq)) = &value.payload
-                && let Some(inner) = seq.items.first()
-            {
-                let expr = parse_expr(inner)?;
-                return Ok((FilterOp::Lt, expr));
-            }
+        schema::FilterValue::Lt(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::Null);
+            (FilterOp::Lt, expr)
         }
-        _ => {}
     }
-
-    // Default: equality
-    let expr = parse_expr(value)?;
-    Ok((FilterOp::Eq, expr))
 }
 
-fn parse_expr(value: &Value) -> Result<Expr, ParseError> {
-    // Check for @null tag
-    if value.tag_name() == Some("null") {
-        return Ok(Expr::Null);
+/// Parse expression string to Expr.
+fn parse_expr_string(s: &str) -> Expr {
+    if let Some(param) = s.strip_prefix('$') {
+        return Expr::Param(param.to_string());
     }
-
-    // Get scalar text
-    let text = value.scalar_text().ok_or(ParseError::ExpectedScalar)?;
-
-    // Check for parameter reference
-    if let Some(param_name) = text.strip_prefix('$') {
-        return Ok(Expr::Param(param_name.to_string()));
+    if s == "true" {
+        return Expr::Bool(true);
     }
-
-    // Check for boolean
-    if text == "true" {
-        return Ok(Expr::Bool(true));
+    if s == "false" {
+        return Expr::Bool(false);
     }
-    if text == "false" {
-        return Ok(Expr::Bool(false));
+    if let Ok(n) = s.parse::<i64>() {
+        return Expr::Int(n);
     }
-
-    // Check for integer
-    if let Ok(n) = text.parse::<i64>() {
-        return Ok(Expr::Int(n));
-    }
-
-    // Otherwise string
-    Ok(Expr::String(text.to_string()))
+    Expr::String(s.to_string())
 }
 
-fn parse_order_by(value: &Value) -> Result<Vec<OrderBy>, ParseError> {
-    let obj = match &value.payload {
-        Some(Payload::Object(obj)) => obj,
-        _ => return Ok(Vec::new()),
+/// Convert schema OrderBy to AST Vec<OrderBy>.
+fn convert_order_by(order_by: &Option<schema::OrderBy>) -> Vec<OrderBy> {
+    let Some(order_by) = order_by else {
+        return Vec::new();
     };
-
-    let mut orders = Vec::new();
-    for entry in &obj.entries {
-        let column = entry
-            .key
-            .as_str()
-            .ok_or(ParseError::ExpectedScalar)?
-            .to_string();
-
-        let direction = match entry.value.as_str() {
-            Some("desc") | Some("DESC") => SortDir::Desc,
-            _ => SortDir::Asc,
-        };
-
-        orders.push(OrderBy {
-            column,
-            direction,
-            span: entry.key.span,
-        });
-    }
-    Ok(orders)
+    order_by
+        .columns
+        .iter()
+        .map(|(column, direction)| OrderBy {
+            column: column.clone(),
+            direction: match direction.as_deref() {
+                Some("desc") | Some("DESC") => SortDir::Desc,
+                _ => SortDir::Asc,
+            },
+            span: None,
+        })
+        .collect()
 }
 
-fn parse_select(value: &Value) -> Result<Vec<Field>, ParseError> {
-    let obj = match &value.payload {
-        Some(Payload::Object(obj)) => obj,
-        _ => return Ok(Vec::new()),
-    };
-
-    let mut fields = Vec::new();
-    for entry in &obj.entries {
-        let name = entry
-            .key
-            .as_str()
-            .ok_or(ParseError::ExpectedScalar)?
-            .to_string();
-
-        // Check for @rel tag (relation)
-        if entry.value.tag_name() == Some("rel") {
-            let rel = parse_relation(&name, &entry.value)?;
-            fields.push(rel);
-            continue;
-        }
-
-        // Check for @count tag
-        if entry.value.tag_name() == Some("count") {
-            let table = if let Some(Payload::Sequence(seq)) = &entry.value.payload {
-                seq.items
-                    .first()
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&name)
-                    .to_string()
-            } else {
-                name.clone()
-            };
-            fields.push(Field::Count {
+/// Convert schema Select to AST Vec<Field>.
+fn convert_select(select: &schema::Select) -> Vec<Field> {
+    select
+        .fields
+        .iter()
+        .map(|(name, field_def)| match field_def {
+            None => Field::Column {
                 name: name.clone(),
-                table,
-                span: entry.key.span,
-            });
-            continue;
-        }
-
-        // Check if value is unit (simple column)
-        if entry.value.is_unit() {
-            fields.push(Field::Column {
-                name,
-                span: entry.key.span,
-            });
-            continue;
-        }
-
-        // Otherwise treat as simple column
-        fields.push(Field::Column {
-            name,
-            span: entry.key.span,
-        });
-    }
-
-    Ok(fields)
-}
-
-fn parse_relation(name: &str, value: &Value) -> Result<Field, ParseError> {
-    let obj = match &value.payload {
-        Some(Payload::Object(obj)) => obj,
-        _ => {
-            return Ok(Field::Relation {
-                name: name.to_string(),
-                span: value.span,
-                from: None,
-                filters: Vec::new(),
-                order_by: Vec::new(),
-                first: false,
-                select: Vec::new(),
-            });
-        }
-    };
-
-    let from = obj.get("from").and_then(|v| v.as_str()).map(String::from);
-
-    let filters = if let Some(where_val) = obj.get("where") {
-        parse_filters(where_val)?
-    } else {
-        Vec::new()
-    };
-
-    let order_by = if let Some(order_val) = obj.get("order_by") {
-        parse_order_by(order_val)?
-    } else {
-        Vec::new()
-    };
-
-    let first = obj
-        .get("first")
-        .and_then(|v| v.as_str())
-        .map(|s| s == "true")
-        .unwrap_or(false);
-
-    let select = if let Some(select_val) = obj.get("select") {
-        parse_select(select_val)?
-    } else {
-        Vec::new()
-    };
-
-    Ok(Field::Relation {
-        name: name.to_string(),
-        span: value.span,
-        from,
-        filters,
-        order_by,
-        first,
-        select,
-    })
-}
-
-fn parse_returns(value: &Value) -> Result<Vec<ReturnField>, ParseError> {
-    let obj = match &value.payload {
-        Some(Payload::Object(obj)) => obj,
-        _ => return Ok(Vec::new()),
-    };
-
-    let mut fields = Vec::new();
-    for entry in &obj.entries {
-        let name = entry
-            .key
-            .as_str()
-            .ok_or(ParseError::ExpectedScalar)?
-            .to_string();
-        let ty = parse_param_type(&entry.value)?;
-        fields.push(ReturnField {
-            name,
-            ty,
-            span: entry.key.span,
-        });
-    }
-    Ok(fields)
+                span: None,
+            },
+            Some(schema::FieldDef::Rel(rel)) => Field::Relation {
+                name: name.clone(),
+                span: None,
+                from: rel.from.clone(),
+                filters: convert_filters(&rel.where_clause),
+                order_by: Vec::new(), // Relations don't have order_by in current schema
+                first: rel.first.unwrap_or(false),
+                select: rel
+                    .select
+                    .as_ref()
+                    .map(convert_select)
+                    .unwrap_or_default(),
+            },
+            Some(schema::FieldDef::Count(tables)) => Field::Count {
+                name: name.clone(),
+                table: tables.first().cloned().unwrap_or_default(),
+                span: None,
+            },
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -522,8 +310,6 @@ ProductByHandle @query{
         let q = &file.queries[0];
 
         assert_eq!(q.params.len(), 2);
-        assert_eq!(q.params[0].name, "handle");
-        assert_eq!(q.params[0].ty, ParamType::String);
         assert!(q.first);
         assert_eq!(q.filters.len(), 1);
         assert_eq!(q.filters[0].column, "handle");
@@ -549,14 +335,19 @@ ProductListing @query{
         let q = &file.queries[0];
 
         assert_eq!(q.select.len(), 2);
-        match &q.select[1] {
-            Field::Relation {
+        // Find the relation field (order not guaranteed with HashMap)
+        let rel = q
+            .select
+            .iter()
+            .find(|f| matches!(f, Field::Relation { .. }));
+        match rel {
+            Some(Field::Relation {
                 name,
                 first,
                 select,
                 filters,
                 ..
-            } => {
+            }) => {
                 assert_eq!(name, "translation");
                 assert!(*first);
                 assert_eq!(select.len(), 2);

@@ -81,19 +81,18 @@ pub struct Where {
     pub filters: HashMap<String, FilterValue>,
 }
 
-/// A filter value - tagged operators for where clauses.
+/// A filter value - tagged operators or bare scalars for where clauses.
 ///
-/// All filter operators use explicit tags:
-/// - `@eq($param)` or `@eq(value)` for equality
+/// Tagged operators:
 /// - `@null` for IS NULL
 /// - `@ilike($param)` or `@ilike("pattern")` for case-insensitive LIKE
-/// - etc.
+/// - `@like`, `@gt`, `@lt` for other operators
+///
+/// Bare scalars (like `$handle`) are treated as equality filters via `#[facet(other)]`.
 #[derive(Debug, Facet)]
 #[facet(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum FilterValue {
-    /// Equality (@eq($param) or @eq(value))
-    Eq(Vec<String>),
     /// NULL check (@null)
     Null,
     /// ILIKE pattern matching (@ilike($param) or @ilike("pattern"))
@@ -104,6 +103,9 @@ pub enum FilterValue {
     Gt(Vec<String>),
     /// Less than (@lt($param) or @lt(value))
     Lt(Vec<String>),
+    /// Equality - bare scalar fallback (e.g., `$handle` or `"value"`)
+    #[facet(other)]
+    Eq(String),
 }
 
 /// Query parameters.
@@ -266,7 +268,7 @@ SearchProducts @query{
 ProductByHandle @query{
     params{ handle @string }
     from product
-    where{ handle @eq($handle) }
+    where{ handle $handle }
     select{ id, handle }
 }
 "#;
@@ -276,9 +278,8 @@ ProductByHandle @query{
         let where_clause = q.where_clause.as_ref().expect("should have where");
         assert_eq!(where_clause.filters.len(), 1);
         match where_clause.filters.get("handle") {
-            Some(FilterValue::Eq(args)) => {
-                assert_eq!(args.len(), 1);
-                assert_eq!(args[0], "$handle");
+            Some(FilterValue::Eq(s)) => {
+                assert_eq!(s, "$handle");
             }
             other => panic!("expected Eq, got {:?}", other),
         }
@@ -388,7 +389,7 @@ ProductWithTranslation @query{
     select{
         id
         translation @rel{
-            where{ locale @eq($locale) }
+            where{ locale $locale }
             first true
             select{ title, description }
         }
