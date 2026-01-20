@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dibs-query-schema = { path = "../dibs-query-schema" }
-facet = { git = "https://github.com/facet-rs/facet", branch = "main" }
-facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx", features = ["tracing"] }
-styx-tree = { git = "https://github.com/bearcove/styx", branch = "main" }
-styx-parse = { git = "https://github.com/bearcove/styx", branch = "main" }
-thiserror = "2"
-codegen = "0.2"
+dibs-query-schema.workspace = true
+facet.workspace = true
+facet-styx = { workspace = true, features = ["tracing"] }
+styx-tree.workspace = true
+styx-parse.workspace = true
+thiserror.workspace = true
+codegen.workspace = true
 
 [dev-dependencies]
-insta = "1"
-tracing = "0.1"
-facet-testhelpers = { path = "/Users/amos/bearcove/facet/facet-testhelpers" }
-dockside = { path = "../dockside" }
-dibs-runtime = { path = "../dibs-runtime" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-tokio-postgres = "0.7"
+insta.workspace = true
+tracing.workspace = true
+facet-testhelpers.workspace = true
+dockside.workspace = true
+dibs-runtime.workspace = true
+tokio.workspace = true
+tokio-postgres.workspace = true

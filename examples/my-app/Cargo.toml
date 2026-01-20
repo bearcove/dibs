@@ -9,10 +9,10 @@ path = "src/main.rs"
 
 [dependencies]
 my-app-db = { path = "../my-app-db" }
-dibs = { path = "../../crates/dibs" }
-dibs-proto = { path = "../../crates/dibs-proto" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
-tokio-tungstenite = "0.26"
-roam-stream = { git = "https://github.com/bearcove/roam", branch = "main" }
-roam-websocket = { git = "https://github.com/bearcove/roam", branch = "main" }
-dotenvy = "0.15"
+dibs.workspace = true
+dibs-proto.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+tokio-tungstenite.workspace = true
+roam-stream.workspace = true
+roam-websocket.workspace = true
+dotenvy.workspace = true

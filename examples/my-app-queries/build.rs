@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    println!("cargo::rerun-if-changed=.config/queries.styx");
+    println!("cargo::rerun-if-changed=.dibs-queries/queries.styx");
 
     // Force the linker to include my_app_db's inventory submissions
     // by referencing a type from the crate.
@@ -17,10 +17,10 @@ fn main() {
     // Collect schema from registered tables via inventory
     let (schema, planner_schema) = collect_schema();
 
-    let queries_path = Path::new(".config/queries.styx");
-    let source = fs::read_to_string(queries_path).expect("Failed to read .config/queries.styx");
+    let queries_path = Path::new(".dibs-queries/queries.styx");
+    let source = fs::read_to_string(queries_path).expect("Failed to read .dibs-queries/queries.styx");
 
-    let file = parse_query_file(&source).expect("Failed to parse .config/queries.styx");
+    let file = parse_query_file(&source).expect("Failed to parse .dibs-queries/queries.styx");
     let generated = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
 
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");

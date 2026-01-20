@@ -1,4 +1,97 @@
 [workspace]
 members = ["crates/*", "examples/*"]
-exclude = ["examples/admin-ui", "crates/dibs-cli"]
+exclude = ["examples/admin-ui"]
 resolver = "3"
+
+[workspace.dependencies]
+# Internal crates
+dibs = { path = "crates/dibs" }
+dibs-cli = { path = "crates/dibs-cli" }
+dibs-codegen = { path = "crates/dibs-codegen" }
+dibs-config = { path = "crates/dibs-config" }
+dibs-macros = { path = "crates/dibs-macros" }
+dibs-proto = { path = "crates/dibs-proto" }
+dibs-query-gen = { path = "crates/dibs-query-gen" }
+dibs-query-schema = { path = "crates/dibs-query-schema" }
+dibs-runtime = { path = "crates/dibs-runtime" }
+dockside = { path = "crates/dockside" }
+
+# facet ecosystem
+facet = { git = "https://github.com/facet-rs/facet", branch = "main" }
+facet-args = { git = "https://github.com/facet-rs/facet", branch = "main" }
+facet-tokio-postgres = { git = "https://github.com/facet-rs/facet", branch = "main" }
+facet-testhelpers = { git = "https://github.com/facet-rs/facet", branch = "main" }
+
+# styx ecosystem
+facet-styx = { git = "https://github.com/bearcove/styx", branch = "main" }
+styx-embed = { git = "https://github.com/bearcove/styx", branch = "main" }
+styx-tree = { git = "https://github.com/bearcove/styx", branch = "main" }
+styx-parse = { git = "https://github.com/bearcove/styx", branch = "main" }
+
+# roam ecosystem
+roam = { git = "https://github.com/bearcove/roam", branch = "main" }
+roam-codegen = { git = "https://github.com/bearcove/roam", branch = "main" }
+roam-stream = { git = "https://github.com/bearcove/roam", branch = "main" }
+roam-websocket = { git = "https://github.com/bearcove/roam", branch = "main" }
+
+# async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio-postgres = { version = "0.7" }
+tokio-tungstenite = "0.26"
+
+# serialization & data
+bytes = "1"
+chrono = "0.4"
+jiff = "0.2"
+rust_decimal = { version = "1", default-features = false, features = ["std"] }
+rust_decimal_macros = "1"
+uuid = "1"
+
+# error handling
+thiserror = "2"
+
+# CLI & terminal
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.29"
+dotenvy = "0.15"
+owo-colors = "4"
+ratatui = "0.30"
+
+# syntax highlighting
+arborium = { version = "2", features = ["lang-rust"] }
+arborium-highlight = "2"
+arborium-theme = "2"
+ariadne = "0.6"
+
+# proc macros
+proc-macro2 = "1"
+quote = "1"
+unsynn = { version = "0.3", features = ["proc_macro2"] }
+
+# codegen
+codegen = "0.2"
+
+# misc
+inventory = "0.3"
+
+# dev/test dependencies
+insta = "1"
+proptest = "1"
+tracing = "0.1"
+
+[patch."https://github.com/facet-rs/facet"]
+facet = { path = "/Users/amos/bearcove/facet/facet" }
+facet-args = { path = "/Users/amos/bearcove/facet/facet-args" }
+facet-core = { path = "/Users/amos/bearcove/facet/facet-core" }
+facet-dessert = { path = "/Users/amos/bearcove/facet/facet-dessert" }
+facet-error = { path = "/Users/amos/bearcove/facet/facet-error" }
+facet-format = { path = "/Users/amos/bearcove/facet/facet-format" }
+facet-path = { path = "/Users/amos/bearcove/facet/facet-path" }
+facet-postcard = { path = "/Users/amos/bearcove/facet/facet-postcard" }
+facet-pretty = { path = "/Users/amos/bearcove/facet/facet-pretty" }
+facet-reflect = { path = "/Users/amos/bearcove/facet/facet-reflect" }
+facet-solver = { path = "/Users/amos/bearcove/facet/facet-solver" }
+facet-testhelpers = { path = "/Users/amos/bearcove/facet/facet-testhelpers" }
+facet-tokio-postgres = { path = "/Users/amos/bearcove/facet/facet-tokio-postgres" }
+facet-toml = { path = "/Users/amos/bearcove/facet/facet-toml" }
+facet-value = { path = "/Users/amos/bearcove/facet/facet-value" }
