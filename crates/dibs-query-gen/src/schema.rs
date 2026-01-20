@@ -22,13 +22,16 @@ pub enum Decl {
 }
 
 /// A query definition.
+///
+/// Can be either a structured query (with `from` and `select`) or a raw SQL query
+/// (with `sql` and `returns`).
 #[derive(Debug, Facet)]
 pub struct Query {
     /// Query parameters.
     pub params: Option<Params>,
 
-    /// Source table to query from.
-    pub from: String,
+    /// Source table to query from (for structured queries).
+    pub from: Option<String>,
 
     /// Filter conditions.
     #[facet(rename = "where")]
@@ -46,8 +49,21 @@ pub struct Query {
     /// Offset clause (number or param reference like $offset).
     pub offset: Option<String>,
 
-    /// Fields to select.
-    pub select: Select,
+    /// Fields to select (for structured queries).
+    pub select: Option<Select>,
+
+    /// Raw SQL query string (for raw SQL queries).
+    pub sql: Option<String>,
+
+    /// Return type specification (for raw SQL queries).
+    pub returns: Option<Returns>,
+}
+
+/// Return type specification for raw SQL queries.
+#[derive(Debug, Facet)]
+pub struct Returns {
+    #[facet(flatten)]
+    pub fields: HashMap<String, ParamType>,
 }
 
 /// ORDER BY clause.
@@ -178,8 +194,8 @@ AllProducts @query{
 
         match decl {
             Decl::Query(q) => {
-                assert_eq!(q.from, "product");
-                assert_eq!(q.select.fields.len(), 2);
+                assert_eq!(q.from.as_deref(), Some("product"));
+                assert_eq!(q.select.as_ref().unwrap().fields.len(), 2);
             }
         }
     }
@@ -382,13 +398,14 @@ ProductWithTranslation @query{
         let file: QueryFile = parse(source);
         let Decl::Query(q) = file.decls.get("ProductWithTranslation").unwrap();
 
-        assert_eq!(q.select.fields.len(), 2);
+        let select = q.select.as_ref().expect("should have select");
+        assert_eq!(select.fields.len(), 2);
 
         // id is a simple column (None)
-        assert!(q.select.fields.get("id").unwrap().is_none());
+        assert!(select.fields.get("id").unwrap().is_none());
 
         // translation is a relation
-        let translation = q.select.fields.get("translation").unwrap().as_ref().unwrap();
+        let translation = select.fields.get("translation").unwrap().as_ref().unwrap();
         match translation {
             FieldDef::Rel(rel) => {
                 assert_eq!(rel.first, Some(true));
@@ -413,10 +430,11 @@ ProductWithVariantCount @query{
         let file: QueryFile = parse(source);
         let Decl::Query(q) = file.decls.get("ProductWithVariantCount").unwrap();
 
-        assert_eq!(q.select.fields.len(), 2);
+        let select = q.select.as_ref().expect("should have select");
+        assert_eq!(select.fields.len(), 2);
 
         // variant_count is a @count
-        let variant_count = q.select.fields.get("variant_count").unwrap().as_ref().unwrap();
+        let variant_count = select.fields.get("variant_count").unwrap().as_ref().unwrap();
         match variant_count {
             FieldDef::Count(tables) => {
                 assert_eq!(tables.len(), 1);
@@ -424,5 +442,43 @@ ProductWithVariantCount @query{
             }
             _ => panic!("expected Count"),
         }
+    }
+
+    #[test]
+    fn test_parse_raw_sql_query() {
+        let source = r#"
+TrendingProducts @query{
+    params{
+        locale @string
+        days @int
+    }
+    sql <<SQL
+        SELECT id, title FROM products
+        WHERE locale = $1 AND created_at > NOW() - INTERVAL '$2 days'
+    SQL
+    returns{
+        id @int
+        title @string
+    }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("TrendingProducts").unwrap();
+
+        // Should have params
+        let params = q.params.as_ref().expect("should have params");
+        assert_eq!(params.params.len(), 2);
+
+        // Should have sql (not from/select)
+        assert!(q.from.is_none());
+        assert!(q.select.is_none());
+        let sql = q.sql.as_ref().expect("should have sql");
+        assert!(sql.contains("SELECT id, title FROM products"));
+
+        // Should have returns
+        let returns = q.returns.as_ref().expect("should have returns");
+        assert_eq!(returns.fields.len(), 2);
+        assert!(matches!(returns.fields.get("id"), Some(ParamType::Int)));
+        assert!(matches!(returns.fields.get("title"), Some(ParamType::String)));
     }
 }
