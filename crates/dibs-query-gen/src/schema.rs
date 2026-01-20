@@ -24,11 +24,58 @@ pub enum Decl {
 /// A query definition.
 #[derive(Debug, Facet)]
 pub struct Query {
+    /// Query parameters.
+    pub params: Option<Params>,
+
     /// Source table to query from.
     pub from: String,
 
+    /// Filter conditions.
+    #[facet(rename = "where")]
+    pub where_clause: Option<Where>,
+
+    /// Return only the first result.
+    pub first: Option<bool>,
+
     /// Fields to select.
     pub select: Select,
+}
+
+/// WHERE clause - filter conditions.
+#[derive(Debug, Facet)]
+pub struct Where {
+    #[facet(flatten)]
+    pub filters: HashMap<String, FilterValue>,
+}
+
+/// A filter value - can be a simple value or a tagged operator.
+/// For now, just capture the raw string. We can expand later.
+#[derive(Debug, Facet)]
+#[facet(untagged)]
+#[repr(u8)]
+pub enum FilterValue {
+    /// Parameter reference like $handle
+    Param(String),
+}
+
+/// Query parameters.
+#[derive(Debug, Facet)]
+pub struct Params {
+    #[facet(flatten)]
+    pub params: HashMap<String, ParamType>,
+}
+
+/// Parameter type.
+#[derive(Debug, Facet)]
+#[facet(rename_all = "lowercase")]
+#[repr(u8)]
+pub enum ParamType {
+    String,
+    Int,
+    Bool,
+    Uuid,
+    Decimal,
+    Timestamp,
 }
 
 /// SELECT clause.
@@ -38,10 +85,30 @@ pub struct Select {
     pub fields: HashMap<String, Option<FieldDef>>,
 }
 
-/// A field definition - None means simple column, Some means complex (relation, etc).
+/// A field definition - tagged values in select.
 #[derive(Debug, Facet)]
-pub struct FieldDef {
-    // TODO: add relation support etc.
+#[facet(rename_all = "lowercase")]
+#[repr(u8)]
+pub enum FieldDef {
+    /// A relation field (`@rel{...}`).
+    Rel(Relation),
+}
+
+/// A relation definition (nested query on related table).
+#[derive(Debug, Facet)]
+pub struct Relation {
+    /// Optional explicit table name.
+    pub from: Option<String>,
+
+    /// Filter conditions.
+    #[facet(rename = "where")]
+    pub where_clause: Option<Where>,
+
+    /// Return only the first result.
+    pub first: Option<bool>,
+
+    /// Fields to select from the relation.
+    pub select: Option<Select>,
 }
 
 #[cfg(test)]
@@ -77,6 +144,108 @@ AllProducts @query{
             Decl::Query(q) => {
                 assert_eq!(q.from, "product");
                 assert_eq!(q.select.fields.len(), 2);
+            }
+        }
+    }
+
+    fn parse(source: &str) -> QueryFile {
+        match facet_styx::from_str(source) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("{}", e.render("<test>", source));
+                panic!("Parse failed");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_query_with_params() {
+        let source = r#"
+ProductByHandle @query{
+    params{
+        handle @string
+        limit @int
+    }
+    from product
+    select{ id, handle }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("ProductByHandle").unwrap();
+
+        let params = q.params.as_ref().expect("should have params");
+        assert_eq!(params.params.len(), 2);
+        assert!(matches!(params.params.get("handle"), Some(ParamType::String)));
+        assert!(matches!(params.params.get("limit"), Some(ParamType::Int)));
+    }
+
+    #[test]
+    fn test_parse_query_with_where() {
+        let source = r#"
+ProductByHandle @query{
+    params{ handle @string }
+    from product
+    where{ handle $handle }
+    select{ id, handle }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("ProductByHandle").unwrap();
+
+        let where_clause = q.where_clause.as_ref().expect("should have where");
+        assert_eq!(where_clause.filters.len(), 1);
+        assert!(matches!(
+            where_clause.filters.get("handle"),
+            Some(FilterValue::Param(p)) if p == "$handle"
+        ));
+    }
+
+    #[test]
+    fn test_parse_query_with_first() {
+        let source = r#"
+SingleProduct @query{
+    from product
+    first true
+    select{ id }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("SingleProduct").unwrap();
+
+        assert_eq!(q.first, Some(true));
+    }
+
+    #[test]
+    fn test_parse_query_with_relation() {
+        let source = r#"
+ProductWithTranslation @query{
+    params{ locale @string }
+    from product
+    select{
+        id
+        translation @rel{
+            where{ locale $locale }
+            first true
+            select{ title, description }
+        }
+    }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("ProductWithTranslation").unwrap();
+
+        assert_eq!(q.select.fields.len(), 2);
+
+        // id is a simple column (None)
+        assert!(q.select.fields.get("id").unwrap().is_none());
+
+        // translation is a relation
+        let translation = q.select.fields.get("translation").unwrap().as_ref().unwrap();
+        match translation {
+            FieldDef::Rel(rel) => {
+                assert_eq!(rel.first, Some(true));
+                let select = rel.select.as_ref().unwrap();
+                assert_eq!(select.fields.len(), 2);
             }
         }
     }
