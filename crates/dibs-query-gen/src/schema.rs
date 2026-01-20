@@ -111,6 +111,8 @@ pub struct Select {
 pub enum FieldDef {
     /// A relation field (`@rel{...}`).
     Rel(Relation),
+    /// A count aggregation (`@count(table_name)`).
+    Count(Vec<String>),
 }
 
 /// A relation definition (nested query on related table).
@@ -331,6 +333,34 @@ ProductWithTranslation @query{
                 let select = rel.select.as_ref().unwrap();
                 assert_eq!(select.fields.len(), 2);
             }
+            _ => panic!("expected Rel"),
+        }
+    }
+
+    #[test]
+    fn test_parse_query_with_count() {
+        let source = r#"
+ProductWithVariantCount @query{
+    from product
+    select{
+        id
+        variant_count @count(product_variant)
+    }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("ProductWithVariantCount").unwrap();
+
+        assert_eq!(q.select.fields.len(), 2);
+
+        // variant_count is a @count
+        let variant_count = q.select.fields.get("variant_count").unwrap().as_ref().unwrap();
+        match variant_count {
+            FieldDef::Count(tables) => {
+                assert_eq!(tables.len(), 1);
+                assert_eq!(tables[0], "product_variant");
+            }
+            _ => panic!("expected Count"),
         }
     }
 }
