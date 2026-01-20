@@ -65,14 +65,29 @@ pub struct Where {
     pub filters: HashMap<String, FilterValue>,
 }
 
-/// A filter value - can be a simple value or a tagged operator.
-/// For now, just capture the raw string. We can expand later.
+/// A filter value - tagged operators for where clauses.
+///
+/// All filter operators use explicit tags:
+/// - `@eq($param)` or `@eq(value)` for equality
+/// - `@null` for IS NULL
+/// - `@ilike($param)` or `@ilike("pattern")` for case-insensitive LIKE
+/// - etc.
 #[derive(Debug, Facet)]
-#[facet(untagged)]
+#[facet(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum FilterValue {
-    /// Parameter reference like $handle
-    Param(String),
+    /// Equality (@eq($param) or @eq(value))
+    Eq(Vec<String>),
+    /// NULL check (@null)
+    Null,
+    /// ILIKE pattern matching (@ilike($param) or @ilike("pattern"))
+    Ilike(Vec<String>),
+    /// LIKE pattern matching (@like($param) or @like("pattern"))
+    Like(Vec<String>),
+    /// Greater than (@gt($param) or @gt(value))
+    Gt(Vec<String>),
+    /// Less than (@lt($param) or @lt(value))
+    Lt(Vec<String>),
 }
 
 /// Query parameters.
@@ -235,7 +250,7 @@ SearchProducts @query{
 ProductByHandle @query{
     params{ handle @string }
     from product
-    where{ handle $handle }
+    where{ handle @eq($handle) }
     select{ id, handle }
 }
 "#;
@@ -244,10 +259,57 @@ ProductByHandle @query{
 
         let where_clause = q.where_clause.as_ref().expect("should have where");
         assert_eq!(where_clause.filters.len(), 1);
+        match where_clause.filters.get("handle") {
+            Some(FilterValue::Eq(args)) => {
+                assert_eq!(args.len(), 1);
+                assert_eq!(args[0], "$handle");
+            }
+            other => panic!("expected Eq, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_query_with_null_filter() {
+        let source = r#"
+ActiveProducts @query{
+    from product
+    where{ deleted_at @null }
+    select{ id }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("ActiveProducts").unwrap();
+
+        let where_clause = q.where_clause.as_ref().expect("should have where");
+        assert_eq!(where_clause.filters.len(), 1);
         assert!(matches!(
-            where_clause.filters.get("handle"),
-            Some(FilterValue::Param(p)) if p == "$handle"
+            where_clause.filters.get("deleted_at"),
+            Some(FilterValue::Null)
         ));
+    }
+
+    #[test]
+    fn test_parse_query_with_ilike_filter() {
+        let source = r#"
+SearchProducts @query{
+    params{ q @string }
+    from product
+    where{ name @ilike($q) }
+    select{ id, name }
+}
+"#;
+        let file: QueryFile = parse(source);
+        let Decl::Query(q) = file.decls.get("SearchProducts").unwrap();
+
+        let where_clause = q.where_clause.as_ref().expect("should have where");
+        assert_eq!(where_clause.filters.len(), 1);
+        match where_clause.filters.get("name") {
+            Some(FilterValue::Ilike(args)) => {
+                assert_eq!(args.len(), 1);
+                assert_eq!(args[0], "$q");
+            }
+            other => panic!("expected Ilike, got {:?}", other),
+        }
     }
 
     #[test]
@@ -310,7 +372,7 @@ ProductWithTranslation @query{
     select{
         id
         translation @rel{
-            where{ locale $locale }
+            where{ locale @eq($locale) }
             first true
             select{ title, description }
         }
