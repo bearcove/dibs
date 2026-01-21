@@ -6,7 +6,7 @@
 //! - Column aliasing to avoid collisions
 //! - Result assembly mapping
 
-use crate::ast::{Expr, Field, Filter, FilterOp, Query};
+use crate::ast::{Expr, Field, Filter, FilterOp, OrderBy, Query, SortDir};
 use std::collections::HashMap;
 
 /// Schema information needed for query planning.
@@ -65,6 +65,12 @@ pub struct JoinClause {
     pub on_condition: (String, String),
     /// Additional filters for this JOIN (from relation's where clause)
     pub filters: Vec<Filter>,
+    /// ORDER BY for this relation
+    pub order_by: Vec<OrderBy>,
+    /// Whether this is a first:true relation (affects LATERAL generation)
+    pub first: bool,
+    /// Columns selected from this join (needed for LATERAL subquery)
+    pub select_columns: Vec<String>,
 }
 
 /// JOIN type.
@@ -190,6 +196,7 @@ impl<'a> QueryPlanner<'a> {
                     first,
                     select,
                     filters,
+                    order_by,
                     ..
                 } => {
                     // Resolve the relation
@@ -204,12 +211,24 @@ impl<'a> QueryPlanner<'a> {
                     let relation_alias = fk_resolution.join_clause.alias.clone();
                     alias_counter += 1;
 
+                    // Collect column names for the join
+                    let join_select_columns: Vec<String> = select
+                        .iter()
+                        .filter_map(|f| match f {
+                            Field::Column { name, .. } => Some(name.clone()),
+                            _ => None,
+                        })
+                        .collect();
+
                     // Use LEFT JOIN for both Option<T> and Vec<T> to preserve parent rows
                     let join_type = JoinType::Left;
 
                     joins.push(JoinClause {
                         join_type,
                         filters: filters.clone(),
+                        order_by: order_by.clone(),
+                        first: *first,
+                        select_columns: join_select_columns,
                         ..fk_resolution.join_clause
                     });
 
@@ -320,6 +339,9 @@ impl<'a> QueryPlanner<'a> {
                             format!("{}.{}", alias, fk.columns[0]),
                         ),
                         filters: vec![],
+                        order_by: vec![],
+                        first: false,
+                        select_columns: vec![],
                     },
                     direction: FkDirection::Reverse,
                     parent_key_column,
@@ -353,6 +375,9 @@ impl<'a> QueryPlanner<'a> {
                             format!("{}.{}", alias, fk.references_columns[0]),
                         ),
                         filters: vec![],
+                        order_by: vec![],
+                        first: false,
+                        select_columns: vec![],
                     },
                     direction: FkDirection::Forward,
                     parent_key_column,
@@ -433,23 +458,124 @@ impl QueryPlan {
         let mut sql = format!("\"{}\" AS \"{}\"", self.from_table, self.from_alias);
 
         for join in &self.joins {
-            let join_type = match join.join_type {
-                JoinType::Left => "LEFT JOIN",
-                JoinType::Inner => "INNER JOIN",
-            };
-            sql.push_str(&format!(
-                " {} \"{}\" AS \"{}\" ON {} = {}",
-                join_type, join.table, join.alias, join.on_condition.0, join.on_condition.1
-            ));
+            // Use LATERAL for first:true relations with order_by
+            if join.first && !join.order_by.is_empty() {
+                sql.push_str(&self.format_lateral_join(join, param_order, param_idx));
+            } else {
+                // Regular JOIN
+                let join_type = match join.join_type {
+                    JoinType::Left => "LEFT JOIN",
+                    JoinType::Inner => "INNER JOIN",
+                };
+                sql.push_str(&format!(
+                    " {} \"{}\" AS \"{}\" ON {} = {}",
+                    join_type, join.table, join.alias, join.on_condition.0, join.on_condition.1
+                ));
 
-            // Add relation filters to ON clause
-            for filter in &join.filters {
-                let filter_sql = format_join_filter(filter, &join.alias, param_order, param_idx);
-                sql.push_str(&format!(" AND {}", filter_sql));
+                // Add relation filters to ON clause
+                for filter in &join.filters {
+                    let filter_sql =
+                        format_join_filter(filter, &join.alias, param_order, param_idx);
+                    sql.push_str(&format!(" AND {}", filter_sql));
+                }
             }
         }
 
         sql
+    }
+
+    /// Generate a LATERAL join for first:true relations with ORDER BY.
+    fn format_lateral_join(
+        &self,
+        join: &JoinClause,
+        param_order: &mut Vec<String>,
+        param_idx: &mut usize,
+    ) -> String {
+        // Build SELECT columns for the subquery
+        let select_cols: Vec<String> = join
+            .select_columns
+            .iter()
+            .map(|c| format!("\"{}\"", c))
+            .collect();
+        let select_clause = if select_cols.is_empty() {
+            "*".to_string()
+        } else {
+            select_cols.join(", ")
+        };
+
+        // Build WHERE clause: FK condition + filters
+        // on_condition is (parent_col, child_col) like ("t0.id", "t1.product_id")
+        // For LATERAL, we reference parent directly and use child column without alias
+        let fk_col = join
+            .on_condition
+            .1
+            .split('.')
+            .last()
+            .unwrap_or(&join.on_condition.1);
+        let mut where_parts = vec![format!("\"{}\" = {}", fk_col, join.on_condition.0)];
+
+        // Add filters
+        for filter in &join.filters {
+            // In LATERAL subquery, we don't use table alias for columns
+            let filter_sql = format_lateral_filter(filter, param_order, param_idx);
+            where_parts.push(filter_sql);
+        }
+
+        // Build ORDER BY
+        let order_by_parts: Vec<String> = join
+            .order_by
+            .iter()
+            .map(|o| {
+                let dir = match o.direction {
+                    SortDir::Asc => "ASC",
+                    SortDir::Desc => "DESC",
+                };
+                format!("\"{}\" {}", o.column, dir)
+            })
+            .collect();
+        let order_by_clause = order_by_parts.join(", ");
+
+        format!(
+            " LEFT JOIN LATERAL (SELECT {} FROM \"{}\" WHERE {} ORDER BY {} LIMIT 1) AS \"{}\" ON true",
+            select_clause,
+            join.table,
+            where_parts.join(" AND "),
+            order_by_clause,
+            join.alias
+        )
+    }
+}
+
+/// Format a filter for a LATERAL subquery (no table alias).
+fn format_lateral_filter(
+    filter: &Filter,
+    param_order: &mut Vec<String>,
+    param_idx: &mut usize,
+) -> String {
+    let col = format!("\"{}\"", filter.column);
+
+    match (&filter.op, &filter.value) {
+        (FilterOp::IsNull, _) | (FilterOp::Eq, Expr::Null) => format!("{} IS NULL", col),
+        (FilterOp::IsNotNull, _) => format!("{} IS NOT NULL", col),
+        (FilterOp::Eq, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} = ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::Eq, Expr::String(s)) => {
+            let escaped = s.replace('\'', "''");
+            format!("{} = '{}'", col, escaped)
+        }
+        (FilterOp::Eq, Expr::Int(n)) => format!("{} = {}", col, n),
+        (FilterOp::Eq, Expr::Bool(b)) => format!("{} = {}", col, b),
+        (FilterOp::ILike, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} ILIKE ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        _ => format!("{} = TRUE", col), // fallback
     }
 }
 

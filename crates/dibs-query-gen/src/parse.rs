@@ -274,7 +274,7 @@ fn convert_select(select: &schema::Select) -> Vec<Field> {
                 span: None,
                 from: rel.from.clone(),
                 filters: convert_filters(&rel.where_clause),
-                order_by: Vec::new(), // Relations don't have order_by in current schema
+                order_by: convert_order_by(&rel.order_by),
                 first: rel.first.unwrap_or(false),
                 select: rel.select.as_ref().map(convert_select).unwrap_or_default(),
             },

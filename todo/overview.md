@@ -4,7 +4,7 @@
 
 | # | Title | Notes |
 |---|-------|-------|
-| 001 | Relation-level ORDER BY | Parsed but ignored |
+| ~~001~~ | ~~Relation-level ORDER BY~~ | ✓ Done (uses LATERAL for first:true) |
 | 002 | Nested relations | Relation within relation |
 
 ## Medium Priority
@@ -35,6 +35,7 @@
 - Vec relation grouping (`first: false` → `Vec<T>`)
 - COUNT aggregates via `@count(table)`
 - **Relation-level WHERE clauses** ✓
+- **Relation-level ORDER BY** ✓ (uses LATERAL for `first: true`)
 - Filter operators: `@null`, `@ilike`, `@like`, `@gt`, `@lt`, bare equality
 - Raw SQL escape hatch: `sql <<SQL ... SQL`
 - LSP: completions, hover, diagnostics, inlay hints

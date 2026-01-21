@@ -1041,4 +1041,153 @@ DeleteUser @delete{
         assert!(sql.sql.contains("RETURNING \"id\""));
         assert_eq!(sql.param_order, vec!["id"]);
     }
+
+    #[test]
+    fn test_relation_order_by_lateral() {
+        use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+
+        let source = r#"
+ProductWithLatestTranslation @query{
+  from product
+  select{
+    id
+    translation @rel{
+      from product_translation
+      order_by{ updated_at desc }
+      first true
+      select{ title, description }
+    }
+  }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+
+        let mut schema = PlannerSchema::default();
+        schema.tables.insert(
+            "product".to_string(),
+            PlannerTable {
+                name: "product".to_string(),
+                columns: vec!["id".to_string()],
+                foreign_keys: vec![],
+            },
+        );
+        schema.tables.insert(
+            "product_translation".to_string(),
+            PlannerTable {
+                name: "product_translation".to_string(),
+                columns: vec![
+                    "id".to_string(),
+                    "product_id".to_string(),
+                    "title".to_string(),
+                    "description".to_string(),
+                    "updated_at".to_string(),
+                ],
+                foreign_keys: vec![PlannerForeignKey {
+                    columns: vec!["product_id".to_string()],
+                    references_table: "product".to_string(),
+                    references_columns: vec!["id".to_string()],
+                }],
+            },
+        );
+
+        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+
+        // Should use LATERAL join for first:true with order_by
+        assert!(
+            sql.sql.contains("LEFT JOIN LATERAL"),
+            "Expected LATERAL join, got: {}",
+            sql.sql
+        );
+
+        // Should have ORDER BY in the subquery
+        assert!(
+            sql.sql.contains("ORDER BY \"updated_at\" DESC"),
+            "Expected ORDER BY in LATERAL subquery, got: {}",
+            sql.sql
+        );
+
+        // Should have LIMIT 1
+        assert!(
+            sql.sql.contains("LIMIT 1"),
+            "Expected LIMIT 1 in LATERAL subquery, got: {}",
+            sql.sql
+        );
+
+        // Should join ON true (LATERAL handles the correlation)
+        assert!(
+            sql.sql.contains("ON true"),
+            "Expected ON true for LATERAL join, got: {}",
+            sql.sql
+        );
+    }
+
+    #[test]
+    fn test_relation_order_by_with_filter() {
+        use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+
+        let source = r#"
+ProductWithLatestEnglishTranslation @query{
+  params{ locale @string }
+  from product
+  select{
+    id
+    translation @rel{
+      from product_translation
+      where{ locale $locale }
+      order_by{ updated_at desc }
+      first true
+      select{ title }
+    }
+  }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+
+        let mut schema = PlannerSchema::default();
+        schema.tables.insert(
+            "product".to_string(),
+            PlannerTable {
+                name: "product".to_string(),
+                columns: vec!["id".to_string()],
+                foreign_keys: vec![],
+            },
+        );
+        schema.tables.insert(
+            "product_translation".to_string(),
+            PlannerTable {
+                name: "product_translation".to_string(),
+                columns: vec![
+                    "id".to_string(),
+                    "product_id".to_string(),
+                    "locale".to_string(),
+                    "title".to_string(),
+                    "updated_at".to_string(),
+                ],
+                foreign_keys: vec![PlannerForeignKey {
+                    columns: vec!["product_id".to_string()],
+                    references_table: "product".to_string(),
+                    references_columns: vec!["id".to_string()],
+                }],
+            },
+        );
+
+        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+
+        // Should use LATERAL
+        assert!(
+            sql.sql.contains("LEFT JOIN LATERAL"),
+            "Expected LATERAL join, got: {}",
+            sql.sql
+        );
+
+        // Should have locale filter in the subquery with $1
+        assert!(
+            sql.sql.contains("\"locale\" = $1"),
+            "Expected locale filter in LATERAL subquery, got: {}",
+            sql.sql
+        );
+
+        // Param should be tracked
+        assert_eq!(sql.param_order, vec!["locale"]);
+    }
 }
