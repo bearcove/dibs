@@ -126,6 +126,10 @@ pub struct RelationMapping {
     pub columns: HashMap<String, String>,
     /// Parent's primary key column name (used for grouping Vec relations)
     pub parent_key_column: Option<String>,
+    /// Table alias for this relation (e.g., "t1", "t2")
+    pub table_alias: String,
+    /// Nested relations within this relation
+    pub nested_relations: HashMap<String, RelationMapping>,
 }
 
 /// Error type for query planning.
@@ -176,19 +180,65 @@ impl<'a> QueryPlanner<'a> {
         let mut result_mapping = ResultMapping::default();
         let mut alias_counter = 1;
 
-        // Add columns from the base table
-        for field in &query.select {
+        // Process top-level fields (columns and relations)
+        self.process_fields(
+            &query.select,
+            from_table,
+            &from_alias,
+            &[], // empty path for top-level
+            &mut joins,
+            &mut select_columns,
+            &mut count_subqueries,
+            &mut result_mapping.columns,
+            &mut result_mapping.relations,
+            &mut alias_counter,
+        )?;
+
+        Ok(QueryPlan {
+            from_table: from_table.clone(),
+            from_alias,
+            joins,
+            select_columns,
+            count_subqueries,
+            result_mapping,
+        })
+    }
+
+    /// Process fields recursively, handling nested relations.
+    #[allow(clippy::too_many_arguments)]
+    fn process_fields(
+        &self,
+        fields: &[Field],
+        parent_table: &str,
+        parent_alias: &str,
+        path: &[String], // path to this relation (e.g., ["variants", "prices"])
+        joins: &mut Vec<JoinClause>,
+        select_columns: &mut Vec<SelectColumn>,
+        count_subqueries: &mut Vec<CountSubquery>,
+        column_mappings: &mut HashMap<String, Vec<String>>,
+        relation_mappings: &mut HashMap<String, RelationMapping>,
+        alias_counter: &mut usize,
+    ) -> Result<(), PlanError> {
+        for field in fields {
             match field {
                 Field::Column { name, .. } => {
-                    let result_alias = name.clone();
+                    // Build result alias: for nested relations, prefix with path
+                    let result_alias = if path.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{}_{}", path.join("_"), name)
+                    };
+
                     select_columns.push(SelectColumn {
-                        table_alias: from_alias.clone(),
+                        table_alias: parent_alias.to_string(),
                         column: name.clone(),
                         result_alias: result_alias.clone(),
                     });
-                    result_mapping
-                        .columns
-                        .insert(result_alias, vec![name.clone()]);
+
+                    // Build full path for column mapping
+                    let mut full_path = path.to_vec();
+                    full_path.push(name.clone());
+                    column_mappings.insert(result_alias, full_path);
                 }
                 Field::Relation {
                     name,
@@ -207,11 +257,11 @@ impl<'a> QueryPlanner<'a> {
 
                     // Find FK relationship
                     let fk_resolution =
-                        self.resolve_fk(from_table, relation_table, alias_counter)?;
+                        self.resolve_fk(parent_table, relation_table, *alias_counter)?;
                     let relation_alias = fk_resolution.join_clause.alias.clone();
-                    alias_counter += 1;
+                    *alias_counter += 1;
 
-                    // Collect column names for the join
+                    // Collect column names for the join (only direct columns, not nested relations)
                     let join_select_columns: Vec<String> = select
                         .iter()
                         .filter_map(|f| match f {
@@ -220,32 +270,63 @@ impl<'a> QueryPlanner<'a> {
                         })
                         .collect();
 
-                    // Use LEFT JOIN for both Option<T> and Vec<T> to preserve parent rows
-                    let join_type = JoinType::Left;
+                    // Build join with proper ON condition referencing parent alias
+                    let mut join = fk_resolution.join_clause.clone();
+                    // Fix the ON condition to use actual parent alias instead of t0
+                    join.on_condition.0 = format!(
+                        "{}.{}",
+                        parent_alias,
+                        join.on_condition.0.split('.').last().unwrap_or("id")
+                    );
+                    join.filters = filters.clone();
+                    join.order_by = order_by.clone();
+                    join.first = *first;
+                    join.select_columns = join_select_columns;
 
-                    joins.push(JoinClause {
-                        join_type,
-                        filters: filters.clone(),
-                        order_by: order_by.clone(),
-                        first: *first,
-                        select_columns: join_select_columns,
-                        ..fk_resolution.join_clause
-                    });
+                    joins.push(join);
 
-                    // Add columns from the relation
+                    // Build path for nested fields
+                    let mut nested_path = path.to_vec();
+                    nested_path.push(name.clone());
+
+                    // Process nested columns and relations
                     let mut relation_columns = HashMap::new();
+                    let mut nested_relations = HashMap::new();
+
                     for rel_field in select {
-                        if let Field::Column { name: col_name, .. } = rel_field {
-                            let result_alias = format!("{}_{}", name, col_name);
-                            select_columns.push(SelectColumn {
-                                table_alias: relation_alias.clone(),
-                                column: col_name.clone(),
-                                result_alias: result_alias.clone(),
-                            });
-                            relation_columns.insert(col_name.clone(), result_alias.clone());
-                            result_mapping
-                                .columns
-                                .insert(result_alias, vec![name.clone(), col_name.clone()]);
+                        match rel_field {
+                            Field::Column { name: col_name, .. } => {
+                                let result_alias =
+                                    format!("{}_{}", nested_path.join("_"), col_name);
+                                select_columns.push(SelectColumn {
+                                    table_alias: relation_alias.clone(),
+                                    column: col_name.clone(),
+                                    result_alias: result_alias.clone(),
+                                });
+                                relation_columns.insert(col_name.clone(), result_alias.clone());
+
+                                let mut full_path = nested_path.clone();
+                                full_path.push(col_name.clone());
+                                column_mappings.insert(result_alias, full_path);
+                            }
+                            Field::Relation { .. } => {
+                                // Recursively process nested relation
+                                self.process_fields(
+                                    &[rel_field.clone()],
+                                    relation_table,
+                                    &relation_alias,
+                                    &nested_path,
+                                    joins,
+                                    select_columns,
+                                    count_subqueries,
+                                    column_mappings,
+                                    &mut nested_relations,
+                                    alias_counter,
+                                )?;
+                            }
+                            Field::Count { .. } => {
+                                // COUNT in nested relations - could add support later
+                            }
                         }
                     }
 
@@ -256,21 +337,22 @@ impl<'a> QueryPlanner<'a> {
                         Some(fk_resolution.parent_key_column)
                     };
 
-                    result_mapping.relations.insert(
+                    relation_mappings.insert(
                         name.clone(),
                         RelationMapping {
                             name: name.clone(),
                             first: *first,
                             columns: relation_columns,
                             parent_key_column,
+                            table_alias: relation_alias,
+                            nested_relations,
                         },
                     );
                 }
                 Field::Count { name, table, .. } => {
-                    // Resolve FK from count_table to base table
-                    if let Ok(fk_resolution) = self.resolve_fk(from_table, table, alias_counter) {
-                        // Extract the FK column from the join condition
-                        // The on_condition is (parent_col, child_col) e.g. ("t0.id", "t1.product_id")
+                    // Resolve FK from count_table to parent table
+                    if let Ok(fk_resolution) = self.resolve_fk(parent_table, table, *alias_counter)
+                    {
                         let fk_column = fk_resolution
                             .join_clause
                             .on_condition
@@ -284,26 +366,17 @@ impl<'a> QueryPlanner<'a> {
                             result_alias: name.clone(),
                             count_table: table.clone(),
                             fk_column,
-                            parent_alias: from_alias.clone(),
+                            parent_alias: parent_alias.to_string(),
                             parent_key: fk_resolution.parent_key_column,
                         });
 
-                        result_mapping
-                            .columns
-                            .insert(name.clone(), vec![name.clone()]);
+                        column_mappings.insert(name.clone(), vec![name.clone()]);
                     }
                 }
             }
         }
 
-        Ok(QueryPlan {
-            from_table: from_table.clone(),
-            from_alias,
-            joins,
-            select_columns,
-            count_subqueries,
-            result_mapping,
-        })
+        Ok(())
     }
 
     /// Resolve FK relationship between two tables.
@@ -811,5 +884,135 @@ mod tests {
         let from = plan.from_sql();
         assert!(from.contains("LEFT JOIN \"product_translation\""));
         assert!(from.contains("ON t0.id = t1.product_id"));
+    }
+
+    #[test]
+    fn test_plan_with_nested_relations() {
+        let mut schema = test_schema();
+
+        // Add variant_price table with FK to product_variant
+        schema.tables.insert(
+            "variant_price".to_string(),
+            PlannerTable {
+                name: "variant_price".to_string(),
+                columns: vec![
+                    "id".to_string(),
+                    "variant_id".to_string(),
+                    "currency_code".to_string(),
+                    "amount".to_string(),
+                ],
+                foreign_keys: vec![PlannerForeignKey {
+                    columns: vec!["variant_id".to_string()],
+                    references_table: "product_variant".to_string(),
+                    references_columns: vec!["id".to_string()],
+                }],
+            },
+        );
+
+        let planner = QueryPlanner::new(&schema);
+
+        let query = Query {
+            name: "GetProductWithVariantsAndPrices".to_string(),
+            span: None,
+            params: vec![],
+            from: "product".to_string(),
+            filters: vec![],
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            first: false,
+            select: vec![
+                Field::Column {
+                    name: "id".to_string(),
+                    span: None,
+                },
+                Field::Relation {
+                    name: "variants".to_string(),
+                    span: None,
+                    from: Some("product_variant".to_string()),
+                    filters: vec![],
+                    order_by: vec![],
+                    first: false,
+                    select: vec![
+                        Field::Column {
+                            name: "id".to_string(),
+                            span: None,
+                        },
+                        Field::Column {
+                            name: "sku".to_string(),
+                            span: None,
+                        },
+                        Field::Relation {
+                            name: "prices".to_string(),
+                            span: None,
+                            from: Some("variant_price".to_string()),
+                            filters: vec![],
+                            order_by: vec![],
+                            first: false,
+                            select: vec![
+                                Field::Column {
+                                    name: "currency_code".to_string(),
+                                    span: None,
+                                },
+                                Field::Column {
+                                    name: "amount".to_string(),
+                                    span: None,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+            raw_sql: None,
+            returns: vec![],
+        };
+
+        let plan = planner.plan(&query).unwrap();
+
+        // Should have 2 JOINs: product_variant and variant_price
+        assert_eq!(plan.joins.len(), 2, "Should have 2 JOINs");
+        assert_eq!(plan.joins[0].table, "product_variant");
+        assert_eq!(plan.joins[1].table, "variant_price");
+
+        // Check aliases
+        assert_eq!(plan.joins[0].alias, "t1");
+        assert_eq!(plan.joins[1].alias, "t2");
+
+        // Check SELECT columns: id, variants_id, variants_sku, variants_prices_currency_code, variants_prices_amount
+        assert_eq!(plan.select_columns.len(), 5, "Should have 5 SELECT columns");
+
+        // Check column aliases
+        let aliases: Vec<_> = plan
+            .select_columns
+            .iter()
+            .map(|c| c.result_alias.as_str())
+            .collect();
+        assert!(aliases.contains(&"id"));
+        assert!(aliases.contains(&"variants_id"));
+        assert!(aliases.contains(&"variants_sku"));
+        assert!(aliases.contains(&"variants_prices_currency_code"));
+        assert!(aliases.contains(&"variants_prices_amount"));
+
+        // Check nested relation mapping
+        let variants_rel = plan.result_mapping.relations.get("variants").unwrap();
+        assert!(!variants_rel.first);
+        assert!(variants_rel.nested_relations.contains_key("prices"));
+
+        let prices_rel = variants_rel.nested_relations.get("prices").unwrap();
+        assert!(!prices_rel.first);
+        assert_eq!(prices_rel.table_alias, "t2");
+
+        // Check generated SQL
+        let from = plan.from_sql();
+        assert!(
+            from.contains("LEFT JOIN \"product_variant\" AS \"t1\" ON t0.id = t1.product_id"),
+            "from: {}",
+            from
+        );
+        assert!(
+            from.contains("LEFT JOIN \"variant_price\" AS \"t2\" ON t1.id = t2.variant_id"),
+            "from: {}",
+            from
+        );
     }
 }
