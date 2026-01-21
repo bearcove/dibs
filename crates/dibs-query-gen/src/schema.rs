@@ -68,7 +68,10 @@ ProductByHandle @query{
 
         let params = q.params.as_ref().expect("should have params");
         assert_eq!(params.params.len(), 2);
-        assert!(matches!(params.params.get("handle"), Some(ParamType::String)));
+        assert!(matches!(
+            params.params.get("handle"),
+            Some(ParamType::String)
+        ));
         assert!(matches!(params.params.get("limit"), Some(ParamType::Int)));
     }
 
@@ -89,7 +92,10 @@ SearchProducts @query{
 
         let params = q.params.as_ref().expect("should have params");
         assert_eq!(params.params.len(), 2);
-        assert!(matches!(params.params.get("query"), Some(ParamType::String)));
+        assert!(matches!(
+            params.params.get("query"),
+            Some(ParamType::String)
+        ));
 
         // @optional(@int) should parse as Optional(vec![Int])
         match params.params.get("limit") {
@@ -197,7 +203,10 @@ ProductsSorted @query{
 
         let order_by = q.order_by.as_ref().expect("should have order_by");
         assert_eq!(order_by.columns.len(), 2);
-        assert_eq!(order_by.columns.get("created_at"), Some(&Some("desc".to_string())));
+        assert_eq!(
+            order_by.columns.get("created_at"),
+            Some(&Some("desc".to_string()))
+        );
         assert_eq!(order_by.columns.get("name"), Some(&None)); // no direction = asc
     }
 
@@ -274,7 +283,12 @@ ProductWithVariantCount @query{
         assert_eq!(select.fields.len(), 2);
 
         // variant_count is a @count
-        let variant_count = select.fields.get("variant_count").unwrap().as_ref().unwrap();
+        let variant_count = select
+            .fields
+            .get("variant_count")
+            .unwrap()
+            .as_ref()
+            .unwrap();
         match variant_count {
             FieldDef::Count(tables) => {
                 assert_eq!(tables.len(), 1);
@@ -319,6 +333,9 @@ TrendingProducts @query{
         let returns = q.returns.as_ref().expect("should have returns");
         assert_eq!(returns.fields.len(), 2);
         assert!(matches!(returns.fields.get("id"), Some(ParamType::Int)));
-        assert!(matches!(returns.fields.get("title"), Some(ParamType::String)));
+        assert!(matches!(
+            returns.fields.get("title"),
+            Some(ParamType::String)
+        ));
     }
 }

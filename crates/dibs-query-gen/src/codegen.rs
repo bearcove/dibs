@@ -535,6 +535,13 @@ fn generate_option_relation_assembly(
                     "    let {} = {}.map(|{}_val| {} {{\n",
                     name, first_alias, first_alias, nested_name
                 ));
+                // Get the type of the first column to know if _val needs wrapping
+                let first_col_type = ctx
+                    .schema
+                    .column_type(rel_table, &first_col)
+                    .unwrap_or_else(|| "String".to_string());
+                let first_col_is_optional = first_col_type.starts_with("Option<");
+
                 for f in select {
                     if let Field::Column { name: col_name, .. } = f {
                         let alias = format!("{}_{}", name, col_name);
@@ -543,8 +550,14 @@ fn generate_option_relation_assembly(
                             .column_type(rel_table, col_name)
                             .unwrap_or_else(|| "String".to_string());
                         // The first column is used in .map(), so we must use the closure param
+                        // If the first column was Option<T>, _val is T (unwrapped by .map())
+                        // so we need Some() to match the field's Option<T> type
                         let value_expr = if alias == first_alias {
-                            format!("{}_val", first_alias)
+                            if first_col_is_optional {
+                                format!("Some({}_val)", first_alias)
+                            } else {
+                                format!("{}_val", first_alias)
+                            }
                         } else if rust_ty.starts_with("Option<") {
                             alias.clone()
                         } else {

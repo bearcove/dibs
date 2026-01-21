@@ -10,10 +10,10 @@
 //! Note: Requires Docker to be running.
 
 use dibs_query_gen::{
-    generate_rust_code_with_planner, generate_sql_with_joins, parse_query_file,
     ColumnInfo, PlannerForeignKey, PlannerSchema, PlannerTable, SchemaInfo, TableInfo,
+    generate_rust_code_with_planner, generate_sql_with_joins, parse_query_file,
 };
-use dockside::{containers, Container};
+use dockside::{Container, containers};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio_postgres::{Client, NoTls, Row};
@@ -48,7 +48,10 @@ async fn setup_postgres() -> (Container, Client) {
                 tracing::debug!("Connection attempt {} failed: {}, retrying...", attempts, e);
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            Err(e) => panic!("failed to connect to postgres after {} attempts: {}", attempts, e),
+            Err(e) => panic!(
+                "failed to connect to postgres after {} attempts: {}",
+                attempts, e
+            ),
         }
     };
 
@@ -298,11 +301,7 @@ fn build_test_schema() -> (SchemaInfo, PlannerSchema) {
         "product".to_string(),
         PlannerTable {
             name: "product".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "handle".to_string(),
-                "status".to_string(),
-            ],
+            columns: vec!["id".to_string(), "handle".to_string(), "status".to_string()],
             foreign_keys: vec![],
         },
     );
@@ -456,11 +455,7 @@ ProductWithVariants @query{
 
     // LEFT JOIN expands: widget (3 variants) + gadget (1 variant) + gizmo (0 variants, but 1 row with NULL)
     // = 3 + 1 + 1 = 5 rows
-    assert_eq!(
-        rows.len(),
-        5,
-        "Should have 5 rows from LEFT JOIN expansion"
-    );
+    assert_eq!(rows.len(), 5, "Should have 5 rows from LEFT JOIN expansion");
 
     // Now test the HashMap grouping logic that codegen produces
     let mut grouped: std::collections::HashMap<i64, (String, Vec<(i64, String)>)> =
@@ -625,5 +620,9 @@ ProductWithVariantCount @query{
     );
 
     // Gizmo has 0 variants
-    assert_eq!(counts.get("gizmo"), Some(&0), "Gizmo should have 0 variants");
+    assert_eq!(
+        counts.get("gizmo"),
+        Some(&0),
+        "Gizmo should have 0 variants"
+    );
 }

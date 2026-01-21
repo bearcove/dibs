@@ -121,9 +121,10 @@ pub fn generate_sql_with_joins(
     schema: &PlannerSchema,
 ) -> Result<GeneratedSql, crate::planner::PlanError> {
     // Check if query needs the planner (has relations or COUNT fields)
-    let needs_planner = query.select.iter().any(|f| {
-        matches!(f, Field::Relation { .. }) || matches!(f, Field::Count { .. })
-    });
+    let needs_planner = query
+        .select
+        .iter()
+        .any(|f| matches!(f, Field::Relation { .. }) || matches!(f, Field::Count { .. }));
 
     if !needs_planner {
         // Fall back to simple SQL generation

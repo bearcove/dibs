@@ -399,7 +399,11 @@ impl QueryPlan {
         for count in &self.count_subqueries {
             parts.push(format!(
                 "(SELECT COUNT(*) FROM \"{}\" WHERE \"{}\" = \"{}\".\"{}\" ) AS \"{}\"",
-                count.count_table, count.fk_column, count.parent_alias, count.parent_key, count.result_alias
+                count.count_table,
+                count.fk_column,
+                count.parent_alias,
+                count.parent_key,
+                count.result_alias
             ));
         }
 

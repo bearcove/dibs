@@ -84,12 +84,9 @@ fn convert_query(name: &str, q: &schema::Query) -> Result<Query, ParseError> {
     }
 
     // Structured query
-    let from = q
-        .from
-        .clone()
-        .ok_or_else(|| ParseError::MissingFrom {
-            name: name.to_string(),
-        })?;
+    let from = q.from.clone().ok_or_else(|| ParseError::MissingFrom {
+        name: name.to_string(),
+    })?;
 
     let select_schema = q.select.as_ref().ok_or_else(|| ParseError::MissingSelect {
         name: name.to_string(),
@@ -256,11 +253,7 @@ fn convert_select(select: &schema::Select) -> Vec<Field> {
                 filters: convert_filters(&rel.where_clause),
                 order_by: Vec::new(), // Relations don't have order_by in current schema
                 first: rel.first.unwrap_or(false),
-                select: rel
-                    .select
-                    .as_ref()
-                    .map(convert_select)
-                    .unwrap_or_default(),
+                select: rel.select.as_ref().map(convert_select).unwrap_or_default(),
             },
             Some(schema::FieldDef::Count(tables)) => Field::Count {
                 name: name.clone(),
