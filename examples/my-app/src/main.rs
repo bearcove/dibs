@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let dispatcher = SquelServiceDispatcher::new(SquelServiceImpl::new());
 
                     match ws_accept(transport, HandshakeConfig::default(), dispatcher).await {
-                        Ok((handle, driver)) => {
+                        Ok((handle, _incoming, driver)) => {
                             println!("Roam handshake complete with {}", peer_addr);
 
                             // Run the driver to completion
