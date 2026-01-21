@@ -6,7 +6,7 @@
 //! - Column aliasing to avoid collisions
 //! - Result assembly mapping
 
-use crate::ast::{Field, Query};
+use crate::ast::{Expr, Field, Filter, FilterOp, Query};
 use std::collections::HashMap;
 
 /// Schema information needed for query planning.
@@ -63,6 +63,8 @@ pub struct JoinClause {
     pub alias: String,
     /// ON condition: (left_col, right_col)
     pub on_condition: (String, String),
+    /// Additional filters for this JOIN (from relation's where clause)
+    pub filters: Vec<Filter>,
 }
 
 /// JOIN type.
@@ -187,6 +189,7 @@ impl<'a> QueryPlanner<'a> {
                     from,
                     first,
                     select,
+                    filters,
                     ..
                 } => {
                     // Resolve the relation
@@ -206,6 +209,7 @@ impl<'a> QueryPlanner<'a> {
 
                     joins.push(JoinClause {
                         join_type,
+                        filters: filters.clone(),
                         ..fk_resolution.join_clause
                     });
 
@@ -315,6 +319,7 @@ impl<'a> QueryPlanner<'a> {
                             format!("t0.{}", parent_key_column),
                             format!("{}.{}", alias, fk.columns[0]),
                         ),
+                        filters: vec![],
                     },
                     direction: FkDirection::Reverse,
                     parent_key_column,
@@ -347,6 +352,7 @@ impl<'a> QueryPlanner<'a> {
                             format!("t0.{}", parent_key_column),
                             format!("{}.{}", alias, fk.references_columns[0]),
                         ),
+                        filters: vec![],
                     },
                     direction: FkDirection::Forward,
                     parent_key_column,
@@ -412,6 +418,18 @@ impl QueryPlan {
 
     /// Generate SQL FROM clause with JOINs.
     pub fn from_sql(&self) -> String {
+        self.from_sql_with_params(&mut Vec::new(), &mut 1)
+    }
+
+    /// Generate SQL FROM clause with JOINs, tracking parameter order.
+    ///
+    /// Returns the SQL and appends any parameter names to `param_order`.
+    /// `param_idx` is updated to track the next $N placeholder.
+    pub fn from_sql_with_params(
+        &self,
+        param_order: &mut Vec<String>,
+        param_idx: &mut usize,
+    ) -> String {
         let mut sql = format!("\"{}\" AS \"{}\"", self.from_table, self.from_alias);
 
         for join in &self.joins {
@@ -423,9 +441,91 @@ impl QueryPlan {
                 " {} \"{}\" AS \"{}\" ON {} = {}",
                 join_type, join.table, join.alias, join.on_condition.0, join.on_condition.1
             ));
+
+            // Add relation filters to ON clause
+            for filter in &join.filters {
+                let filter_sql = format_join_filter(filter, &join.alias, param_order, param_idx);
+                sql.push_str(&format!(" AND {}", filter_sql));
+            }
         }
 
         sql
+    }
+}
+
+/// Format a filter for a JOIN ON clause.
+fn format_join_filter(
+    filter: &Filter,
+    table_alias: &str,
+    param_order: &mut Vec<String>,
+    param_idx: &mut usize,
+) -> String {
+    let col = format!("\"{}\".\"{}\"", table_alias, filter.column);
+
+    match (&filter.op, &filter.value) {
+        (FilterOp::IsNull, _) | (FilterOp::Eq, Expr::Null) => format!("{} IS NULL", col),
+        (FilterOp::IsNotNull, _) => format!("{} IS NOT NULL", col),
+        (FilterOp::Eq, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} = ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::Eq, Expr::String(s)) => {
+            let escaped = s.replace('\'', "''");
+            format!("{} = '{}'", col, escaped)
+        }
+        (FilterOp::Eq, Expr::Int(n)) => format!("{} = {}", col, n),
+        (FilterOp::Eq, Expr::Bool(b)) => format!("{} = {}", col, b),
+        (FilterOp::Ne, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} != ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::Lt, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} < ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::Lte, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} <= ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::Gt, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} > ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::Gte, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} >= ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::Like, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} LIKE ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::ILike, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} ILIKE ${}", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        (FilterOp::In, Expr::Param(name)) => {
+            param_order.push(name.clone());
+            let s = format!("{} = ANY(${})", col, *param_idx);
+            *param_idx += 1;
+            s
+        }
+        _ => format!("{} = TRUE", col), // fallback
     }
 }
 

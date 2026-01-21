@@ -626,3 +626,225 @@ ProductWithVariantCount @query{
         "Gizmo should have 0 variants"
     );
 }
+
+#[tokio::test]
+async fn test_relation_where_literal() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+    insert_test_data(&client).await;
+
+    let (_, planner_schema) = build_test_schema();
+
+    // Query with relation-level WHERE using a literal value
+    let source = r#"
+ProductWithEnglishTranslation @query{
+  from product
+  select{
+    id
+    handle
+    translation @rel{
+      from product_translation
+      where{ locale "en" }
+      first true
+      select{ title, description }
+    }
+  }
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // Verify the SQL contains the relation filter in ON clause
+    assert!(
+        generated.sql.contains("\"t1\".\"locale\" = 'en'"),
+        "SQL should filter on locale in ON clause: {}",
+        generated.sql
+    );
+
+    let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
+
+    // Should have 3 rows (one per product)
+    assert_eq!(rows.len(), 3, "Should have 3 products");
+
+    // Widget has English translation
+    let widget: &Row = rows
+        .iter()
+        .find(|r| r.get::<_, String>("handle") == "widget")
+        .unwrap();
+    let widget_title: Option<String> = widget.get("translation_title");
+    assert_eq!(
+        widget_title,
+        Some("Widget".to_string()),
+        "Widget should have English title"
+    );
+
+    // Gadget has English translation
+    let gadget: &Row = rows
+        .iter()
+        .find(|r| r.get::<_, String>("handle") == "gadget")
+        .unwrap();
+    let gadget_title: Option<String> = gadget.get("translation_title");
+    assert_eq!(
+        gadget_title,
+        Some("Gadget".to_string()),
+        "Gadget should have English title"
+    );
+
+    // Gizmo has no translation at all
+    let gizmo: &Row = rows
+        .iter()
+        .find(|r| r.get::<_, String>("handle") == "gizmo")
+        .unwrap();
+    let gizmo_title: Option<String> = gizmo.get("translation_title");
+    assert!(gizmo_title.is_none(), "Gizmo should have no translation");
+}
+
+#[tokio::test]
+async fn test_relation_where_param() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+    insert_test_data(&client).await;
+
+    let (_, planner_schema) = build_test_schema();
+
+    // Query with relation-level WHERE using a parameter
+    let source = r#"
+ProductWithTranslationByLocale @query{
+  params{ locale @string }
+  from product
+  select{
+    id
+    handle
+    translation @rel{
+      from product_translation
+      where{ locale $locale }
+      first true
+      select{ title, description }
+    }
+  }
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // Verify the SQL contains the relation filter with param placeholder
+    assert!(
+        generated.sql.contains("\"t1\".\"locale\" = $1"),
+        "SQL should filter on locale with $1: {}",
+        generated.sql
+    );
+
+    // Query for French translations
+    let locale = "fr".to_string();
+    let rows: Vec<Row> = client.query(&generated.sql, &[&locale]).await.unwrap();
+
+    assert_eq!(rows.len(), 3, "Should have 3 products");
+
+    // Widget has French translation
+    let widget: &Row = rows
+        .iter()
+        .find(|r| r.get::<_, String>("handle") == "widget")
+        .unwrap();
+    let widget_desc: Option<String> = widget.get("translation_description");
+    assert_eq!(
+        widget_desc,
+        Some("Un merveilleux widget".to_string()),
+        "Widget should have French description"
+    );
+
+    // Gadget has no French translation
+    let gadget: &Row = rows
+        .iter()
+        .find(|r| r.get::<_, String>("handle") == "gadget")
+        .unwrap();
+    let gadget_title: Option<String> = gadget.get("translation_title");
+    assert!(
+        gadget_title.is_none(),
+        "Gadget should have no French translation"
+    );
+}
+
+#[tokio::test]
+async fn test_relation_where_with_base_where() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+    insert_test_data(&client).await;
+
+    let (_, planner_schema) = build_test_schema();
+
+    // Query with BOTH base WHERE and relation WHERE
+    let source = r#"
+ActiveProductWithTranslation @query{
+  params{ status @string, locale @string }
+  from product
+  where{ status $status }
+  select{
+    id
+    handle
+    translation @rel{
+      from product_translation
+      where{ locale $locale }
+      first true
+      select{ title }
+    }
+  }
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    tracing::info!("Generated SQL: {}", generated.sql);
+    tracing::info!("Param order: {:?}", generated.param_order);
+
+    // Relation filter should be $1 (in ON clause, comes first)
+    // Base WHERE filter should be $2
+    assert!(
+        generated.sql.contains("\"t1\".\"locale\" = $1"),
+        "Relation filter should be $1: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("\"t0\".\"status\" = $2"),
+        "Base filter should be $2: {}",
+        generated.sql
+    );
+
+    // Param order should be: locale (from ON clause), then status (from WHERE)
+    assert_eq!(
+        generated.param_order,
+        vec!["locale", "status"],
+        "Param order should be [locale, status]"
+    );
+
+    // Query for active products with English translation
+    let locale = "en".to_string();
+    let status = "active".to_string();
+    let rows: Vec<Row> = client
+        .query(&generated.sql, &[&locale, &status])
+        .await
+        .unwrap();
+
+    // Only widget and gizmo are active
+    assert_eq!(rows.len(), 2, "Should have 2 active products");
+
+    let handles: Vec<String> = rows.iter().map(|r| r.get("handle")).collect();
+    assert!(
+        handles.contains(&"widget".to_string()),
+        "Should include widget"
+    );
+    assert!(
+        handles.contains(&"gizmo".to_string()),
+        "Should include gizmo"
+    );
+    assert!(
+        !handles.contains(&"gadget".to_string()),
+        "Should not include gadget (draft)"
+    );
+}

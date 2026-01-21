@@ -143,9 +143,9 @@ pub fn generate_sql_with_joins(
     sql.push_str("SELECT ");
     sql.push_str(&plan.select_sql());
 
-    // FROM with JOINs
+    // FROM with JOINs (including relation filters in ON clauses)
     sql.push_str(" FROM ");
-    sql.push_str(&plan.from_sql());
+    sql.push_str(&plan.from_sql_with_params(&mut param_order, &mut param_idx));
 
     // WHERE
     if !query.filters.is_empty() {
@@ -537,5 +537,194 @@ ProductWithTranslation @query{
 
         // Check plan exists
         assert!(sql.plan.is_some());
+    }
+
+    #[test]
+    fn test_sql_with_relation_where_literal() {
+        use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+
+        let source = r#"
+ProductWithEnglishTranslation @query{
+  from product
+  select{
+    id
+    translation @rel{
+      from product_translation
+      where{ locale "en" }
+      first true
+      select{ title }
+    }
+  }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+
+        let mut schema = PlannerSchema::default();
+        schema.tables.insert(
+            "product".to_string(),
+            PlannerTable {
+                name: "product".to_string(),
+                columns: vec!["id".to_string()],
+                foreign_keys: vec![],
+            },
+        );
+        schema.tables.insert(
+            "product_translation".to_string(),
+            PlannerTable {
+                name: "product_translation".to_string(),
+                columns: vec![
+                    "id".to_string(),
+                    "product_id".to_string(),
+                    "locale".to_string(),
+                    "title".to_string(),
+                ],
+                foreign_keys: vec![PlannerForeignKey {
+                    columns: vec!["product_id".to_string()],
+                    references_table: "product".to_string(),
+                    references_columns: vec!["id".to_string()],
+                }],
+            },
+        );
+
+        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+
+        // Check that relation filter is in the ON clause
+        assert!(
+            sql.sql
+                .contains("ON t0.id = t1.product_id AND \"t1\".\"locale\" = 'en'"),
+            "Expected relation filter in ON clause, got: {}",
+            sql.sql
+        );
+    }
+
+    #[test]
+    fn test_sql_with_relation_where_param() {
+        use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+
+        let source = r#"
+ProductWithTranslation @query{
+  params{ locale @string }
+  from product
+  select{
+    id
+    translation @rel{
+      from product_translation
+      where{ locale $locale }
+      first true
+      select{ title }
+    }
+  }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+
+        let mut schema = PlannerSchema::default();
+        schema.tables.insert(
+            "product".to_string(),
+            PlannerTable {
+                name: "product".to_string(),
+                columns: vec!["id".to_string()],
+                foreign_keys: vec![],
+            },
+        );
+        schema.tables.insert(
+            "product_translation".to_string(),
+            PlannerTable {
+                name: "product_translation".to_string(),
+                columns: vec![
+                    "id".to_string(),
+                    "product_id".to_string(),
+                    "locale".to_string(),
+                    "title".to_string(),
+                ],
+                foreign_keys: vec![PlannerForeignKey {
+                    columns: vec!["product_id".to_string()],
+                    references_table: "product".to_string(),
+                    references_columns: vec!["id".to_string()],
+                }],
+            },
+        );
+
+        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+
+        // Check that relation filter is in the ON clause with param placeholder
+        assert!(
+            sql.sql
+                .contains("ON t0.id = t1.product_id AND \"t1\".\"locale\" = $1"),
+            "Expected relation filter with param in ON clause, got: {}",
+            sql.sql
+        );
+
+        // Check param order includes the relation param
+        assert_eq!(sql.param_order, vec!["locale"]);
+    }
+
+    #[test]
+    fn test_sql_with_relation_where_and_base_where() {
+        use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+
+        let source = r#"
+ProductWithTranslation @query{
+  params{ handle @string, locale @string }
+  from product
+  where{ handle $handle }
+  select{
+    id
+    translation @rel{
+      from product_translation
+      where{ locale $locale }
+      first true
+      select{ title }
+    }
+  }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+
+        let mut schema = PlannerSchema::default();
+        schema.tables.insert(
+            "product".to_string(),
+            PlannerTable {
+                name: "product".to_string(),
+                columns: vec!["id".to_string(), "handle".to_string()],
+                foreign_keys: vec![],
+            },
+        );
+        schema.tables.insert(
+            "product_translation".to_string(),
+            PlannerTable {
+                name: "product_translation".to_string(),
+                columns: vec![
+                    "id".to_string(),
+                    "product_id".to_string(),
+                    "locale".to_string(),
+                    "title".to_string(),
+                ],
+                foreign_keys: vec![PlannerForeignKey {
+                    columns: vec!["product_id".to_string()],
+                    references_table: "product".to_string(),
+                    references_columns: vec!["id".to_string()],
+                }],
+            },
+        );
+
+        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+
+        // Relation filter should be $1 (comes first in FROM clause)
+        assert!(
+            sql.sql.contains("\"t1\".\"locale\" = $1"),
+            "Expected relation filter as $1, got: {}",
+            sql.sql
+        );
+
+        // Base WHERE filter should be $2 (comes after FROM clause)
+        assert!(
+            sql.sql.contains("\"t0\".\"handle\" = $2"),
+            "Expected base filter as $2, got: {}",
+            sql.sql
+        );
+
+        // Check param order: relation params first, then base WHERE params
+        assert_eq!(sql.param_order, vec!["locale", "handle"]);
     }
 }
