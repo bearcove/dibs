@@ -82,42 +82,42 @@ proptest = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-[patch."https://github.com/facet-rs/facet"]
-facet = { path = "/Users/amos/bearcove/facet/facet" }
-facet-args = { path = "/Users/amos/bearcove/facet/facet-args" }
-facet-core = { path = "/Users/amos/bearcove/facet/facet-core" }
-facet-dessert = { path = "/Users/amos/bearcove/facet/facet-dessert" }
-facet-error = { path = "/Users/amos/bearcove/facet/facet-error" }
-facet-format = { path = "/Users/amos/bearcove/facet/facet-format" }
-facet-path = { path = "/Users/amos/bearcove/facet/facet-path" }
-facet-postcard = { path = "/Users/amos/bearcove/facet/facet-postcard" }
-facet-pretty = { path = "/Users/amos/bearcove/facet/facet-pretty" }
-facet-reflect = { path = "/Users/amos/bearcove/facet/facet-reflect" }
-facet-solver = { path = "/Users/amos/bearcove/facet/facet-solver" }
-facet-testhelpers = { path = "/Users/amos/bearcove/facet/facet-testhelpers" }
-facet-tokio-postgres = { path = "/Users/amos/bearcove/facet/facet-tokio-postgres" }
-facet-toml = { path = "/Users/amos/bearcove/facet/facet-toml" }
-facet-value = { path = "/Users/amos/bearcove/facet/facet-value" }
+# [patch."https://github.com/facet-rs/facet"]
+# facet = { path = "/Users/amos/bearcove/facet/facet" }
+# facet-args = { path = "/Users/amos/bearcove/facet/facet-args" }
+# facet-core = { path = "/Users/amos/bearcove/facet/facet-core" }
+# facet-dessert = { path = "/Users/amos/bearcove/facet/facet-dessert" }
+# facet-error = { path = "/Users/amos/bearcove/facet/facet-error" }
+# facet-format = { path = "/Users/amos/bearcove/facet/facet-format" }
+# facet-path = { path = "/Users/amos/bearcove/facet/facet-path" }
+# facet-postcard = { path = "/Users/amos/bearcove/facet/facet-postcard" }
+# facet-pretty = { path = "/Users/amos/bearcove/facet/facet-pretty" }
+# facet-reflect = { path = "/Users/amos/bearcove/facet/facet-reflect" }
+# facet-solver = { path = "/Users/amos/bearcove/facet/facet-solver" }
+# facet-testhelpers = { path = "/Users/amos/bearcove/facet/facet-testhelpers" }
+# facet-tokio-postgres = { path = "/Users/amos/bearcove/facet/facet-tokio-postgres" }
+# facet-toml = { path = "/Users/amos/bearcove/facet/facet-toml" }
+# facet-value = { path = "/Users/amos/bearcove/facet/facet-value" }
 
-[patch."https://github.com/bearcove/styx"]
-facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
-styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
-styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
-styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
-styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
-styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
-styx-lsp-ext = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-ext" }
+# [patch."https://github.com/bearcove/styx"]
+# facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
+# styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
+# styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
+# styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
+# styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
+# styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
+# styx-lsp-ext = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-ext" }
 
-[patch."https://github.com/bearcove/roam"]
-roam = { path = "/Users/amos/bearcove/roam/rust/roam" }
-roam-codegen = { path = "/Users/amos/bearcove/roam/rust/roam-codegen" }
-roam-frame = { path = "/Users/amos/bearcove/roam/rust/roam-frame" }
-roam-hash = { path = "/Users/amos/bearcove/roam/rust/roam-hash" }
-roam-service-macros = { path = "/Users/amos/bearcove/roam/rust/roam-macros" }
-roam-macros-parse = { path = "/Users/amos/bearcove/roam/rust/roam-macros-parse" }
-roam-schema = { path = "/Users/amos/bearcove/roam/rust/roam-schema" }
-roam-session = { path = "/Users/amos/bearcove/roam/rust/roam-session" }
-roam-stream = { path = "/Users/amos/bearcove/roam/rust/roam-stream" }
-roam-task-local = { path = "/Users/amos/bearcove/roam/rust/roam-task-local" }
-roam-websocket = { path = "/Users/amos/bearcove/roam/rust/roam-websocket" }
-roam-wire = { path = "/Users/amos/bearcove/roam/rust/roam-wire" }
+# [patch."https://github.com/bearcove/roam"]
+# roam = { path = "/Users/amos/bearcove/roam/rust/roam" }
+# roam-codegen = { path = "/Users/amos/bearcove/roam/rust/roam-codegen" }
+# roam-frame = { path = "/Users/amos/bearcove/roam/rust/roam-frame" }
+# roam-hash = { path = "/Users/amos/bearcove/roam/rust/roam-hash" }
+# roam-service-macros = { path = "/Users/amos/bearcove/roam/rust/roam-macros" }
+# roam-macros-parse = { path = "/Users/amos/bearcove/roam/rust/roam-macros-parse" }
+# roam-schema = { path = "/Users/amos/bearcove/roam/rust/roam-schema" }
+# roam-session = { path = "/Users/amos/bearcove/roam/rust/roam-session" }
+# roam-stream = { path = "/Users/amos/bearcove/roam/rust/roam-stream" }
+# roam-task-local = { path = "/Users/amos/bearcove/roam/rust/roam-task-local" }
+# roam-websocket = { path = "/Users/amos/bearcove/roam/rust/roam-websocket" }
+# roam-wire = { path = "/Users/amos/bearcove/roam/rust/roam-wire" }
