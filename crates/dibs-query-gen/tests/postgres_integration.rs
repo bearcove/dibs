@@ -97,6 +97,78 @@ async fn create_test_tables(client: &Client) {
         .expect("failed to create tables");
 }
 
+/// Create test tables with JSONB columns for testing JSONB operators.
+async fn create_jsonb_test_tables(client: &Client) {
+    client
+        .batch_execute(
+            r#"
+            CREATE TABLE product_with_metadata (
+                id BIGSERIAL PRIMARY KEY,
+                handle TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'draft',
+                metadata JSONB
+            );
+            "#,
+        )
+        .await
+        .expect("failed to create jsonb test tables");
+}
+
+/// Insert test data with JSONB values.
+async fn insert_jsonb_test_data(client: &Client) {
+    // Product with nested metadata
+    client
+        .execute(
+            r#"INSERT INTO product_with_metadata (id, handle, status, metadata)
+               VALUES (1, 'premium-widget', 'active',
+                       '{"brand": "Acme", "premium": true, "specs": {"weight": 100, "color": "blue"}}'::jsonb)"#,
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // Product with simple metadata
+    client
+        .execute(
+            r#"INSERT INTO product_with_metadata (id, handle, status, metadata)
+               VALUES (2, 'basic-gadget', 'draft',
+                       '{"brand": "Generic", "premium": false}'::jsonb)"#,
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // Product with array in metadata
+    client
+        .execute(
+            r#"INSERT INTO product_with_metadata (id, handle, status, metadata)
+               VALUES (3, 'multi-gizmo', 'active',
+                       '{"brand": "Acme", "tags": ["electronics", "gadget"], "premium": true}'::jsonb)"#,
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // Product with null metadata
+    client
+        .execute(
+            "INSERT INTO product_with_metadata (id, handle, status, metadata) VALUES (4, 'no-meta', 'active', NULL)",
+            &[],
+        )
+        .await
+        .unwrap();
+
+    // Product with empty object metadata
+    client
+        .execute(
+            r#"INSERT INTO product_with_metadata (id, handle, status, metadata)
+               VALUES (5, 'empty-meta', 'active', '{}'::jsonb)"#,
+            &[],
+        )
+        .await
+        .unwrap();
+}
+
 /// Insert test data.
 async fn insert_test_data(client: &Client) {
     // Insert products
@@ -1215,4 +1287,448 @@ CreateProductNoReturn @insert{
         .await
         .unwrap();
     assert_eq!(verify.len(), 1);
+}
+
+// ============================================================================
+// JSONB Operator Integration Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_jsonb_get_object_operator() {
+    let (_container, _client) = setup_postgres().await;
+
+    // Test that @json-get operator generates correct SQL with -> operator
+    let source = r#"
+GetProductWithSpecs @query{
+    params {key @string}
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @json-get($key)}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use the -> operator
+    assert!(
+        generated.sql.contains("->"),
+        "SQL should contain JSONB get object operator (->)"
+    );
+
+    // Verify parameter is in the generated SQL
+    assert!(
+        generated.sql.contains("$1"),
+        "SQL should have parameter placeholder"
+    );
+
+    // Note: @json-get returns JSONB which can't be used directly in WHERE without further operators
+    // This test just verifies the SQL generation, not execution
+}
+
+#[tokio::test]
+async fn test_jsonb_get_text_operator() {
+    let (_container, _client) = setup_postgres().await;
+
+    // Test that @json-get-text operator generates correct SQL with ->> operator
+    let source = r#"
+GetProductBrand @query{
+    params {key @string}
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @json-get-text($key)}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use the ->> operator
+    assert!(
+        generated.sql.contains("->>"),
+        "SQL should contain JSONB get text operator (->>)"
+    );
+
+    // Verify parameter is in the generated SQL
+    assert!(
+        generated.sql.contains("$1"),
+        "SQL should have parameter placeholder"
+    );
+
+    // Note: @json-get-text returns text which can't be used directly in WHERE without comparison
+    // This test just verifies the SQL generation
+}
+
+#[tokio::test]
+async fn test_jsonb_get_text_in_where_clause() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    // Use @json-get-text with equality comparison - proper usage pattern
+    let source = r#"
+FindByBrand @query{
+    params {brand @string}
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @json-get-text("brand")}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, _planner_schema) = build_jsonb_test_schema();
+
+    // For this test, we'll use simple SQL generation since we're testing the operator
+    let generated = dibs_query_gen::generate_simple_sql(query);
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use the ->> operator
+    assert!(
+        generated.sql.contains("->>"),
+        "SQL should contain JSONB get text operator (->>)"
+    );
+
+    // Note: Direct execution would fail because ->> returns text, not boolean
+    // In real usage, this would be combined with comparison operators
+}
+
+#[tokio::test]
+async fn test_jsonb_contains_operator() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    let source = r#"
+FindPremiumProducts @query{
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @contains("{\"premium\": true}")}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use the @> operator
+    assert!(
+        generated.sql.contains("@>"),
+        "SQL should contain JSONB contains operator (@>)"
+    );
+
+    // Execute query
+    let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
+
+    assert_eq!(rows.len(), 2, "Should find 2 premium products");
+
+    let handles: Vec<String> = rows.iter().map(|r| r.get::<_, String>(1)).collect();
+    assert!(handles.contains(&"premium-widget".to_string()));
+    assert!(handles.contains(&"multi-gizmo".to_string()));
+}
+
+#[tokio::test]
+async fn test_jsonb_contains_with_literal() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    let source = r#"
+FindProductsByMetadata @query{
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @contains("{\"brand\": \"Acme\"}")}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use the @> operator with literal JSON
+    assert!(
+        generated.sql.contains("@>"),
+        "SQL should contain JSONB contains operator (@>): {}",
+        generated.sql
+    );
+
+    // Execute query - find products with brand "Acme"
+    let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
+
+    assert_eq!(rows.len(), 2, "Should find 2 Acme products");
+}
+
+#[tokio::test]
+async fn test_jsonb_contains_nested_object() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    let source = r#"
+FindByNestedSpec @query{
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @contains("{\"specs\": {\"color\": \"blue\"}}")}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // Execute query
+    let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "Should find 1 product with blue color in specs"
+    );
+
+    let handle: String = rows[0].get(1);
+    assert_eq!(handle, "premium-widget");
+}
+
+#[tokio::test]
+async fn test_jsonb_key_exists_operator() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    let source = r#"
+FindWithPremiumKey @query{
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @key-exists("premium")}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use the ? operator
+    assert!(
+        generated.sql.contains("?"),
+        "SQL should contain JSONB key exists operator (?)"
+    );
+
+    // Execute query
+    let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
+
+    assert_eq!(rows.len(), 3, "Should find 3 products with 'premium' key");
+
+    let handles: Vec<String> = rows.iter().map(|r| r.get::<_, String>(1)).collect();
+    assert!(handles.contains(&"premium-widget".to_string()));
+    assert!(handles.contains(&"basic-gadget".to_string()));
+    assert!(handles.contains(&"multi-gizmo".to_string()));
+}
+
+#[tokio::test]
+async fn test_jsonb_key_exists_with_param() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    let source = r#"
+FindWithKey @query{
+    params {key @string}
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @key-exists($key)}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use the ? operator with parameter
+    assert!(
+        generated.sql.contains("?"),
+        "SQL should contain JSONB key exists operator (?)"
+    );
+
+    // Execute query - find products with 'tags' key
+    let key = "tags".to_string();
+    let rows: Vec<Row> = client.query(&generated.sql, &[&key]).await.unwrap();
+
+    assert_eq!(rows.len(), 1, "Should find 1 product with 'tags' key");
+
+    let handle: String = rows[0].get(1);
+    assert_eq!(handle, "multi-gizmo");
+}
+
+#[tokio::test]
+async fn test_jsonb_multiple_operators_combined() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    // Test combining @key-exists operator with regular equality
+    let source = r#"
+ComplexJsonQuery @query{
+    from product_with_metadata
+    select {id, handle}
+    where {
+        status "active"
+        metadata @key-exists("brand")
+    }
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    tracing::info!("Generated SQL: {}", generated.sql);
+
+    // SQL should use ? operator
+    assert!(
+        generated.sql.contains("?"),
+        "SQL should contain JSONB key exists operator (?): {}",
+        generated.sql
+    );
+
+    // SQL should filter on status
+    assert!(
+        generated.sql.contains("status"),
+        "SQL should filter on status: {}",
+        generated.sql
+    );
+
+    // Execute query - find active products with brand key
+    let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
+
+    assert_eq!(rows.len(), 2, "Should find 2 active products with brand");
+
+    let handles: Vec<String> = rows.iter().map(|r| r.get::<_, String>(1)).collect();
+    assert!(handles.contains(&"premium-widget".to_string()));
+    assert!(handles.contains(&"multi-gizmo".to_string()));
+}
+
+#[tokio::test]
+async fn test_jsonb_null_handling() {
+    let (_container, client) = setup_postgres().await;
+    create_jsonb_test_tables(&client).await;
+    insert_jsonb_test_data(&client).await;
+
+    let source = r#"
+FindWithMetadata @query{
+    from product_with_metadata
+    select {id, handle}
+    where {metadata @key-exists("brand")}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let query = &file.queries[0];
+
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+
+    // Execute query - should not return products with NULL metadata
+    let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
+
+    assert_eq!(rows.len(), 3, "Should find 3 products with brand key");
+
+    let handles: Vec<String> = rows.iter().map(|r| r.get::<_, String>(1)).collect();
+    assert!(
+        !handles.contains(&"no-meta".to_string()),
+        "Should not include NULL metadata product"
+    );
+    assert!(
+        !handles.contains(&"empty-meta".to_string()),
+        "Should not include empty metadata product"
+    );
+}
+
+/// Build test schema for JSONB tests.
+fn build_jsonb_test_schema() -> (SchemaInfo, PlannerSchema) {
+    let mut schema = SchemaInfo::default();
+
+    // Product with metadata table
+    let mut product_cols = HashMap::new();
+    product_cols.insert(
+        "id".to_string(),
+        ColumnInfo {
+            rust_type: "i64".to_string(),
+            nullable: false,
+        },
+    );
+    product_cols.insert(
+        "handle".to_string(),
+        ColumnInfo {
+            rust_type: "String".to_string(),
+            nullable: false,
+        },
+    );
+    product_cols.insert(
+        "status".to_string(),
+        ColumnInfo {
+            rust_type: "String".to_string(),
+            nullable: false,
+        },
+    );
+    product_cols.insert(
+        "metadata".to_string(),
+        ColumnInfo {
+            rust_type: "serde_json::Value".to_string(),
+            nullable: true,
+        },
+    );
+
+    schema.tables.insert(
+        "product_with_metadata".to_string(),
+        TableInfo {
+            columns: product_cols,
+        },
+    );
+
+    // Build planner schema
+    let mut planner_tables = HashMap::new();
+
+    planner_tables.insert(
+        "product_with_metadata".to_string(),
+        PlannerTable {
+            name: "product_with_metadata".to_string(),
+            columns: vec![
+                "id".to_string(),
+                "handle".to_string(),
+                "status".to_string(),
+                "metadata".to_string(),
+            ],
+            foreign_keys: vec![],
+        },
+    );
+
+    let planner_schema = PlannerSchema {
+        tables: planner_tables,
+    };
+
+    (schema, planner_schema)
 }
