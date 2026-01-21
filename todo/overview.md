@@ -5,7 +5,7 @@
 | # | Title | Notes |
 |---|-------|-------|
 | ~~001~~ | ~~Relation-level ORDER BY~~ | ✓ Done (uses LATERAL for first:true) |
-| 002 | Nested relations | Relation within relation |
+| ~~002~~ | ~~Nested relations~~ | ✓ Done (recursive planner + HashSet dedup) |
 
 ## Medium Priority
 
@@ -36,6 +36,7 @@
 - COUNT aggregates via `@count(table)`
 - **Relation-level WHERE clauses** ✓
 - **Relation-level ORDER BY** ✓ (uses LATERAL for `first: true`)
+- **Nested relations** ✓ (product → variants → prices)
 - Filter operators: `@null`, `@ilike`, `@like`, `@gt`, `@lt`, bare equality
 - Raw SQL escape hatch: `sql <<SQL ... SQL`
 - LSP: completions, hover, diagnostics, inlay hints
