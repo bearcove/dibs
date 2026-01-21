@@ -135,7 +135,7 @@ fn generate_result_struct(
         // Raw SQL - use returns declaration
         for ret in &query.returns {
             let rust_ty = param_type_to_rust(&ret.ty);
-            st.field(&format!("pub {}", ret.name), &rust_ty);
+            st.field(format!("pub {}", ret.name), &rust_ty);
         }
     } else {
         // Regular query - use select fields
@@ -146,7 +146,7 @@ fn generate_result_struct(
                         .schema
                         .column_type(table, name)
                         .unwrap_or_else(|| "String".to_string());
-                    st.field(&format!("pub {}", name), &rust_ty);
+                    st.field(format!("pub {}", name), &rust_ty);
                 }
                 Field::Relation { name, first, .. } => {
                     let nested_name = to_pascal_case(name);
@@ -155,10 +155,10 @@ fn generate_result_struct(
                     } else {
                         format!("Vec<{}>", nested_name)
                     };
-                    st.field(&format!("pub {}", name), &ty);
+                    st.field(format!("pub {}", name), &ty);
                 }
                 Field::Count { name, .. } => {
-                    st.field(&format!("pub {}", name), "i64");
+                    st.field(format!("pub {}", name), "i64");
                 }
             }
         }
@@ -189,7 +189,7 @@ fn generate_result_struct(
                             .schema
                             .column_type(rel_table, col_name)
                             .unwrap_or_else(|| "String".to_string());
-                        nested_st.field(&format!("pub {}", col_name), &rust_ty);
+                        nested_st.field(format!("pub {}", col_name), &rust_ty);
                     }
                 }
 
