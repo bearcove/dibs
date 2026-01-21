@@ -301,13 +301,33 @@ fn convert_insert(name: &str, i: &schema::Insert) -> InsertMutation {
 
 /// Convert schema Upsert to AST UpsertMutation.
 fn convert_upsert(name: &str, u: &schema::Upsert) -> UpsertMutation {
+    // Merge values with update columns that have explicit values
+    let mut values = convert_values(&u.values);
+
+    // Add update-only columns (like updated_at @now) that aren't in values
+    for (col, update_val) in &u.on_conflict.update.columns {
+        if !values.iter().any(|(c, _)| c == col) {
+            // This column is only in the update clause, add it
+            let expr = match update_val {
+                schema::UpdateValue::Now => ValueExpr::Now,
+                schema::UpdateValue::Default => ValueExpr::Default,
+                schema::UpdateValue::Expr(Some(s)) => convert_value_string(s),
+                schema::UpdateValue::Expr(None) => {
+                    // Bare column name - use the value from VALUES
+                    continue;
+                }
+            };
+            values.push((col.clone(), expr));
+        }
+    }
+
     UpsertMutation {
         name: name.to_string(),
         span: None,
         params: convert_params(&u.params),
         table: u.into.clone(),
-        conflict_columns: u.conflict.columns.keys().cloned().collect(),
-        values: convert_values(&u.values),
+        conflict_columns: u.on_conflict.target.columns.keys().cloned().collect(),
+        values,
         returning: convert_returning(&u.returning),
     }
 }
@@ -351,21 +371,24 @@ fn convert_value_expr(expr: &schema::ValueExpr) -> ValueExpr {
     match expr {
         schema::ValueExpr::Now => ValueExpr::Now,
         schema::ValueExpr::Default => ValueExpr::Default,
-        schema::ValueExpr::Expr(s) => {
-            if let Some(param) = s.strip_prefix('$') {
-                ValueExpr::Param(param.to_string())
-            } else if s == "true" {
-                ValueExpr::Bool(true)
-            } else if s == "false" {
-                ValueExpr::Bool(false)
-            } else if s == "null" {
-                ValueExpr::Null
-            } else if let Ok(n) = s.parse::<i64>() {
-                ValueExpr::Int(n)
-            } else {
-                ValueExpr::String(s.clone())
-            }
-        }
+        schema::ValueExpr::Expr(s) => convert_value_string(s),
+    }
+}
+
+/// Convert a raw string value to AST ValueExpr.
+fn convert_value_string(s: &str) -> ValueExpr {
+    if let Some(param) = s.strip_prefix('$') {
+        ValueExpr::Param(param.to_string())
+    } else if s == "true" {
+        ValueExpr::Bool(true)
+    } else if s == "false" {
+        ValueExpr::Bool(false)
+    } else if s == "null" {
+        ValueExpr::Null
+    } else if let Ok(n) = s.parse::<i64>() {
+        ValueExpr::Int(n)
+    } else {
+        ValueExpr::String(s.to_string())
     }
 }
 
@@ -535,12 +558,14 @@ UpsertProduct @upsert{
     price @decimal
   }
   into products
-  conflict{ id }
+  on-conflict{
+    target{ id }
+    update{ name, price, updated_at @now }
+  }
   values{
     id $id
     name $name
     price $price
-    updated_at @now
   }
   returning{ id, name, price, updated_at }
 }

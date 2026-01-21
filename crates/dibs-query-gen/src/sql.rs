@@ -970,12 +970,14 @@ UpsertProduct @upsert{
     price @decimal
   }
   into products
-  conflict{ id }
+  on-conflict{
+    target{ id }
+    update{ name, price, updated_at @now }
+  }
   values{
     id $id
     name $name
     price $price
-    updated_at @now
   }
   returning{ id, name, price, updated_at }
 }

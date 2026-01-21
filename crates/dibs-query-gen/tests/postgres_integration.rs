@@ -1077,8 +1077,11 @@ async fn test_upsert_mutation_insert() {
 UpsertProduct @upsert{
     params {handle @string, status @string}
     into product
+    on-conflict {
+        target {handle}
+        update {status}
+    }
     values {handle $handle, status $status}
-    conflict {handle}
     returning {id, handle, status}
 }
 "#;
@@ -1134,8 +1137,11 @@ async fn test_upsert_mutation_update() {
 UpsertProduct @upsert{
     params {handle @string, status @string}
     into product
+    on-conflict {
+        target {handle}
+        update {status}
+    }
     values {handle $handle, status $status}
-    conflict {handle}
     returning {id, handle, status}
 }
 "#;
