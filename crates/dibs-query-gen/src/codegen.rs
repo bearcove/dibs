@@ -1088,7 +1088,7 @@ fn generate_option_relation_assembly(
                         rel_block.line(format!("{}: {},", col_name, value_expr));
                     }
                 }
-                rel_block.after("});");
+                rel_block.after(");");
                 map_block.push_block(rel_block);
             }
         }
@@ -1105,10 +1105,10 @@ fn generate_option_relation_assembly(
             }
         }
     }
-    result_block.after("})");
+    result_block.after(")");
     map_block.push_block(result_block);
 
-    map_block.after("}).collect();");
+    map_block.after(").collect();");
     block.push_block(map_block);
     block.line("");
 
@@ -1155,7 +1155,6 @@ fn generate_simple_query_body(query: &Query) -> Block {
         let mut match_block = Block::new("match rows.into_iter().next()");
         match_block.line("Some(row) => Ok(Some(from_row(&row)?)),");
         match_block.line("None => Ok(None),");
-        match_block.after("}");
         block.push_block(match_block);
     } else {
         block.line("rows.iter().map(|row| Ok(from_row(row)?)).collect()");
@@ -1198,7 +1197,6 @@ fn generate_raw_query_body(query: &Query, raw_sql: &str) -> Block {
         let mut match_block = Block::new("match rows.into_iter().next()");
         match_block.line("Some(row) => Ok(Some(from_row(&row)?)),");
         match_block.line("None => Ok(None),");
-        match_block.after("}");
         block.push_block(match_block);
     } else {
         block.line("rows.iter().map(|row| Ok(from_row(row)?)).collect()");
@@ -1504,7 +1502,6 @@ fn generate_mutation_body(generated: &crate::sql::GeneratedSql, execute_only: bo
         let mut match_block = Block::new("match rows.into_iter().next()");
         match_block.line("Some(row) => Ok(Some(from_row(&row)?)),");
         match_block.line("None => Ok(None),");
-        match_block.after("}");
         block.push_block(match_block);
     }
 
