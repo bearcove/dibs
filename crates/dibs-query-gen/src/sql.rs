@@ -26,6 +26,21 @@ pub fn generate_simple_sql(query: &Query) -> GeneratedSql {
 
     // SELECT
     sql.push_str("SELECT ");
+
+    // DISTINCT or DISTINCT ON
+    if !query.distinct_on.is_empty() {
+        sql.push_str("DISTINCT ON (");
+        let distinct_cols: Vec<_> = query
+            .distinct_on
+            .iter()
+            .map(|col| format!("\"{}\"", col))
+            .collect();
+        sql.push_str(&distinct_cols.join(", "));
+        sql.push_str(") ");
+    } else if query.distinct {
+        sql.push_str("DISTINCT ");
+    }
+
     let columns: Vec<_> = query
         .select
         .iter()
@@ -119,10 +134,12 @@ pub fn generate_simple_sql(query: &Query) -> GeneratedSql {
     }
 }
 
-/// Generate SQL for a query with JOINs using the planner.
+/// Generate SQL for a query with optional JOINs using the planner.
+///
+/// If schema is None or the query has no relations/COUNT fields, falls back to simple SQL generation.
 pub fn generate_sql_with_joins(
     query: &Query,
-    schema: &PlannerSchema,
+    schema: Option<&PlannerSchema>,
 ) -> Result<GeneratedSql, crate::planner::PlanError> {
     // Check if query needs the planner (has relations or COUNT fields)
     let needs_planner = query
@@ -130,13 +147,13 @@ pub fn generate_sql_with_joins(
         .iter()
         .any(|f| matches!(f, Field::Relation { .. }) || matches!(f, Field::Count { .. }));
 
-    if !needs_planner {
+    if !needs_planner || schema.is_none() {
         // Fall back to simple SQL generation
         return Ok(generate_simple_sql(query));
     }
 
     // Plan the query
-    let planner = QueryPlanner::new(schema);
+    let planner = QueryPlanner::new(schema.unwrap());
     let plan = planner.plan(query)?;
 
     let mut sql = String::new();
@@ -145,6 +162,21 @@ pub fn generate_sql_with_joins(
 
     // SELECT with aliased columns
     sql.push_str("SELECT ");
+
+    // DISTINCT or DISTINCT ON
+    if !query.distinct_on.is_empty() {
+        sql.push_str("DISTINCT ON (");
+        let distinct_cols: Vec<_> = query
+            .distinct_on
+            .iter()
+            .map(|col| format!("\"t0\".\"{}\"", col))
+            .collect();
+        sql.push_str(&distinct_cols.join(", "));
+        sql.push_str(") ");
+    } else if query.distinct {
+        sql.push_str("DISTINCT ");
+    }
+
     sql.push_str(&plan.select_sql());
 
     // FROM with JOINs (including relation filters in ON clauses)
@@ -615,9 +647,9 @@ ProductByHandle @query{
         let source = r#"
 RecentProducts @query{
   from product
-  order_by{ created_at desc }
+  order-by {created_at desc}
   limit 20
-  select{ id, handle }
+  select {id, handle}
 }
 "#;
         let file = parse_query_file(source).unwrap();
@@ -872,9 +904,80 @@ PaginatedProducts @query{
         let file = parse_query_file(source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
-        assert!(sql.sql.contains("LIMIT 20"));
-        assert!(sql.sql.contains("OFFSET 40"));
+        assert!(sql.sql.contains("LIMIT 20"), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("OFFSET 40"), "SQL: {}", sql.sql);
         assert!(sql.param_order.is_empty());
+    }
+
+    #[test]
+    fn test_distinct() {
+        let source = r#"
+UniqueStatuses @query{
+  from product
+  distinct true
+  select{ status }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let sql = generate_simple_sql(&file.queries[0]);
+
+        assert!(sql.sql.contains("SELECT DISTINCT"), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("\"status\""), "SQL: {}", sql.sql);
+    }
+
+    #[test]
+    fn test_distinct_on() {
+        let source = r#"
+LatestPerCategory @query{
+  from product
+  distinct-on (category_id)
+  order-by {category_id asc, created_at desc}
+  select {id, category_id, handle}
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let query = &file.queries[0];
+        eprintln!("distinct_on: {:?}", query.distinct_on);
+        eprintln!("order_by: {:?}", query.order_by);
+        let sql = generate_simple_sql(query);
+        eprintln!("Generated SQL: {}", sql.sql);
+
+        assert!(
+            sql.sql.contains("SELECT DISTINCT ON (\"category_id\")"),
+            "SQL: {}",
+            sql.sql
+        );
+        assert!(
+            sql.sql
+                .contains("ORDER BY \"category_id\" ASC, \"created_at\" DESC"),
+            "SQL: {}",
+            sql.sql
+        );
+    }
+
+    #[test]
+    fn test_distinct_on_multiple_columns() {
+        let source = r#"
+DistinctProducts @query{
+  from product
+  distinct-on (brand, category)
+  order-by {brand asc, category asc, created_at desc}
+  select {id, brand, category, handle}
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let query = &file.queries[0];
+        eprintln!("distinct_on: {:?}", query.distinct_on);
+        eprintln!("order_by: {:?}", query.order_by);
+        let sql = generate_simple_sql(query);
+        eprintln!("Generated SQL: {}", sql.sql);
+
+        assert!(
+            sql.sql
+                .contains("SELECT DISTINCT ON (\"brand\", \"category\")"),
+            "SQL: {}",
+            sql.sql
+        );
     }
 
     #[test]
@@ -947,7 +1050,7 @@ ProductWithTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
 
         // Check SELECT
         assert!(sql.sql.contains("\"t0\".\"id\""));
@@ -1020,7 +1123,7 @@ ProductWithEnglishTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
 
         // Check that relation filter is in the ON clause
         assert!(
@@ -1079,7 +1182,7 @@ ProductWithTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
 
         // Check that relation filter is in the ON clause with param placeholder
         assert!(
@@ -1142,7 +1245,7 @@ ProductWithTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
 
         // Relation filter should be $1 (comes first in FROM clause)
         assert!(
@@ -1282,13 +1385,13 @@ DeleteUser @delete{
         let source = r#"
 ProductWithLatestTranslation @query{
   from product
-  select{
+  select {
     id
     translation @rel{
       from product_translation
-      order_by{ updated_at desc }
+      order-by {updated_at desc}
       first true
-      select{ title, description }
+      select {title, description}
     }
   }
 }
@@ -1323,7 +1426,7 @@ ProductWithLatestTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
 
         // Should use LATERAL join for first:true with order_by
         assert!(
@@ -1360,16 +1463,16 @@ ProductWithLatestTranslation @query{
 
         let source = r#"
 ProductWithLatestEnglishTranslation @query{
-  params{ locale @string }
+  params {locale @string}
   from product
-  select{
+  select {
     id
     translation @rel{
       from product_translation
-      where{ locale $locale }
-      order_by{ updated_at desc }
+      where {locale $locale}
+      order-by {updated_at desc}
       first true
-      select{ title }
+      select {title}
     }
   }
 }
@@ -1404,7 +1507,7 @@ ProductWithLatestEnglishTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], &schema).unwrap();
+        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
 
         // Should use LATERAL
         assert!(

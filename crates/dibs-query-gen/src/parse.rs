@@ -100,6 +100,8 @@ fn convert_query(name: &str, q: &schema::Query) -> Result<Query, ParseError> {
             limit: None,
             offset: None,
             first: false,
+            distinct: false,
+            distinct_on: Vec::new(),
             select: Vec::new(),
             raw_sql: Some(sql.clone()),
             returns,
@@ -125,6 +127,12 @@ fn convert_query(name: &str, q: &schema::Query) -> Result<Query, ParseError> {
         limit: q.limit.as_ref().map(|s| parse_expr_string(s)),
         offset: q.offset.as_ref().map(|s| parse_expr_string(s)),
         first: q.first.unwrap_or(false),
+        distinct: q.distinct.unwrap_or(false),
+        distinct_on: q
+            .distinct_on
+            .as_ref()
+            .map(|d| d.0.clone())
+            .unwrap_or_default(),
         select: convert_select(select_schema),
         raw_sql: None,
         returns: Vec::new(),

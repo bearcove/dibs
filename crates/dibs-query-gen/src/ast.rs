@@ -35,6 +35,10 @@ pub struct Query {
     pub offset: Option<Expr>,
     /// Whether to return first row only (vs Vec).
     pub first: bool,
+    /// Whether to use DISTINCT to return only unique rows.
+    pub distinct: bool,
+    /// DISTINCT ON columns (PostgreSQL-specific).
+    pub distinct_on: Vec<String>,
     /// Fields to select.
     pub select: Vec<Field>,
     /// Raw SQL (if using sql heredoc escape hatch).

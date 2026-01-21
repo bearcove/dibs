@@ -836,6 +836,8 @@ mod tests {
             limit: None,
             offset: None,
             first: false,
+            distinct: false,
+            distinct_on: vec![],
             select: vec![
                 Field::Column {
                     name: "id".to_string(),
@@ -863,7 +865,7 @@ mod tests {
         let planner = QueryPlanner::new(&schema);
 
         let query = Query {
-            name: "GetProductWithTranslation".to_string(),
+            name: "GetProductWithTranslations".to_string(),
             span: None,
             params: vec![],
             from: "product".to_string(),
@@ -872,6 +874,8 @@ mod tests {
             limit: None,
             offset: None,
             first: false,
+            distinct: false,
+            distinct_on: vec![],
             select: vec![
                 Field::Column {
                     name: "id".to_string(),
@@ -955,6 +959,8 @@ mod tests {
             limit: None,
             offset: None,
             first: false,
+            distinct: false,
+            distinct_on: vec![],
             select: vec![
                 Field::Column {
                     name: "id".to_string(),

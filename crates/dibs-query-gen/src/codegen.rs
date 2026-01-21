@@ -277,19 +277,9 @@ fn generate_query_function(
         let body = generate_raw_query_body(query, raw_sql);
         func.line(block_to_string(&body));
     } else {
-        // Use planner path if query has relations or COUNT fields
-        let needs_planner = query
-            .select
-            .iter()
-            .any(|f| matches!(f, Field::Relation { .. }) || matches!(f, Field::Count { .. }));
-
-        if needs_planner && ctx.planner_schema.is_some() {
-            let body = generate_join_query_body(ctx, query, struct_name);
-            func.line(body);
-        } else {
-            let body = generate_simple_query_body(query);
-            func.line(block_to_string(&body));
-        }
+        // Always use the planner-based SQL generation (it falls back to simple if needed)
+        let body = generate_query_body(ctx, query, struct_name);
+        func.line(body);
     };
 
     scope.push_fn(func);
@@ -328,11 +318,9 @@ fn has_nested_vec_relations(fields: &[Field]) -> bool {
     false
 }
 
-/// Generate query body for queries with JOINs.
-fn generate_join_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -> String {
-    let planner_schema = ctx.planner_schema.unwrap();
-
-    let generated = match generate_sql_with_joins(query, planner_schema) {
+/// Generate query body for all queries (with or without JOINs).
+fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -> String {
+    let generated = match generate_sql_with_joins(query, ctx.planner_schema) {
         Ok(g) => g,
         Err(e) => {
             let fallback = generate_simple_query_body(query);
@@ -344,7 +332,10 @@ fn generate_join_query_body(ctx: &CodegenContext, query: &Query, struct_name: &s
         }
     };
 
-    let plan = generated.plan.as_ref().unwrap();
+    // If there's no plan (simple query with no relations), use simple body generation
+    let Some(plan) = generated.plan.as_ref() else {
+        return block_to_string(&generate_simple_query_body(query));
+    };
 
     let mut block = Block::new("");
 

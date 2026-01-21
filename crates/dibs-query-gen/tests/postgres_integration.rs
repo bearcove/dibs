@@ -472,7 +472,7 @@ ProductWithTranslation @query{
     let query = &file.queries[0];
 
     // Generate SQL with JOINs
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -520,7 +520,7 @@ ProductWithVariants @query{
     let query = &file.queries[0];
 
     // Generate SQL with JOINs
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -609,7 +609,7 @@ ProductByHandle @query{
     let query = &file.queries[0];
 
     // Generate SQL with JOINs
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Query for widget
@@ -663,7 +663,7 @@ ProductWithVariantCount @query{
     let query = &file.queries[0];
 
     // Generate SQL
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -726,7 +726,7 @@ ProductWithEnglishTranslation @query{
     let file = parse_query_file(source).unwrap();
     let query = &file.queries[0];
 
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Verify the SQL contains the relation filter in ON clause
@@ -802,7 +802,7 @@ ProductWithTranslationByLocale @query{
     let file = parse_query_file(source).unwrap();
     let query = &file.queries[0];
 
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Verify the SQL contains the relation filter with param placeholder
@@ -871,7 +871,7 @@ ActiveProductWithTranslation @query{
     let file = parse_query_file(source).unwrap();
     let query = &file.queries[0];
 
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
     tracing::info!("Param order: {:?}", generated.param_order);
 
@@ -1310,7 +1310,7 @@ GetProductWithSpecs @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1347,7 +1347,7 @@ GetProductBrand @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1419,7 +1419,7 @@ FindPremiumProducts @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1456,7 +1456,7 @@ FindProductsByMetadata @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1490,7 +1490,7 @@ FindByNestedSpec @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1524,7 +1524,7 @@ FindWithPremiumKey @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1563,7 +1563,7 @@ FindWithKey @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1604,7 +1604,7 @@ ComplexJsonQuery @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1649,7 +1649,7 @@ FindWithMetadata @query{
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql_with_joins(query, &planner_schema).unwrap();
+    let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
 
     // Execute query - should not return products with NULL metadata
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
