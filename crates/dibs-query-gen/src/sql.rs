@@ -628,6 +628,97 @@ SearchProducts @query{
     }
 
     #[test]
+    fn test_not_null_filter() {
+        let source = r#"
+PublishedProducts @query{
+  from product
+  where{ published_at @not_null }
+  select{ id }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let sql = generate_simple_sql(&file.queries[0]);
+
+        assert!(
+            sql.sql.contains(r#""published_at" IS NOT NULL"#),
+            "SQL: {}",
+            sql.sql
+        );
+    }
+
+    #[test]
+    fn test_gte_filter() {
+        let source = r#"
+FilteredProducts @query{
+  params{ min_price @int }
+  from product
+  where{ price @gte($min_price) }
+  select{ id, price }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let sql = generate_simple_sql(&file.queries[0]);
+
+        assert!(sql.sql.contains(r#""price" >= $1"#), "SQL: {}", sql.sql);
+        assert_eq!(sql.param_order, vec!["min_price"]);
+    }
+
+    #[test]
+    fn test_lte_filter() {
+        let source = r#"
+FilteredProducts @query{
+  params{ max_price @int }
+  from product
+  where{ price @lte($max_price) }
+  select{ id, price }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let sql = generate_simple_sql(&file.queries[0]);
+
+        assert!(sql.sql.contains(r#""price" <= $1"#), "SQL: {}", sql.sql);
+        assert_eq!(sql.param_order, vec!["max_price"]);
+    }
+
+    #[test]
+    fn test_ne_filter() {
+        let source = r#"
+NonDraftProducts @query{
+  params{ excluded_status @string }
+  from product
+  where{ status @ne($excluded_status) }
+  select{ id, status }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let sql = generate_simple_sql(&file.queries[0]);
+
+        assert!(sql.sql.contains(r#""status" != $1"#), "SQL: {}", sql.sql);
+        assert_eq!(sql.param_order, vec!["excluded_status"]);
+    }
+
+    #[test]
+    fn test_in_filter() {
+        let source = r#"
+ProductsByStatus @query{
+  params{ statuses @string }
+  from product
+  where{ status @in($statuses) }
+  select{ id, status }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let sql = generate_simple_sql(&file.queries[0]);
+
+        assert!(
+            sql.sql.contains(r#""status" = ANY($1)"#),
+            "SQL: {}",
+            sql.sql
+        );
+        assert_eq!(sql.param_order, vec!["statuses"]);
+    }
+
+    #[test]
     fn test_pagination_literals() {
         let source = r#"
 PaginatedProducts @query{

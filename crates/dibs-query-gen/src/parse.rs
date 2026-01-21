@@ -191,6 +191,7 @@ fn convert_filters(where_clause: &Option<schema::Where>) -> Vec<Filter> {
 fn convert_filter_value(value: &schema::FilterValue) -> (FilterOp, Expr) {
     match value {
         schema::FilterValue::Null => (FilterOp::IsNull, Expr::Null),
+        schema::FilterValue::NotNull => (FilterOp::IsNotNull, Expr::Null),
         schema::FilterValue::Eq(s) => (FilterOp::Eq, parse_expr_string(s)),
         schema::FilterValue::Ilike(args) => {
             let expr = args
@@ -219,6 +220,34 @@ fn convert_filter_value(value: &schema::FilterValue) -> (FilterOp, Expr) {
                 .map(|s| parse_expr_string(s))
                 .unwrap_or(Expr::Null);
             (FilterOp::Lt, expr)
+        }
+        schema::FilterValue::Gte(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::Null);
+            (FilterOp::Gte, expr)
+        }
+        schema::FilterValue::Lte(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::Null);
+            (FilterOp::Lte, expr)
+        }
+        schema::FilterValue::Ne(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::Null);
+            (FilterOp::Ne, expr)
+        }
+        schema::FilterValue::In(args) => {
+            let expr = args
+                .first()
+                .map(|s| parse_expr_string(s))
+                .unwrap_or(Expr::Null);
+            (FilterOp::In, expr)
         }
     }
 }
