@@ -1,6 +1,11 @@
 [workspace]
-members = ["crates/*", "examples/*"]
-exclude = ["examples/admin-ui", "examples/my-app-queries"]
+members = [
+    "crates/*",
+    "examples/my-app-workspace/my-app",
+    "examples/my-app-workspace/my-app-db",
+    "examples/my-app-workspace/my-app-queries",
+]
+exclude = ["examples/admin-ui"]
 resolver = "3"
 
 [workspace.dependencies]
@@ -28,6 +33,8 @@ styx-embed = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-tree = { git = "https://github.com/bearcove/styx", branch = "main", features = ["facet"] }
 styx-parse = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-lsp-ext = { git = "https://github.com/bearcove/styx", branch = "main" }
+styx-lsp = { git = "https://github.com/bearcove/styx", branch = "main" }
+styx-lsp-test-schema = { git = "https://github.com/bearcove/styx", branch = "main" }
 
 # roam ecosystem
 roam = { git = "https://github.com/bearcove/roam", branch = "main" }
@@ -71,7 +78,7 @@ quote = "1"
 unsynn = { version = "0.3", features = ["proc_macro2"] }
 
 # codegen
-codegen = "0.2"
+codegen = "0.3"
 
 # misc
 inventory = "0.3"
@@ -99,14 +106,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # facet-toml = { path = "/Users/amos/bearcove/facet/facet-toml" }
 # facet-value = { path = "/Users/amos/bearcove/facet/facet-value" }
 
-# [patch."https://github.com/bearcove/styx"]
-# facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
-# styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
-# styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
-# styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
-# styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
-# styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
-# styx-lsp-ext = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-ext" }
+[patch."https://github.com/bearcove/styx"]
+facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
+styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
+styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
+styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
+styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
+styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
+styx-lsp-ext = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-ext" }
+styx-lsp = { path = "/Users/amos/bearcove/styx/crates/styx-lsp" }
+styx-lsp-test-schema = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-test-schema" }
 
 # [patch."https://github.com/bearcove/roam"]
 # roam = { path = "/Users/amos/bearcove/roam/rust/roam" }

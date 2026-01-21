@@ -232,9 +232,10 @@ fn generate_query_function(
         generate_raw_query_body(query, raw_sql)
     } else {
         // Use planner path if query has relations or COUNT fields
-        let needs_planner = query.select.iter().any(|f| {
-            matches!(f, Field::Relation { .. }) || matches!(f, Field::Count { .. })
-        });
+        let needs_planner = query
+            .select
+            .iter()
+            .any(|f| matches!(f, Field::Relation { .. }) || matches!(f, Field::Count { .. }));
 
         if needs_planner && ctx.planner_schema.is_some() {
             generate_join_query_body(ctx, query, struct_name)
@@ -299,7 +300,12 @@ fn generate_join_query_body(ctx: &CodegenContext, query: &Query, struct_name: &s
 
     // Check if we have Vec relations - if so, use HashMap-based grouping
     if has_vec_relations(query) {
-        body.push_str(&generate_vec_relation_assembly(ctx, query, struct_name, plan));
+        body.push_str(&generate_vec_relation_assembly(
+            ctx,
+            query,
+            struct_name,
+            plan,
+        ));
     } else {
         body.push_str(&generate_option_relation_assembly(ctx, query, struct_name));
     }
@@ -381,7 +387,10 @@ fn generate_vec_relation_assembly(
                             } else {
                                 format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
                             };
-                            body.push_str(&format!("                {}: {},\n", col_name, value_expr));
+                            body.push_str(&format!(
+                                "                {}: {},\n",
+                                col_name, value_expr
+                            ));
                         }
                     }
                     body.push_str("            }),\n");
@@ -421,10 +430,7 @@ fn generate_vec_relation_assembly(
                 "    if let Some({}_val) = row.get::<_, Option<_>>(\"{}\") {{\n",
                 first_alias, first_alias
             ));
-            body.push_str(&format!(
-                "        entry.{}.push({} {{\n",
-                name, nested_name
-            ));
+            body.push_str(&format!("        entry.{}.push({} {{\n", name, nested_name));
             for f in select {
                 if let Field::Column { name: col_name, .. } = f {
                     let alias = format!("{}_{}", name, col_name);
@@ -483,10 +489,7 @@ fn generate_option_relation_assembly(
                 ));
             }
             Field::Count { name, .. } => {
-                body.push_str(&format!(
-                    "    let {}: i64 = row.get(\"{}\");\n",
-                    name, name
-                ));
+                body.push_str(&format!("    let {}: i64 = row.get(\"{}\");\n", name, name));
             }
             _ => {}
         }
@@ -539,10 +542,11 @@ fn generate_option_relation_assembly(
                             .schema
                             .column_type(rel_table, col_name)
                             .unwrap_or_else(|| "String".to_string());
-                        let value_expr = if rust_ty.starts_with("Option<") {
-                            alias.clone()
-                        } else if alias == first_alias {
+                        // The first column is used in .map(), so we must use the closure param
+                        let value_expr = if alias == first_alias {
                             format!("{}_val", first_alias)
+                        } else if rust_ty.starts_with("Option<") {
+                            alias.clone()
                         } else {
                             format!("{}.unwrap()", alias)
                         };
@@ -558,7 +562,9 @@ fn generate_option_relation_assembly(
     body.push_str(&format!("    Ok({} {{\n", struct_name));
     for field in &query.select {
         match field {
-            Field::Column { name, .. } | Field::Relation { name, .. } | Field::Count { name, .. } => {
+            Field::Column { name, .. }
+            | Field::Relation { name, .. }
+            | Field::Count { name, .. } => {
                 body.push_str(&format!("        {},\n", name));
             }
         }
@@ -924,8 +930,11 @@ ProductWithTranslation @query{
         // Check that translation struct construction happens inside a .map() call
         // The exact variable name depends on HashMap iteration order
         assert!(
-            code.code.contains(".map(|translation_description_val| Translation")
-                || code.code.contains(".map(|translation_title_val| Translation"),
+            code.code
+                .contains(".map(|translation_description_val| Translation")
+                || code
+                    .code
+                    .contains(".map(|translation_title_val| Translation"),
             "Expected relation construction inside .map() call"
         );
         // Check that title field is populated
@@ -1060,10 +1069,7 @@ ProductWithVariants @query{
             code.code.contains("grouped.entry"),
             "Should use entry API for grouping"
         );
-        assert!(
-            code.code.contains(".push("),
-            "Should push to Vec relation"
-        );
+        assert!(code.code.contains(".push("), "Should push to Vec relation");
         assert!(
             code.code.contains("variants: vec![]"),
             "Should initialize Vec as empty"
@@ -1144,7 +1150,8 @@ ProductWithVariantCount @query{
         tracing::info!("Generated code:\n{}", code.code);
 
         assert!(
-            code.code.contains("pub struct ProductWithVariantCountResult"),
+            code.code
+                .contains("pub struct ProductWithVariantCountResult"),
             "Should generate result struct"
         );
         assert!(

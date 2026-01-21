@@ -14,7 +14,7 @@ ActiveProducts @query{
     from product
     where {status "published", active true, deleted_at @null}
     order_by {created_at desc}
-    limit 20
+    limit 2
     select {id, handle, status}
 }
 
