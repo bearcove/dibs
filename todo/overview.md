@@ -37,6 +37,6 @@
 - **Relation-level WHERE clauses** ✓
 - **Relation-level ORDER BY** ✓ (uses LATERAL for `first: true`)
 - **Nested relations** ✓ (product → variants → prices)
-- Filter operators: `@null`, `@not_null`, `@ilike`, `@like`, `@gt`, `@lt`, `@gte`, `@lte`, `@ne`, `@in`, bare equality
+- Filter operators: `@null`, `@not-null`, `@ilike`, `@like`, `@gt`, `@lt`, `@gte`, `@lte`, `@ne`, `@in`, bare equality
 - Raw SQL escape hatch: `sql <<SQL ... SQL`
 - LSP: completions, hover, diagnostics, inlay hints

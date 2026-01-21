@@ -632,7 +632,7 @@ SearchProducts @query{
         let source = r#"
 PublishedProducts @query{
   from product
-  where{ published_at @not_null }
+  where{ published_at @not-null }
   select{ id }
 }
 "#;
