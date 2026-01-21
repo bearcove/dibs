@@ -26,6 +26,12 @@
 | 010 | LSP code actions | Currently empty |
 | 011 | LSP go-to-definition | Blocked on styx-lsp-ext |
 
+## Technical Debt
+
+| # | Title | Notes |
+|---|-------|-------|
+| 012 | Codegen refactoring | Replace manual string manipulation with codegen crate AST API |
+
 ## What's Done
 
 - Basic query parsing and SQL generation
