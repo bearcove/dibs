@@ -1,48 +1,31 @@
-# 009: Compile-Time Validation
+# 002: Foreign Key Validation
 
 **Priority:** Low
 
 ## Problem
 
-Features that are parsed but ignored fail silently:
-- Relation `where` (see #001)
-- Relation `order_by` (see #002)
-
-No validation for:
-- Unknown tables
-- Unknown columns
-- Missing FK relationships
+Foreign key relationships in queries are not validated for type compatibility. You can define a relation that joins on columns with mismatched types, which would fail at runtime or produce unexpected results.
 
 ## Goal
 
 ```
-warning: relation-level 'where' is not yet implemented
-  --> queries.styx:15:7
+error: foreign key type mismatch in relation 'variants'
+  --> queries.styx:12:5
    |
-15 |       where{ locale "en" }
-   |       ^^^^^^^^^^^^^^^^^^^
-```
-
-```
-error: column 'nonexistent' does not exist in table 'product'
-  --> queries.styx:8:5
+12 |     variants { fk product_id }
+   |                ^^^^^^^^^^^^^
+   |
+   = note: product_id is INTEGER but product.id is BIGINT
 ```
 
 ## Implementation
 
-Add validation pass after parsing:
+When processing relations with `fk` declarations:
 
-```rust
-pub fn validate_query(query: &Query, schema: &PlannerSchema) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
-    
-    // Check table exists
-    // Check columns exist
-    // Check FK relationships
-    // Warn on unsupported features
-    
-    diagnostics
-}
-```
+1. Look up the FK column type in the related table
+2. Look up the PK/target column type in the parent table  
+3. Compare types and emit diagnostic if mismatched
 
-Integrate with build to fail on errors, emit warnings.
+This validation should happen in:
+- LSP extension (for editor squiggles)
+- Codegen (to fail the build)
