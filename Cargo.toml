@@ -107,16 +107,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # facet-toml = { path = "/Users/amos/bearcove/facet/facet-toml" }
 # facet-value = { path = "/Users/amos/bearcove/facet/facet-value" }
 
-# [patch."https://github.com/bearcove/styx"]
-# facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
-# styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
-# styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
-# styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
-# styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
-# styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
-# styx-lsp-ext = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-ext" }
-# styx-lsp = { path = "/Users/amos/bearcove/styx/crates/styx-lsp" }
-# styx-lsp-test-schema = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-test-schema" }
+[patch."https://github.com/bearcove/styx"]
+facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
+styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
+styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
+styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
+styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
+styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
+styx-lsp-ext = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-ext" }
+styx-lsp = { path = "/Users/amos/bearcove/styx/crates/styx-lsp" }
+styx-lsp-test-schema = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-test-schema" }
 
 # [patch."https://github.com/bearcove/roam"]
 # roam = { path = "/Users/amos/bearcove/roam/rust/roam" }
