@@ -16,6 +16,15 @@ fn row_get(column_name: &str, column_order: &HashMap<String, usize>) -> String {
     }
 }
 
+/// Helper to get just the column selector (index or quoted string) for use in row.get::<T>(...)
+fn col_selector(column_name: &str, column_order: &HashMap<String, usize>) -> String {
+    if let Some(&idx) = column_order.get(column_name) {
+        format!("{} /* {} */", idx, column_name)
+    } else {
+        format!("\"{}\"", column_name)
+    }
+}
+
 /// Generated Rust code for a query file.
 #[derive(Debug, Clone)]
 pub struct GeneratedCode {
@@ -409,6 +418,7 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
                 query,
                 struct_name,
                 plan,
+                &generated.column_order,
             ));
         } else {
             block.line(generate_vec_relation_assembly(
@@ -417,6 +427,7 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
                 query,
                 struct_name,
                 plan,
+                &generated.column_order,
             ));
         }
     } else {
@@ -482,6 +493,7 @@ fn generate_vec_relation_assembly(
     query: &Query,
     struct_name: &str,
     plan: &crate::planner::QueryPlan,
+    column_order: &HashMap<String, usize>,
 ) -> String {
     let mut block = Block::new("");
 
@@ -509,8 +521,9 @@ fn generate_vec_relation_assembly(
     // For loop over rows
     let mut for_block = Block::new("for row in rows.iter()");
     for_block.line(format!(
-        "let parent_id: {} = row.get(\"{}\");",
-        parent_key_type, parent_key_column
+        "let parent_id: {} = {};",
+        parent_key_type,
+        row_get(&parent_key_column, column_order)
     ));
     for_block.line("");
 
@@ -523,7 +536,7 @@ fn generate_vec_relation_assembly(
     for field in &query.select {
         match field {
             Field::Column { name, .. } => {
-                entry_block.line(format!("{}: row.get(\"{}\"),", name, name));
+                entry_block.line(format!("{}: {},", name, row_get(name, column_order)));
             }
             Field::Relation {
                 name,
@@ -540,8 +553,11 @@ fn generate_vec_relation_assembly(
 
                     // Build the Option relation inline
                     let mut map_block = Block::new(format!(
-                        "{}: row.get::<_, Option<_>>(\"{}\").map(|{}_val| {}",
-                        name, first_alias, first_alias, nested_name
+                        "{}: row.get::<_, Option<_>>({}).map(|{}_val| {}",
+                        name,
+                        col_selector(&first_alias, column_order),
+                        first_alias,
+                        nested_name
                     ));
                     for f in select {
                         if let Field::Column { name: col_name, .. } = f {
@@ -551,11 +567,14 @@ fn generate_vec_relation_assembly(
                                 .column_type(rel_table, col_name)
                                 .unwrap_or_else(|| "String".to_string());
                             let value_expr = if rust_ty.starts_with("Option<") {
-                                format!("row.get(\"{}\")", alias)
+                                row_get(&alias, column_order)
                             } else if alias == first_alias {
                                 format!("{}_val", first_alias)
                             } else {
-                                format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
+                                format!(
+                                    "row.get::<_, Option<_>>({}).unwrap()",
+                                    col_selector(&alias, column_order)
+                                )
                             };
                             map_block.line(format!("{}: {},", col_name, value_expr));
                         }
@@ -567,7 +586,7 @@ fn generate_vec_relation_assembly(
                 }
             }
             Field::Count { name, .. } => {
-                entry_block.line(format!("{}: row.get(\"{}\"),", name, name));
+                entry_block.line(format!("{}: {},", name, row_get(name, column_order)));
             }
         }
     }
@@ -646,6 +665,7 @@ fn generate_nested_vec_relation_assembly(
     query: &Query,
     struct_name: &str,
     plan: &crate::planner::QueryPlan,
+    column_order: &HashMap<String, usize>,
 ) -> String {
     let mut block = Block::new("");
 
@@ -728,8 +748,9 @@ fn generate_nested_vec_relation_assembly(
     // For loop over rows
     let mut for_block = Block::new("for row in rows.iter()");
     for_block.line(format!(
-        "let parent_id: {} = row.get(\"{}\");",
-        parent_key_type, parent_key_column
+        "let parent_id: {} = {};",
+        parent_key_type,
+        row_get(&parent_key_column, column_order)
     ));
     for_block.line("");
 
@@ -742,7 +763,7 @@ fn generate_nested_vec_relation_assembly(
     for field in &query.select {
         match field {
             Field::Column { name, .. } => {
-                entry_block.line(format!("{}: row.get(\"{}\"),", name, name));
+                entry_block.line(format!("{}: {},", name, row_get(name, column_order)));
             }
             Field::Relation { name, first, .. } => {
                 if *first {
@@ -780,8 +801,11 @@ fn generate_nested_vec_relation_assembly(
 
                 let mut if_none_block = Block::new(format!("if entry.{}.is_none()", name));
                 let mut map_block = Block::new(format!(
-                    "entry.{} = row.get::<_, Option<_>>(\"{}\").map(|{}_val| {}",
-                    name, first_alias, first_alias, nested_name
+                    "entry.{} = row.get::<_, Option<_>>({}).map(|{}_val| {}",
+                    name,
+                    col_selector(&first_alias, column_order),
+                    first_alias,
+                    nested_name
                 ));
 
                 for f in select {
@@ -792,11 +816,14 @@ fn generate_nested_vec_relation_assembly(
                             .column_type(rel_table, col_name)
                             .unwrap_or_else(|| "String".to_string());
                         let value_expr = if rust_ty.starts_with("Option<") {
-                            format!("row.get(\"{}\")", alias)
+                            row_get(&alias, column_order)
                         } else if alias == first_alias {
                             format!("{}_val", first_alias)
                         } else {
-                            format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
+                            format!(
+                                "row.get::<_, Option<_>>({}).unwrap()",
+                                col_selector(&alias, column_order)
+                            )
                         };
                         map_block.line(format!("{}: {},", col_name, value_expr));
                     }
@@ -831,6 +858,7 @@ fn generate_nested_vec_relation_assembly(
                         rel_table,
                         &nested_name,
                         select,
+                        column_order,
                     );
                 } else {
                     // Simple Vec relation without nested Vec children
@@ -840,8 +868,9 @@ fn generate_nested_vec_relation_assembly(
                     ));
 
                     let mut if_some_block = Block::new(format!(
-                        "if let Some({}_val) = row.get::<_, Option<_>>(\"{}\")",
-                        first_alias, first_alias
+                        "if let Some({}_val) = row.get::<_, Option<_>>({})",
+                        first_alias,
+                        col_selector(&first_alias, column_order)
                     ));
 
                     let mut push_block = Block::new(format!("entry.{}.push({}", name, nested_name));
@@ -853,11 +882,14 @@ fn generate_nested_vec_relation_assembly(
                                 .column_type(rel_table, col_name)
                                 .unwrap_or_else(|| "String".to_string());
                             let value_expr = if rust_ty.starts_with("Option<") {
-                                format!("row.get(\"{}\")", alias)
+                                row_get(&alias, column_order)
                             } else if alias == first_alias {
                                 format!("{}_val", first_alias)
                             } else {
-                                format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
+                                format!(
+                                    "row.get::<_, Option<_>>({}).unwrap()",
+                                    col_selector(&alias, column_order)
+                                )
                             };
                             push_block.line(format!("{}: {},", col_name, value_expr));
                         }
@@ -892,6 +924,7 @@ fn generate_nested_vec_with_dedup(
     rel_table: &str,
     nested_name: &str,
     select: &[Field],
+    column_order: &HashMap<String, usize>,
 ) {
     let first_col = get_first_column(select);
     let id_col = get_id_column(select).unwrap_or_else(|| first_col.clone());
@@ -907,8 +940,10 @@ fn generate_nested_vec_with_dedup(
     ));
 
     let mut if_some_block = Block::new(format!(
-        "if let Some({}_id) = row.get::<_, Option<{}>>(\"{}\")",
-        name, id_type, id_alias
+        "if let Some({}_id) = row.get::<_, Option<{}>>({}) ",
+        name,
+        id_type,
+        col_selector(&id_alias, column_order)
     ));
 
     if_some_block.line(format!(
@@ -930,9 +965,12 @@ fn generate_nested_vec_with_dedup(
                     .column_type(rel_table, col_name)
                     .unwrap_or_else(|| "String".to_string());
                 let value_expr = if rust_ty.starts_with("Option<") {
-                    format!("row.get(\"{}\")", alias)
+                    row_get(&alias, column_order)
                 } else {
-                    format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
+                    format!(
+                        "row.get::<_, Option<_>>({}).unwrap()",
+                        col_selector(&alias, column_order)
+                    )
                 };
                 push_block.line(format!("{}: {},", col_name, value_expr));
             }
@@ -951,7 +989,11 @@ fn generate_nested_vec_with_dedup(
                 name: count_name, ..
             } => {
                 let alias = format!("{}_{}", name, count_name);
-                push_block.line(format!("{}: row.get(\"{}\"),", count_name, alias));
+                push_block.line(format!(
+                    "{}: {},",
+                    count_name,
+                    row_get(&alias, column_order)
+                ));
             }
         }
     }
@@ -992,8 +1034,11 @@ fn generate_nested_vec_with_dedup(
                     Block::new(format!("if {}_entry.{}.is_none()", name, inner_name));
 
                 let mut inner_map_block = Block::new(format!(
-                    "{}_entry.{} = row.get::<_, Option<_>>(\"{}\").map(|_val| {}",
-                    name, inner_name, inner_first_alias, inner_nested_name
+                    "{}_entry.{} = row.get::<_, Option<_>>({}).map(|_val| {}",
+                    name,
+                    inner_name,
+                    col_selector(&inner_first_alias, column_order),
+                    inner_nested_name
                 ));
 
                 for inner_f in inner_select {
@@ -1008,11 +1053,14 @@ fn generate_nested_vec_with_dedup(
                             .column_type(inner_table, inner_col_name)
                             .unwrap_or_else(|| "String".to_string());
                         let value_expr = if rust_ty.starts_with("Option<") {
-                            format!("row.get(\"{}\")", alias)
+                            row_get(&alias, column_order)
                         } else if alias == inner_first_alias {
                             "_val".to_string()
                         } else {
-                            format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
+                            format!(
+                                "row.get::<_, Option<_>>({}).unwrap()",
+                                col_selector(&alias, column_order)
+                            )
                         };
                         inner_map_block.line(format!("{}: {},", inner_col_name, value_expr));
                     }
@@ -1031,8 +1079,10 @@ fn generate_nested_vec_with_dedup(
                     .unwrap_or_else(|| "i64".to_string());
 
                 let mut if_inner_some = Block::new(format!(
-                    "if let Some({}_id) = row.get::<_, Option<{}>>(\"{}\")",
-                    inner_name, inner_id_type, inner_id_alias
+                    "if let Some({}_id) = row.get::<_, Option<{}>>({}) ",
+                    inner_name,
+                    inner_id_type,
+                    col_selector(&inner_id_alias, column_order)
                 ));
 
                 if_inner_some.line(format!(
@@ -1060,9 +1110,12 @@ fn generate_nested_vec_with_dedup(
                             .column_type(inner_table, inner_col_name)
                             .unwrap_or_else(|| "String".to_string());
                         let value_expr = if rust_ty.starts_with("Option<") {
-                            format!("row.get(\"{}\")", alias)
+                            row_get(&alias, column_order)
                         } else {
-                            format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
+                            format!(
+                                "row.get::<_, Option<_>>({}).unwrap()",
+                                col_selector(&alias, column_order)
+                            )
                         };
                         inner_push_block.line(format!("{}: {},", inner_col_name, value_expr));
                     }
@@ -1159,8 +1212,10 @@ fn generate_option_relation_assembly(
                         format!("Option<{}>", rust_ty)
                     };
                     map_block.line(format!(
-                        "let {}: {} = row.get(\"{}\");",
-                        alias, wrapped_ty, alias
+                        "let {}: {} = {};",
+                        alias,
+                        wrapped_ty,
+                        row_get(&alias, column_order)
                     ));
                 }
             }
