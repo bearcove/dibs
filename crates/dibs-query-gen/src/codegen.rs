@@ -155,6 +155,8 @@ fn generate_result_struct(
         }
     } else {
         // Regular query - use select fields
+        // Use query name as prefix for namespacing nested structs
+        let parent_prefix = &query.name;
         for field in fields {
             match field {
                 Field::Column { name, .. } => {
@@ -165,7 +167,7 @@ fn generate_result_struct(
                     st.field(format!("pub {}", name), &rust_ty);
                 }
                 Field::Relation { name, first, .. } => {
-                    let nested_name = to_pascal_case(name);
+                    let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
                     let ty = if *first {
                         format!("Option<{}>", nested_name)
                     } else {
@@ -184,18 +186,26 @@ fn generate_result_struct(
 
     // Generate nested structs for relations (recursively)
     if !query.is_raw() {
-        generate_nested_structs(ctx, fields, scope);
+        generate_nested_structs(ctx, &query.name, fields, scope);
     }
 }
 
 /// Recursively generate structs for nested relations.
-fn generate_nested_structs(ctx: &CodegenContext, fields: &[Field], scope: &mut Scope) {
+///
+/// `parent_prefix` is used to namespace the struct names to avoid collisions
+/// when multiple queries have relations with the same field name.
+fn generate_nested_structs(
+    ctx: &CodegenContext,
+    parent_prefix: &str,
+    fields: &[Field],
+    scope: &mut Scope,
+) {
     for field in fields {
         if let Field::Relation {
             name, select, from, ..
         } = field
         {
-            let nested_name = to_pascal_case(name);
+            let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
             let rel_table = from.as_deref().unwrap_or(name);
 
             let mut nested_st = Struct::new(&nested_name);
@@ -219,8 +229,9 @@ fn generate_nested_structs(ctx: &CodegenContext, fields: &[Field], scope: &mut S
                         first: rel_first,
                         ..
                     } => {
-                        // Nested relation field
-                        let nested_rel_name = to_pascal_case(rel_name);
+                        // Nested relation field - namespace with current struct name
+                        let nested_rel_name =
+                            format!("{}{}", nested_name, to_pascal_case(rel_name));
                         let ty = if *rel_first {
                             format!("Option<{}>", nested_rel_name)
                         } else {
@@ -239,7 +250,7 @@ fn generate_nested_structs(ctx: &CodegenContext, fields: &[Field], scope: &mut S
             scope.push_struct(nested_st);
 
             // Recursively generate structs for nested relations
-            generate_nested_structs(ctx, select, scope);
+            generate_nested_structs(ctx, &nested_name, select, scope);
         }
     }
 }
@@ -263,6 +274,8 @@ fn generate_query_function(
     func.set_async(true);
     func.generic("C");
     func.arg("client", "&C");
+    // Allow clone_on_copy since we generate .clone() calls on parent IDs that might be Copy types
+    func.attr("allow(clippy::clone_on_copy)");
 
     for param in &query.params {
         let rust_ty = param_type_to_rust(&param.ty);
@@ -382,6 +395,7 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
         if has_nested_vec_relations(&query.select) {
             block.line(generate_nested_vec_relation_assembly(
                 ctx,
+                &query.name,
                 query,
                 struct_name,
                 plan,
@@ -389,13 +403,19 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
         } else {
             block.line(generate_vec_relation_assembly(
                 ctx,
+                &query.name,
                 query,
                 struct_name,
                 plan,
             ));
         }
     } else {
-        block.line(generate_option_relation_assembly(ctx, query, struct_name));
+        block.line(generate_option_relation_assembly(
+            ctx,
+            &query.name,
+            query,
+            struct_name,
+        ));
     }
 
     block_to_string(&block)
@@ -447,6 +467,7 @@ fn generate_from_row_body(query: &Query, generated: &GeneratedSql) -> Block {
 /// Generate assembly code for queries with Vec (has-many) relations.
 fn generate_vec_relation_assembly(
     ctx: &CodegenContext,
+    parent_prefix: &str,
     query: &Query,
     struct_name: &str,
     plan: &crate::planner::QueryPlan,
@@ -502,7 +523,7 @@ fn generate_vec_relation_assembly(
             } => {
                 if *first {
                     let rel_table = from.as_deref().unwrap_or(name);
-                    let nested_name = to_pascal_case(name);
+                    let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
                     let first_col = get_first_column(select);
                     let first_alias = format!("{}_{}", name, first_col);
 
@@ -554,7 +575,7 @@ fn generate_vec_relation_assembly(
         } = field
         {
             let rel_table = from.as_deref().unwrap_or(name);
-            let nested_name = to_pascal_case(name);
+            let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
             let first_col = get_first_column(select);
             let first_alias = format!("{}_{}", name, first_col);
 
@@ -610,6 +631,7 @@ fn generate_vec_relation_assembly(
 /// we need multi-level grouping with nested HashMaps.
 fn generate_nested_vec_relation_assembly(
     ctx: &CodegenContext,
+    parent_prefix: &str,
     query: &Query,
     struct_name: &str,
     plan: &crate::planner::QueryPlan,
@@ -739,7 +761,7 @@ fn generate_nested_vec_relation_assembly(
             } => {
                 // Option relation - populate if entry.field is None
                 let rel_table = from.as_deref().unwrap_or(name);
-                let nested_name = to_pascal_case(name);
+                let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
                 let first_col = get_first_column(select);
                 let first_alias = format!("{}_{}", name, first_col);
 
@@ -781,7 +803,7 @@ fn generate_nested_vec_relation_assembly(
                 ..
             } => {
                 let rel_table = from.as_deref().unwrap_or(name);
-                let nested_name = to_pascal_case(name);
+                let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
                 let first_col = get_first_column(select);
                 let first_alias = format!("{}_{}", name, first_col);
 
@@ -949,7 +971,7 @@ fn generate_nested_vec_with_dedup(
         } = inner_field
         {
             let inner_table = inner_from.as_deref().unwrap_or(inner_name);
-            let inner_nested_name = to_pascal_case(inner_name);
+            let inner_nested_name = format!("{}{}", nested_name, to_pascal_case(inner_name));
             let inner_first_col = get_first_column(inner_select);
             let inner_first_alias = format!("{}_{}_{}", name, inner_name, inner_first_col);
 
@@ -1062,6 +1084,7 @@ fn get_id_column(select: &[Field]) -> Option<String> {
 /// Generate assembly code for queries with only Option relations.
 fn generate_option_relation_assembly(
     ctx: &CodegenContext,
+    parent_prefix: &str,
     query: &Query,
     struct_name: &str,
 ) -> String {
@@ -1103,7 +1126,7 @@ fn generate_option_relation_assembly(
         } = field
         {
             let rel_table = from.as_deref().unwrap_or(name);
-            let nested_name = to_pascal_case(name);
+            let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
 
             for f in select {
                 if let Field::Column { name: col_name, .. } = f {
@@ -1597,8 +1620,11 @@ ProductListing @query{
         let file = parse_query_file(source).unwrap();
         let code = generate_rust_code(&file);
 
-        assert!(code.code.contains("pub translation: Option<Translation>"));
-        assert!(code.code.contains("pub struct Translation"));
+        assert!(
+            code.code
+                .contains("pub translation: Option<ProductListingTranslation>")
+        );
+        assert!(code.code.contains("pub struct ProductListingTranslation"));
         assert!(code.code.contains("pub title: String"));
     }
 
@@ -1745,8 +1771,14 @@ ProductWithTranslation @query{
         );
         assert!(code.code.contains("pub id: i64"));
         assert!(code.code.contains("pub handle: String"));
-        assert!(code.code.contains("pub translation: Option<Translation>"));
-        assert!(code.code.contains("pub struct Translation"));
+        assert!(
+            code.code
+                .contains("pub translation: Option<ProductWithTranslationTranslation>")
+        );
+        assert!(
+            code.code
+                .contains("pub struct ProductWithTranslationTranslation")
+        );
         assert!(code.code.contains("LEFT JOIN"));
         assert!(code.code.contains("product_translation"));
         assert!(code.code.contains("translation_title"));
@@ -1755,10 +1787,10 @@ ProductWithTranslation @query{
         // The exact variable name depends on HashMap iteration order
         assert!(
             code.code
-                .contains(".map(|translation_description_val| Translation")
+                .contains(".map(|translation_description_val| ProductWithTranslationTranslation")
                 || code
                     .code
-                    .contains(".map(|translation_title_val| Translation"),
+                    .contains(".map(|translation_title_val| ProductWithTranslationTranslation"),
             "Expected relation construction inside .map() call"
         );
         // Check that title field is populated
@@ -1873,11 +1905,12 @@ ProductWithVariants @query{
             "Should have handle field"
         );
         assert!(
-            code.code.contains("pub variants: Vec<Variants>"),
+            code.code
+                .contains("pub variants: Vec<ProductWithVariantsVariants>"),
             "Should have Vec variants field"
         );
         assert!(
-            code.code.contains("pub struct Variants"),
+            code.code.contains("pub struct ProductWithVariantsVariants"),
             "Should generate nested Variants struct"
         );
         assert!(code.code.contains("LEFT JOIN"), "Should use LEFT JOIN");
@@ -2150,21 +2183,25 @@ ProductWithVariantsAndPrices @query{
             "Should generate top-level result struct"
         );
         assert!(
-            code.code.contains("pub struct Variants"),
+            code.code
+                .contains("pub struct ProductWithVariantsAndPricesVariants"),
             "Should generate nested Variants struct"
         );
         assert!(
-            code.code.contains("pub struct Prices"),
+            code.code
+                .contains("pub struct ProductWithVariantsAndPricesVariantsPrices"),
             "Should generate nested Prices struct"
         );
 
         // Check field types
         assert!(
-            code.code.contains("pub variants: Vec<Variants>"),
+            code.code
+                .contains("pub variants: Vec<ProductWithVariantsAndPricesVariants>"),
             "Should have Vec variants field"
         );
         assert!(
-            code.code.contains("pub prices: Vec<Prices>"),
+            code.code
+                .contains("pub prices: Vec<ProductWithVariantsAndPricesVariantsPrices>"),
             "Should have Vec prices field in Variants"
         );
 
