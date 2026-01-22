@@ -6,109 +6,56 @@
 
 Queries can have subtle issues that would fail at runtime or produce unexpected results. We should catch these at compile time (LSP squiggles + build errors/warnings).
 
-## Validations to Implement
+## Implemented ✓
 
-### Type Safety
+- [x] **OFFSET without LIMIT** - warning
+- [x] **LIMIT without ORDER BY** - warning  
+- [x] **first without ORDER BY** (queries) - warning
+- [x] **first without ORDER BY** (relations) - warning
+- [x] **UPDATE/DELETE without WHERE** - error
+- [x] **Unused param** - warning
+- [x] **Missing deleted_at filter** - warning (soft-delete tables)
+- [x] **Hard delete on soft-delete table** - warning
+- [x] **Param type vs column type mismatch** - error
+- [x] **Literal type vs column type mismatch** - error
+- [x] **No FK relationship in @rel** - error
 
-- [ ] **FK type mismatch**: Foreign key column type doesn't match target PK type
-  ```
-  error: type mismatch in relation 'variants'
-    = product_id is INTEGER but product.id is BIGINT
-  ```
+## To Implement
 
-- [ ] **Param type vs column type**: Parameter declared with wrong type for column
-  ```
-  error: type mismatch for param 'handle'
-    = param is @int but column 'handle' is TEXT
-  ```
+### Query Performance
 
-- [ ] **Literal type vs column type**: Literal value doesn't match column type
-  ```
-  error: type mismatch in where clause
-    = 'active' is BOOLEAN but got string "yes"
-  ```
+- [ ] **Large OFFSET warning** - `offset 10000` is a performance anti-pattern (cursor pagination better)
+- [ ] **ORDER BY on non-indexed column** - warn if ordering by unindexed column
+- [ ] **WHERE on non-indexed column** - hint that adding index might help (low severity)
 
-### SQL Best Practices
+### Data Integrity
 
-- [ ] **OFFSET without LIMIT**: Usually a mistake
-  ```
-  warning: 'offset' without 'limit' - did you forget limit?
-  ```
+- [ ] **Nullable column comparison** - `where {email $email}` on nullable column might miss NULL rows
+- [ ] **NULL = NULL gotcha** - comparing two nullable columns (NULL = NULL is false!)
 
-- [ ] **LIMIT without ORDER BY**: Non-deterministic results
-  ```
-  warning: 'limit' without 'order-by' returns arbitrary rows
-  ```
+### Code Quality
 
-- [ ] **Large LIMIT values**: Potential performance issue
-  ```
-  warning: limit of 10000 may cause performance issues
-  ```
+- [ ] **Duplicate column in select** - selecting the same column twice
+- [ ] **Conflicting WHERE conditions** - `where {status "active", status "draft"}` (always empty)
+- [ ] **Tautology detection** - `where {id id}` (comparing column to itself)
+- [ ] **Empty select block** - `select {}` with no columns
 
-- [ ] **Missing WHERE on UPDATE/DELETE**: Dangerous, affects all rows
-  ```
-  error: @update without 'where' clause affects all rows
-    = add 'where' clause or use 'all true' to confirm intent
-  ```
+### Schema-Aware
 
-### Soft Delete Patterns
-
-- [ ] **Missing deleted_at filter**: Table has `deleted_at` column but query doesn't filter it
-  ```
-  warning: query on 'product' doesn't filter 'deleted_at'
-    = table has soft deletes - add 'deleted_at @null' or 'include-deleted true'
-  ```
-
-- [ ] **Hard delete on soft-delete table**: Using @delete on table with `deleted_at`
-  ```
-  warning: @delete on table with 'deleted_at' column
-    = consider soft delete with @update instead
-  ```
+- [ ] **Enum value validation** - validate literals match column's enum_variants
+- [ ] **Upsert on-conflict not unique** - target must be unique constraint
 
 ### Relations
 
-- [ ] **first without order-by**: Non-deterministic which row is "first"
-  ```
-  warning: 'first true' without 'order-by' returns arbitrary row
-  ```
+- [ ] **Deep nesting warning** - relations nested 4+ levels may cause N+1
 
-- [ ] **Deep nesting**: Performance warning for deeply nested relations
-  ```
-  warning: relation nested 4 levels deep may cause N+1 queries
-  ```
-
-### Upsert
-
-- [ ] **on-conflict target not unique**: Will fail at runtime
-  ```
-  error: on-conflict target 'status' is not a unique constraint
-    = target must be a unique index or primary key
-  ```
-
-### Unused/Missing
-
-- [ ] **Unused param**: Parameter declared but never referenced
-  ```
-  warning: param 'filter' is declared but never used
-  ```
-
-- [ ] **Unknown column**: Column in select/where doesn't exist (already implemented in LSP)
-
-- [ ] **Unknown table**: Table doesn't exist (already implemented in LSP)
-
-## Implementation
-
-### Phase 1: LSP Extension
-Add validation in `collect_diagnostics()` - user sees squiggles immediately.
-
-### Phase 2: Codegen
-Add validation pass in query parsing - build fails on errors, warns on warnings.
+## Implementation Notes
 
 ### Schema Requirements
 
-Some validations need schema metadata we may not have yet:
+Some validations need schema metadata:
+- Index information (for ORDER BY / WHERE index hints)
 - Unique constraints (for upsert validation)
-- Column nullability
-- Default values
+- Column nullability (for NULL comparison warnings)
 
-May need to expand `SchemaInfo` to include constraint information.
+`SchemaInfo` already has `indices: Vec<IndexInfo>` and columns have nullable info.
