@@ -92,3 +92,38 @@ jobs:
         run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
+
+  test-tokio-postgres:
+    name: Test tokio-postgres
+    runs-on: depot-ubuntu-24.04-4
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run facet-tokio-postgres tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+        run: cargo nextest run -p facet-tokio-postgres --features test-postgres
