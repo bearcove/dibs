@@ -43,6 +43,27 @@
     --flow-step-title: var(--fg);
     --flow-step-body: var(--fg-muted);
     --flow-arrow: var(--fg-muted);
+
+    /* Vertical flow sizing (consistent card widths) */
+    --flow-vertical-w: 56ch;
+
+    /* Chat bubbles */
+    --chat-gap: 0.65rem;
+    --chat-radius: 14px;
+    --chat-border: 1px solid var(--border);
+    --chat-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+    --chat-bubble-w: 44ch;
+    --chat-side-gutter: 12%;
+
+    --chat-cli-bg: light-dark(#ffffff, #18181b);
+    --chat-cli-fg: var(--fg);
+
+    /* Service-side bubbles: visually distinct and aligned right */
+    --chat-service-bg: light-dark(#f5f3ff, #120a1f);
+    --chat-service-fg: var(--fg);
+    --chat-service-border: light-dark(#ddd6fe, #2e1065);
+
+    --chat-meta-fg: var(--fg-muted);
 }
 
 * {
@@ -128,6 +149,70 @@ Flow diagram (used in Internals page) is plain HTML:
 }
 
 /* ------------------------------------------------------------
+   Chat bubbles (used for “questions the CLI asks”)
+   ------------------------------------------------------------ */
+
+.chat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--chat-gap);
+    margin: 0.9rem 0 1.25rem;
+}
+
+.bubble {
+    border: var(--chat-border);
+    border-radius: var(--chat-radius);
+    background: var(--chat-cli-bg);
+    color: var(--chat-cli-fg);
+    box-shadow: var(--chat-shadow);
+    padding: 0.75rem 0.9rem;
+    width: min(100%, var(--chat-bubble-w));
+}
+
+/* Make the alternating sides visually obvious by reserving a gutter on the opposite side */
+.bubble-cli {
+    margin-right: var(--chat-side-gutter);
+}
+
+.bubble-service {
+    margin-left: var(--chat-side-gutter);
+}
+
+.bubble-cli {
+    align-self: flex-start;
+}
+
+.bubble-service {
+    align-self: flex-end;
+    background: var(--chat-service-bg);
+    color: var(--chat-service-fg);
+    border-color: var(--chat-service-border);
+}
+
+.bubble-who {
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.25rem;
+    color: var(--fg);
+}
+
+.bubble-service .bubble-who {
+    color: var(--fg);
+}
+
+.bubble-text {
+    font-size: 1rem;
+    line-height: 1.55;
+}
+
+.bubble-meta {
+    margin-top: 0.35rem;
+    font-size: 0.9rem;
+    color: var(--chat-meta-fg);
+}
+
+/* ------------------------------------------------------------
    Flow diagram (pipeline)
    ------------------------------------------------------------ */
 
@@ -180,7 +265,7 @@ Flow diagram (used in Internals page) is plain HTML:
 .flow.flow-vertical .flow-step {
     flex: 0 0 auto;
     min-width: 0;
-    max-width: var(--content-max);
+    width: min(100%, var(--flow-vertical-w));
     margin-left: auto;
     margin-right: auto;
 }
