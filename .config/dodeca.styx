@@ -1,0 +1,4 @@
+@schema {id crate:dodeca-config@1, cli ddc}
+
+content docs/content
+output docs/public
