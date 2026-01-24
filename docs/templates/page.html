@@ -5,16 +5,24 @@
 
 {% block body %}
 {% set has_sidebar = false %}
+{% set has_left_spacer = false %}
 {% if page.ancestors | length > 0 %}
     {% set root_section_path = page.ancestors[0].path %}
     {% set root_section = get_section(path=root_section_path) %}
     {% set has_sidebar = root_section.pages | length > 0 or root_section.subsections | length > 0 %}
+{% else %}
+    {# Top-level pages: keep layout consistent by reserving a left spacer #}
+    {% set has_left_spacer = true %}
 {% endif %}
 
-{% if has_sidebar %}
+{% if has_sidebar or has_left_spacer %}
 <main class="docs-main">
     <div class="docs">
-        {{ macros::sidebar(root_section_path=root_section_path, current_path=page.permalink) }}
+        {% if has_sidebar %}
+            {{ macros::sidebar(root_section_path=root_section_path, current_path=page.permalink) }}
+        {% else %}
+            <div class="docs-sidebar-spacer"></div>
+        {% endif %}
 
         <main class="docs-content{% if not (page.toc and page.toc | length > 0) %} no-toc{% endif %}">
             <article class="article">

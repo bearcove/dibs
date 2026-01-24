@@ -12,15 +12,188 @@
     --code-border: light-dark(#e7e5e4, #27272a);
     --border: light-dark(#e4e4e7, #27272a);
     --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
-    --font-mono: "Berkeley Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-mono:
+        "Berkeley Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        monospace;
     --content-max: 68ch;
     --side-w: 240px;
+
+    /* Callouts */
+    --callout-radius: 12px;
+    --callout-border: 1px solid var(--border);
+    --callout-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+    --callout-pad-y: 0.85rem;
+    --callout-pad-x: 1rem;
+
+    --callout-info-accent: light-dark(#2563eb, #60a5fa);
+    --callout-warn-accent: light-dark(#d97706, #fb923c);
+    --callout-recap-accent: light-dark(#059669, #34d399);
+    --callout-aside-accent: light-dark(#7c3aed, #c4b5fd);
+
+    --callout-info-bg: light-dark(#eff6ff, #0b1220);
+    --callout-warn-bg: light-dark(#fffbeb, #1a1207);
+    --callout-recap-bg: light-dark(#ecfdf5, #07140e);
+    --callout-aside-bg: light-dark(#f5f3ff, #120a1f);
+
+    /* Flow diagram */
+    --flow-gap: 0.75rem;
+    --flow-step-radius: 12px;
+    --flow-step-border: 1px solid var(--border);
+    --flow-step-bg: var(--bg-raised);
+    --flow-step-title: var(--fg);
+    --flow-step-body: var(--fg-muted);
+    --flow-arrow: var(--fg-muted);
 }
 
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------
+   Callout boxes (recap / info / warn / aside)
+   ------------------------------------------------------------ */
+
+/*
+Use in Markdown like:
+
+<div class="callout info">
+<strong>Info</strong>
+<p>…</p>
+</div>
+
+(Or use recap / warn / aside.)
+
+Flow diagram (used in Internals page) is plain HTML:
+<div class="flow">
+  <div class="flow-step">…</div>
+  <div class="flow-arrow">…svg…</div>
+  …
+</div>
+*/
+
+.callout {
+    border: var(--callout-border);
+    border-left-width: 4px;
+    border-radius: var(--callout-radius);
+    padding: var(--callout-pad-y) var(--callout-pad-x);
+    background: var(--bg-raised);
+    box-shadow: var(--callout-shadow);
+    margin: 1.25rem 0;
+}
+
+.callout > :first-child {
+    margin-top: 0;
+}
+
+.callout > :last-child {
+    margin-bottom: 0;
+}
+
+.callout strong:first-child {
+    display: inline-block;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+
+.callout.info {
+    border-left-color: var(--callout-info-accent);
+    background: var(--callout-info-bg);
+}
+
+.callout.warn {
+    border-left-color: var(--callout-warn-accent);
+    background: var(--callout-warn-bg);
+}
+
+.callout.recap {
+    border-left-color: var(--callout-recap-accent);
+    background: var(--callout-recap-bg);
+}
+
+.callout.aside {
+    border-left-color: var(--callout-aside-accent);
+    background: var(--callout-aside-bg);
+}
+
+/* Make links in callouts pop a bit without looking like buttons */
+.callout a {
+    color: var(--accent-dim);
+    font-weight: 600;
+}
+
+.callout a:hover {
+    color: var(--accent);
+}
+
+/* ------------------------------------------------------------
+   Flow diagram (pipeline)
+   ------------------------------------------------------------ */
+
+.flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: var(--flow-gap);
+    margin: 1rem 0 1.25rem;
+}
+
+.flow-step {
+    flex: 1 1 220px;
+    min-width: 220px;
+    border: var(--flow-step-border);
+    border-radius: var(--flow-step-radius);
+    background: var(--flow-step-bg);
+    padding: 0.8rem 0.9rem;
+}
+
+.flow-title {
+    font-weight: 800;
+    color: var(--flow-step-title);
+    letter-spacing: -0.01em;
+    margin-bottom: 0.25rem;
+}
+
+.flow-body {
+    color: var(--flow-step-body);
+    font-size: 0.95rem;
+    line-height: 1.55;
+}
+
+.flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--flow-arrow);
+    flex: 0 0 auto;
+    padding: 0 0.15rem;
+}
+
+/* Vertical flow variant (used on /internals): single column + down arrows */
+.flow.flow-vertical {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+}
+
+.flow.flow-vertical .flow-step {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: var(--content-max);
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.flow.flow-vertical .flow-arrow {
+    padding: 0.1rem 0;
+}
+
+/* Horizontal flow: hide arrows on narrow screens (wrap makes arrows look odd) */
+@media (max-width: 760px) {
+    .flow:not(.flow-vertical) .flow-arrow {
+        display: none;
+    }
 }
 
 html {
@@ -290,6 +463,11 @@ article a:hover {
     display: grid;
     grid-template-columns: var(--side-w) minmax(0, 1fr);
     gap: 2rem;
+}
+
+/* Placeholder element used on top-level pages (no section sidebar) to preserve layout */
+.docs-sidebar-spacer {
+    width: var(--side-w);
 }
 
 .docs-content {
