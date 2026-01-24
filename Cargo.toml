@@ -85,6 +85,7 @@ codegen = "0.3"
 
 # misc
 inventory = "0.3"
+blake3 = "1"
 
 # dev/test dependencies
 insta = "1"
