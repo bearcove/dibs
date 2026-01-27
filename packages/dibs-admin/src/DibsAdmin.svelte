@@ -1133,10 +1133,9 @@
     }
 
     .admin-layout {
-        height: 100%;
-        min-height: 100vh;
         display: grid;
         grid-template-columns: 280px 1fr;
+        min-height: 100vh;
     }
 
     .table-section {

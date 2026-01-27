@@ -260,7 +260,9 @@
         border-right: 1px solid var(--sidebar-border);
         display: flex;
         flex-direction: column;
-        min-height: 100vh;
+        height: 100vh;
+        position: sticky;
+        top: 0;
     }
 
     .nav-button {
