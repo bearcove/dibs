@@ -9,11 +9,11 @@
         config: CountTile;
         schema: SchemaInfo;
         client: SquelClient;
-        databaseUrl: string;
+
         onSelectTable: (tableName: string) => void;
     }
 
-    let { config, schema, client, databaseUrl, onSelectTable }: Props = $props();
+    let { config, schema, client, onSelectTable }: Props = $props();
 
     let count = $state<bigint | null>(null);
     let loading = $state(true);
@@ -38,7 +38,6 @@
             const filters = config.filter ? filterConfigsToFilters(config.filter) : [];
 
             const result = await client.list({
-                database_url: databaseUrl,
                 table: config.table,
                 filters,
                 sort: [],

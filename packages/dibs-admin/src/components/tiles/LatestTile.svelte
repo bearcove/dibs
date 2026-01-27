@@ -9,11 +9,11 @@
         config: LatestRecordsTile;
         schema: SchemaInfo;
         client: SquelClient;
-        databaseUrl: string;
+
         onSelectTable: (tableName: string) => void;
     }
 
-    let { config, schema, client, databaseUrl, onSelectTable }: Props = $props();
+    let { config, schema, client, onSelectTable }: Props = $props();
 
     let rows = $state<Row[]>([]);
     let loading = $state(true);
@@ -48,12 +48,17 @@
         if (config.sort) {
             return {
                 field: config.sort.field,
-                dir: config.sort.direction === "desc" ? { tag: "Desc" as const } : { tag: "Asc" as const },
+                dir:
+                    config.sort.direction === "desc"
+                        ? { tag: "Desc" as const }
+                        : { tag: "Asc" as const },
             };
         }
         // Default: sort by created_at or PK desc
         if (tableInfo) {
-            const createdAt = tableInfo.columns.find((c) => c.name === "created_at" || c.name === "createdat");
+            const createdAt = tableInfo.columns.find(
+                (c) => c.name === "created_at" || c.name === "createdat",
+            );
             if (createdAt) {
                 return { field: createdAt.name, dir: { tag: "Desc" as const } };
             }
@@ -77,7 +82,6 @@
 
         try {
             const result = await client.list({
-                database_url: databaseUrl,
                 table: config.table,
                 filters: [],
                 sort: sortConfig() ? [sortConfig()!] : [],

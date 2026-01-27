@@ -20,7 +20,7 @@
         table: TableInfo;
         schema: SchemaInfo;
         client: SquelClient;
-        databaseUrl: string;
+        
         tableName: string;
         config?: DibsAdminConfig;
         onFieldSave?: (fieldName: string, newValue: Value) => void | Promise<void>;
@@ -36,7 +36,7 @@
         table,
         schema,
         client,
-        databaseUrl,
+        
         tableName,
         config,
         onFieldSave,
@@ -428,7 +428,7 @@
                                         value={fieldValue}
                                         fkTable={fkInfo.fkTable}
                                         {client}
-                                        {databaseUrl}
+                                        
                                         disabled={readOnly}
                                         onchange={(v) => handleFieldChange(col.name, v)}
                                     />
@@ -480,7 +480,7 @@
                                                         value={fieldValue}
                                                         fkTable={fkInfo.fkTable}
                                                         {client}
-                                                        {databaseUrl}
+                                                        
                                                         disabled={readOnly}
                                                         onchange={(v) => handleFieldChange(col.name, v)}
                                                     />
@@ -514,7 +514,7 @@
                     currentRow={row}
                     {schema}
                     {client}
-                    {databaseUrl}
+                    
                     {onNavigate}
                 />
             </div>

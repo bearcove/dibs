@@ -1,0 +1,8 @@
+{
+  "name": "dibs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "pnpm -r check"
+  }
+}

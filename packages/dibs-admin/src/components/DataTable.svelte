@@ -1,6 +1,26 @@
 <script lang="ts">
-    import { CaretUp, CaretDown, Clock, Hash, TextT, ToggleLeft, Calendar, Timer, Binary, ArrowSquareOut } from "phosphor-svelte";
-    import type { Row, ColumnInfo, Value, Sort, SortDir, TableInfo, SchemaInfo, SquelClient } from "../types.js";
+    import {
+        CaretUp,
+        CaretDown,
+        Clock,
+        Hash,
+        TextT,
+        ToggleLeft,
+        Calendar,
+        Timer,
+        Binary,
+        ArrowSquareOut,
+    } from "phosphor-svelte";
+    import type {
+        Row,
+        ColumnInfo,
+        Value,
+        Sort,
+        SortDir,
+        TableInfo,
+        SchemaInfo,
+        SquelClient,
+    } from "../types.js";
     import type { RowExpandConfig } from "../types/config.js";
     import type { Component } from "svelte";
     import { getFkForColumn, getTableByName } from "../lib/fk-utils.js";
@@ -18,7 +38,7 @@
         table?: TableInfo;
         schema?: SchemaInfo;
         client?: SquelClient;
-        databaseUrl?: string;
+
         onFkClick?: (targetTable: string, pkValue: Value) => void;
         fkLookup?: Map<string, Map<string, Row>>;
         // Time display mode
@@ -29,7 +49,21 @@
         imageColumns?: string[];
     }
 
-    let { columns, rows, sort, onSort, onRowClick, table, schema, client, databaseUrl, onFkClick, fkLookup, timeMode = "relative", rowExpand, imageColumns = [] }: Props = $props();
+    let {
+        columns,
+        rows,
+        sort,
+        onSort,
+        onRowClick,
+        table,
+        schema,
+        client,
+        onFkClick,
+        fkLookup,
+        timeMode = "relative",
+        rowExpand,
+        imageColumns = [],
+    }: Props = $props();
 
     // Track which rows have expanded content
     let expandedRows = $state<Set<number>>(new Set());
@@ -47,7 +81,14 @@
         if (t === "DATE") return Calendar;
         if (t === "TIME") return Timer;
         if (t.includes("INT") || t === "BIGINT" || t === "SMALLINT" || t === "INTEGER") return Hash;
-        if (t === "REAL" || t === "DOUBLE PRECISION" || t.includes("FLOAT") || t.includes("NUMERIC") || t.includes("DECIMAL")) return Hash;
+        if (
+            t === "REAL" ||
+            t === "DOUBLE PRECISION" ||
+            t.includes("FLOAT") ||
+            t.includes("NUMERIC") ||
+            t.includes("DECIMAL")
+        )
+            return Hash;
         if (t === "BOOLEAN" || t === "BOOL") return ToggleLeft;
         if (t === "TEXT" || t.includes("VARCHAR") || t.includes("CHAR")) return TextT;
         if (t === "BYTEA") return Binary;
@@ -151,7 +192,8 @@
         if (!fkLookup || value.tag === "Null") return undefined;
         const tableCache = fkLookup.get(tableName);
         if (!tableCache) return undefined;
-        const pkStr = typeof value.value === "bigint" ? value.value.toString() : String(value.value);
+        const pkStr =
+            typeof value.value === "bigint" ? value.value.toString() : String(value.value);
         return tableCache.get(pkStr);
     }
 
@@ -170,12 +212,15 @@
     }
 
     // Get preview of content (first N lines)
-    function getPreview(content: string, lines: number = 3): { preview: string; truncated: boolean } {
-        const allLines = content.split('\n');
+    function getPreview(
+        content: string,
+        lines: number = 3,
+    ): { preview: string; truncated: boolean } {
+        const allLines = content.split("\n");
         if (allLines.length <= lines) {
             return { preview: content, truncated: false };
         }
-        return { preview: allLines.slice(0, lines).join('\n'), truncated: true };
+        return { preview: allLines.slice(0, lines).join("\n"), truncated: true };
     }
 
     // Toggle expanded state for a row
@@ -239,9 +284,16 @@
                         >
                             <span class="inline-flex items-center gap-1.5">
                                 {#if col.icon}
-                                    <DynamicIcon name={col.icon} size={12} class="text-muted-foreground/60 flex-shrink-0" />
+                                    <DynamicIcon
+                                        name={col.icon}
+                                        size={12}
+                                        class="text-muted-foreground/60 flex-shrink-0"
+                                    />
                                 {:else if TypeIcon}
-                                    <TypeIcon size={12} class="text-muted-foreground/60 flex-shrink-0" />
+                                    <TypeIcon
+                                        size={12}
+                                        class="text-muted-foreground/60 flex-shrink-0"
+                                    />
                                 {/if}
                                 {#if isImageColumn(col.name) && rawValue.tag === "String" && rawValue.value}
                                     <img
@@ -249,14 +301,16 @@
                                         alt={col.name}
                                         class="w-8 h-8 rounded-full object-cover"
                                     />
-                                {:else if fkInfo && client && databaseUrl && rawValue.tag !== "Null"}
-                                    {@const cachedRow = getCachedFkRow(fkInfo.fkTable.name, rawValue)}
+                                {:else if fkInfo && client && rawValue.tag !== "Null"}
+                                    {@const cachedRow = getCachedFkRow(
+                                        fkInfo.fkTable.name,
+                                        rawValue,
+                                    )}
                                     <FkCell
                                         value={rawValue}
                                         fkTable={fkInfo.fkTable}
                                         fkColumn={fkInfo.fkColumn}
                                         {client}
-                                        {databaseUrl}
                                         onClick={() => handleFkClick(fkInfo.fkTable.name, rawValue)}
                                         {cachedRow}
                                     />
@@ -274,16 +328,16 @@
                     {@const previewData = getPreview(expandedContent, previewLines)}
                     {@const displayContent = isExpanded ? expandedContent : previewData.preview}
                     <tr class="bg-muted/30">
-                        <td
-                            colspan={columns.length}
-                            class="px-4 py-3 text-sm"
-                        >
+                        <td colspan={columns.length} class="px-4 py-3 text-sm">
                             {#if rowExpand?.render === "markdown"}
                                 <div class="prose prose-sm dark:prose-invert max-w-none">
                                     <MarkdownRenderer content={displayContent} />
                                 </div>
                             {:else if rowExpand?.render === "code"}
-                                <pre class="font-mono text-xs bg-muted p-3 rounded overflow-x-auto"><code>{displayContent}</code></pre>
+                                <pre
+                                    class="font-mono text-xs bg-muted p-3 rounded overflow-x-auto"><code
+                                        >{displayContent}</code
+                                    ></pre>
                             {:else}
                                 <div class="whitespace-pre-wrap">{displayContent}</div>
                             {/if}

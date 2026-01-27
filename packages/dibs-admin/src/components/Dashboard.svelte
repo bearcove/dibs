@@ -15,11 +15,10 @@
         config: DibsAdminConfig;
         schema: SchemaInfo;
         client: SquelClient;
-        databaseUrl: string;
         onSelectTable: (tableName: string) => void;
     }
 
-    let { config, schema, client, databaseUrl, onSelectTable }: Props = $props();
+    let { config, schema, client, onSelectTable }: Props = $props();
 
     let dashboardConfig = $derived(config.dashboard);
     let tiles = $derived(dashboardConfig?.tiles ?? []);
@@ -32,26 +31,11 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {#each tiles as tile}
             {#if tile.type === "latest"}
-                <LatestTile
-                    config={tile}
-                    {schema}
-                    {client}
-                    {databaseUrl}
-                    {onSelectTable}
-                />
+                <LatestTile config={tile} {schema} {client} {onSelectTable} />
             {:else if tile.type === "count"}
-                <CountTileComponent
-                    config={tile}
-                    {schema}
-                    {client}
-                    {databaseUrl}
-                    {onSelectTable}
-                />
+                <CountTileComponent config={tile} {schema} {client} {onSelectTable} />
             {:else if tile.type === "links"}
-                <LinksTile
-                    config={tile}
-                    {onSelectTable}
-                />
+                <LinksTile config={tile} {onSelectTable} />
             {:else if tile.type === "custom"}
                 {@const CustomComponent = tile.component}
                 <CustomComponent />

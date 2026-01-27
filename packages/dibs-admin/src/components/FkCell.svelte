@@ -9,12 +9,12 @@
         fkTable: TableInfo;
         fkColumn: string;
         client: SquelClient;
-        databaseUrl: string;
+
         onClick: () => void;
         cachedRow?: Row;
     }
 
-    let { value, fkTable, fkColumn, client, databaseUrl, onClick, cachedRow }: Props = $props();
+    let { value, fkTable, fkColumn, client, onClick, cachedRow }: Props = $props();
 
     // Hover preview state
     let showPreview = $state(false);
@@ -32,7 +32,6 @@
 
         try {
             const result = await client.get({
-                database_url: databaseUrl,
                 table: fkTable.name,
                 pk: value,
             });
@@ -87,7 +86,7 @@
         if (rowData) {
             const displayCol = getDisplayColumn(fkTable);
             if (displayCol) {
-                const displayField = rowData.fields.find(f => f.name === displayCol.name);
+                const displayField = rowData.fields.find((f) => f.name === displayCol.name);
                 if (displayField && displayField.value.tag !== "Null") {
                     return formatValueForDisplay(displayField.value);
                 }
@@ -113,14 +112,9 @@
     <div
         class="fixed z-50"
         style="left: {previewPosition.x}px; top: {previewPosition.y}px;"
-        onmouseenter={() => showPreview = true}
+        onmouseenter={() => (showPreview = true)}
         onmouseleave={handleMouseLeave}
     >
-        <FkPreview
-            row={previewRow}
-            table={fkTable}
-            loading={previewLoading}
-            error={previewError}
-        />
+        <FkPreview row={previewRow} table={fkTable} loading={previewLoading} error={previewError} />
     </div>
 {/if}

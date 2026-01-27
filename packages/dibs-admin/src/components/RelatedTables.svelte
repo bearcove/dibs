@@ -24,7 +24,7 @@
         /** Client for fetching data */
         client: SquelClient;
         /** Database URL */
-        databaseUrl: string;
+
         /** Callback when user wants to navigate to a related row */
         onNavigate?: (table: string, pkValue: Value) => void;
     }
@@ -34,7 +34,7 @@
         currentRow,
         schema,
         client,
-        databaseUrl,
+
         onNavigate,
     }: Props = $props();
 
@@ -43,7 +43,7 @@
 
     // Track loaded data for each relation
     let relationData = $state<Map<string, { rows: Row[]; total: bigint | null; loading: boolean }>>(
-        new Map()
+        new Map(),
     );
 
     // FK lookup cache for resolving foreign key display values
@@ -95,7 +95,9 @@
         if (titleCol) return titleCol.name;
 
         const textCol = table.columns.find(
-            (c) => c.sql_type.toLowerCase().includes("text") || c.sql_type.toLowerCase().includes("varchar")
+            (c) =>
+                c.sql_type.toLowerCase().includes("text") ||
+                c.sql_type.toLowerCase().includes("varchar"),
         );
         if (textCol) return textCol.name;
 
@@ -121,7 +123,9 @@
     }
 
     // Get "other" FK columns - FKs that don't point back to the current table
-    function getOtherFkColumns(relation: IncomingRelation): { col: string; refTable: string; refCol: string }[] {
+    function getOtherFkColumns(
+        relation: IncomingRelation,
+    ): { col: string; refTable: string; refCol: string }[] {
         const results: { col: string; refTable: string; refCol: string }[] = [];
         for (const fk of relation.table.foreign_keys) {
             // Skip the FK that points to the current table
@@ -145,16 +149,16 @@
         const newLookup = new Map(fkLookup);
 
         for (const { col, refTable } of otherFks) {
-            const refTableInfo = schema.tables.find(t => t.name === refTable);
+            const refTableInfo = schema.tables.find((t) => t.name === refTable);
             if (!refTableInfo) continue;
 
-            const pkCol = refTableInfo.columns.find(c => c.primary_key);
+            const pkCol = refTableInfo.columns.find((c) => c.primary_key);
             if (!pkCol) continue;
 
             // Collect unique PK values to fetch
             const pkValues = new Set<string>();
             for (const row of rows) {
-                const field = row.fields.find(f => f.name === col);
+                const field = row.fields.find((f) => f.name === col);
                 if (field && field.value.tag !== "Null") {
                     pkValues.add(formatValue(field.value));
                 }
@@ -169,17 +173,27 @@
             const tableCache = newLookup.get(refTable)!;
 
             // Filter out already-cached values
-            const uncachedPks = [...pkValues].filter(pk => !tableCache.has(pk));
+            const uncachedPks = [...pkValues].filter((pk) => !tableCache.has(pk));
             if (uncachedPks.length === 0) continue;
 
             // Convert to Value array for IN filter
-            const inValues = uncachedPks.map(pk => parsePkValue(pk, pkCol.sql_type));
+            const inValues = uncachedPks.map((pk) => parsePkValue(pk, pkCol.sql_type));
 
             // Find display column
-            const labelCol = refTableInfo.columns.find(c => c.label);
-            const displayCol = labelCol ?? refTableInfo.columns.find(c =>
-                ['name', 'title', 'label', 'display_name', 'username', 'email', 'slug'].includes(c.name.toLowerCase())
-            );
+            const labelCol = refTableInfo.columns.find((c) => c.label);
+            const displayCol =
+                labelCol ??
+                refTableInfo.columns.find((c) =>
+                    [
+                        "name",
+                        "title",
+                        "label",
+                        "display_name",
+                        "username",
+                        "email",
+                        "slug",
+                    ].includes(c.name.toLowerCase()),
+                );
 
             const selectCols = [pkCol.name];
             if (displayCol && displayCol.name !== pkCol.name) {
@@ -188,14 +202,15 @@
 
             try {
                 const result = await client.list({
-                    database_url: databaseUrl,
                     table: refTable,
-                    filters: [{
-                        field: pkCol.name,
-                        op: { tag: "In" },
-                        value: { tag: "Null" },
-                        values: inValues,
-                    }],
+                    filters: [
+                        {
+                            field: pkCol.name,
+                            op: { tag: "In" },
+                            value: { tag: "Null" },
+                            values: inValues,
+                        },
+                    ],
                     sort: [],
                     limit: inValues.length,
                     offset: null,
@@ -204,7 +219,7 @@
 
                 if (result.ok) {
                     for (const row of result.value.rows) {
-                        const pkField = row.fields.find(f => f.name === pkCol.name);
+                        const pkField = row.fields.find((f) => f.name === pkCol.name);
                         if (pkField) {
                             tableCache.set(formatValue(pkField.value), row);
                         }
@@ -247,7 +262,6 @@
             }));
 
             const result = await client.list({
-                database_url: databaseUrl,
                 table: relation.table.name,
                 filters,
                 sort: [],
@@ -303,26 +317,34 @@
     }
 
     // Check if a column should be excluded from display summary
-    function isBoringColumn(col: { name: string; sql_type: string; primary_key?: boolean }, relation: IncomingRelation): boolean {
+    function isBoringColumn(
+        col: { name: string; sql_type: string; primary_key?: boolean },
+        relation: IncomingRelation,
+    ): boolean {
         // Skip PKs
         if (col.primary_key) return true;
         // Skip FK columns pointing back to current table
         if (relation.fkColumns.includes(col.name)) return true;
         // Skip timestamp columns
         const nameLower = col.name.toLowerCase();
-        if (nameLower.includes('created_at') || nameLower.includes('updated_at') ||
-            nameLower.includes('deleted_at') || nameLower.includes('_at')) return true;
+        if (
+            nameLower.includes("created_at") ||
+            nameLower.includes("updated_at") ||
+            nameLower.includes("deleted_at") ||
+            nameLower.includes("_at")
+        )
+            return true;
         // Skip typical metadata columns
-        if (nameLower === 'metadata' || nameLower === 'raw_data') return true;
+        if (nameLower === "metadata" || nameLower === "raw_data") return true;
         return false;
     }
 
     // Get the best display string for a related row
     function getRowDisplayString(row: Row, relation: IncomingRelation): string {
-        const pkCol = relation.table.columns.find(c => c.primary_key);
+        const pkCol = relation.table.columns.find((c) => c.primary_key);
 
         // First check if there's an explicit label column
-        const labelCol = relation.table.columns.find(c => c.label);
+        const labelCol = relation.table.columns.find((c) => c.label);
         if (labelCol) {
             const labelValue = getFieldValue(row, labelCol.name);
             if (labelValue && labelValue.tag !== "Null") {
@@ -344,7 +366,7 @@
                 const cachedRow = tableCache?.get(fkStr);
 
                 if (cachedRow) {
-                    const refTableInfo = schema.tables.find(t => t.name === refTable);
+                    const refTableInfo = schema.tables.find((t) => t.name === refTable);
                     if (refTableInfo) {
                         const refDisplayCol = getDisplayColumn(refTableInfo);
                         const refDisplayValue = getFieldValue(cachedRow, refDisplayCol);
@@ -365,7 +387,9 @@
 
         // For non-junction tables, show interesting columns combined
         // E.g., for variant_price: "EUR 19.99" instead of just "EUR"
-        const interestingCols = relation.table.columns.filter(col => !isBoringColumn(col, relation));
+        const interestingCols = relation.table.columns.filter(
+            (col) => !isBoringColumn(col, relation),
+        );
         const valueParts: string[] = [];
 
         for (const col of interestingCols) {
@@ -393,7 +417,10 @@
 
     // Get the best navigation target for a row
     // For junction tables, navigate to the "other" side instead of the junction record
-    function getNavigationTarget(row: Row, relation: IncomingRelation): { table: string; pk: Value } | null {
+    function getNavigationTarget(
+        row: Row,
+        relation: IncomingRelation,
+    ): { table: string; pk: Value } | null {
         const otherFks = getOtherFkColumns(relation);
 
         // If there's exactly one "other" FK, navigate to that target
@@ -440,7 +467,10 @@
                     </span>
 
                     {#if relation.table.icon}
-                        <DynamicIcon name={relation.table.icon} class="w-4 h-4 text-muted-foreground" />
+                        <DynamicIcon
+                            name={relation.table.icon}
+                            class="w-4 h-4 text-muted-foreground"
+                        />
                     {:else}
                         <TableIcon size={14} class="text-muted-foreground" />
                     {/if}
@@ -467,9 +497,12 @@
                                     {@const target = getNavigationTarget(row, relation)}
                                     <button
                                         class="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent/30 transition-colors text-left text-sm"
-                                        onclick={() => target && onNavigate?.(target.table, target.pk)}
+                                        onclick={() =>
+                                            target && onNavigate?.(target.table, target.pk)}
                                     >
-                                        <span class="text-muted-foreground/70 font-mono text-xs min-w-[2rem]">
+                                        <span
+                                            class="text-muted-foreground/70 font-mono text-xs min-w-[2rem]"
+                                        >
                                             #{target ? formatValue(target.pk) : "?"}
                                         </span>
                                         <span class="truncate">
@@ -485,7 +518,9 @@
                                 {/if}
                             </div>
                         {:else if data}
-                            <div class="px-3 py-2 text-sm text-muted-foreground">No related records</div>
+                            <div class="px-3 py-2 text-sm text-muted-foreground">
+                                No related records
+                            </div>
                         {/if}
                     </div>
                 {/if}

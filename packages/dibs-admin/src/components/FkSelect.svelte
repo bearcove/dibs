@@ -7,12 +7,12 @@
         value: string;
         fkTable: TableInfo;
         client: SquelClient;
-        databaseUrl: string;
+
         disabled?: boolean;
         onchange: (value: string) => void;
     }
 
-    let { value = $bindable(), fkTable, client, databaseUrl, disabled = false, onchange }: Props = $props();
+    let { value = $bindable(), fkTable, client, disabled = false, onchange }: Props = $props();
 
     let options = $state<{ value: string; label: string }[]>([]);
     let loading = $state(true);
@@ -20,7 +20,7 @@
 
     // Get the display column and PK column for the FK table
     let displayCol = $derived(getDisplayColumn(fkTable));
-    let pkCol = $derived(fkTable.columns.find(c => c.primary_key));
+    let pkCol = $derived(fkTable.columns.find((c) => c.primary_key));
 
     // Load options when component mounts or fkTable changes
     $effect(() => {
@@ -39,7 +39,6 @@
         error = null;
 
         const request: ListRequest = {
-            database_url: databaseUrl,
             table: tableName,
             filters: [],
             sort: display ? [{ field: display.name, dir: { tag: "Asc" } }] : [],
@@ -48,32 +47,35 @@
             select: [],
         };
 
-        client.list(request).then(result => {
-            if (result.ok) {
-                options = result.value.rows.map(row => {
-                    const pkValue = getPkValue(fkTable, row);
-                    const pkStr = pkValue ? formatValueForDisplay(pkValue) : "";
+        client
+            .list(request)
+            .then((result) => {
+                if (result.ok) {
+                    options = result.value.rows.map((row) => {
+                        const pkValue = getPkValue(fkTable, row);
+                        const pkStr = pkValue ? formatValueForDisplay(pkValue) : "";
 
-                    // Get display value
-                    let label = pkStr;
-                    if (display) {
-                        const displayField = row.fields.find(f => f.name === display.name);
-                        if (displayField && displayField.value.tag !== "Null") {
-                            const displayValue = formatValueForDisplay(displayField.value);
-                            label = `${displayValue} (${pkStr})`;
+                        // Get display value
+                        let label = pkStr;
+                        if (display) {
+                            const displayField = row.fields.find((f) => f.name === display.name);
+                            if (displayField && displayField.value.tag !== "Null") {
+                                const displayValue = formatValueForDisplay(displayField.value);
+                                label = `${displayValue} (${pkStr})`;
+                            }
                         }
-                    }
 
-                    return { value: pkStr, label };
-                });
-            } else {
-                error = result.error.value;
-            }
-            loading = false;
-        }).catch(e => {
-            error = e instanceof Error ? e.message : String(e);
-            loading = false;
-        });
+                        return { value: pkStr, label };
+                    });
+                } else {
+                    error = result.error.value;
+                }
+                loading = false;
+            })
+            .catch((e) => {
+                error = e instanceof Error ? e.message : String(e);
+                loading = false;
+            });
     });
 </script>
 
@@ -84,10 +86,18 @@
 {:else if error}
     <div class="text-destructive text-sm">{error}</div>
 {:else}
-    <Select.Root type="single" bind:value={value} {disabled} onValueChange={(v: string) => { value = v; onchange(v); }}>
+    <Select.Root
+        type="single"
+        bind:value
+        {disabled}
+        onValueChange={(v: string) => {
+            value = v;
+            onchange(v);
+        }}
+    >
         <Select.Trigger class="w-full">
             {#if value}
-                {options.find(o => o.value === value)?.label ?? value}
+                {options.find((o) => o.value === value)?.label ?? value}
             {:else}
                 -- Select {fkTable.name} --
             {/if}

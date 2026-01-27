@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { AlertDialog as AlertDialogPrimitive } from "bits-ui";
-	import { buttonVariants } from "$lib/components/ui/button/index.js";
-	import { cn } from "$lib/utils.js";
+	import { buttonVariants } from "$da/components/ui/button/index.js";
+	import { cn } from "$da/utils.js";
 
 	let {
 		ref = $bindable(null),

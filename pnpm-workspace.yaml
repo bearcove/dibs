@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+
+overrides:
+  "@bearcove/roam-core": "github:bearcove/roam#path:typescript/packages/roam-core"
+  "@bearcove/roam-postcard": "github:bearcove/roam#path:typescript/packages/roam-postcard"
+  "@bearcove/roam-wire": "github:bearcove/roam#path:typescript/packages/roam-wire"
+  "@bearcove/roam-tcp": "github:bearcove/roam#path:typescript/packages/roam-tcp"
+  "@bearcove/roam-ws": "github:bearcove/roam#path:typescript/packages/roam-ws"

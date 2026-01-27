@@ -3,7 +3,7 @@
     import { Plus, House } from "phosphor-svelte";
     import DynamicIcon from "./components/DynamicIcon.svelte";
     import type {
-        SquelClient,
+        SquelServiceCaller,
         SchemaInfo,
         TableInfo,
         ColumnInfo,
@@ -41,12 +41,11 @@
     } from "./lib/config.js";
 
     interface Props {
-        client: SquelClient;
-        databaseUrl: string;
+        client: SquelServiceCaller;
         config?: DibsAdminConfig;
     }
 
-    let { client, databaseUrl, config }: Props = $props();
+    let { client, config }: Props = $props();
 
     // Schema state
     let schema = $state<SchemaInfo | null>(null);
@@ -92,12 +91,12 @@
     let currentTable = $derived(schema?.tables.find((t) => t.name === selectedTable) ?? null);
     let columns = $derived(currentTable?.columns ?? []);
     let displayColumns = $derived(
-        getDisplayColumns(columns, getListConfig(config, selectedTable ?? ""))
+        getDisplayColumns(columns, getListConfig(config, selectedTable ?? "")),
     );
 
     // Filter tables to exclude hidden ones
     let visibleTables = $derived(
-        schema?.tables.filter((t) => !isTableHidden(config, t.name)) ?? []
+        schema?.tables.filter((t) => !isTableHidden(config, t.name)) ?? [],
     );
 
     // ==========================================================================
@@ -106,11 +105,20 @@
 
     // Op tags to URL-safe strings
     const opToString: Record<string, string> = {
-        Eq: "eq", Ne: "ne", Lt: "lt", Lte: "lte", Gt: "gt", Gte: "gte",
-        Like: "like", ILike: "ilike", IsNull: "null", IsNotNull: "notnull", In: "in"
+        Eq: "eq",
+        Ne: "ne",
+        Lt: "lt",
+        Lte: "lte",
+        Gt: "gt",
+        Gte: "gte",
+        Like: "like",
+        ILike: "ilike",
+        IsNull: "null",
+        IsNotNull: "notnull",
+        In: "in",
     };
     const stringToOp: Record<string, string> = Object.fromEntries(
-        Object.entries(opToString).map(([k, v]) => [v, k])
+        Object.entries(opToString).map(([k, v]) => [v, k]),
     );
 
     function encodeHash(): string {
@@ -140,7 +148,7 @@
             const key = `${f.field}__${opStr}`;
             if (f.op.tag === "In") {
                 // Encode In values as comma-separated
-                const vals = f.values.map(v => encodeValue(v)).join(",");
+                const vals = f.values.map((v) => encodeValue(v)).join(",");
                 params.append(key, vals);
             } else if (f.op.tag === "IsNull" || f.op.tag === "IsNotNull") {
                 params.append(key, "");
@@ -195,7 +203,7 @@
         }
 
         const [pathPart, queryPart] = withoutHash.split("?");
-        const pathSegments = pathPart.split("/").map(s => decodeURIComponent(s));
+        const pathSegments = pathPart.split("/").map((s) => decodeURIComponent(s));
 
         const table = pathSegments[0];
         if (!table) return null;
@@ -213,7 +221,7 @@
         }
 
         // Find table info for type inference
-        const tableInfo = schemaInfo?.tables.find(t => t.name === table) ?? currentTable;
+        const tableInfo = schemaInfo?.tables.find((t) => t.name === table) ?? currentTable;
 
         const filters: Filter[] = [];
         let sort: Sort | null = null;
@@ -235,12 +243,19 @@
                     if (field && opTag) {
                         const op = { tag: opTag } as Filter["op"];
                         if (opTag === "In") {
-                            const values = value.split(",").map(v => decodeValue(v, field, tableInfo));
+                            const values = value
+                                .split(",")
+                                .map((v) => decodeValue(v, field, tableInfo));
                             filters.push({ field, op, value: { tag: "Null" }, values });
                         } else if (opTag === "IsNull" || opTag === "IsNotNull") {
                             filters.push({ field, op, value: { tag: "Null" }, values: [] });
                         } else {
-                            filters.push({ field, op, value: decodeValue(value, field, tableInfo), values: [] });
+                            filters.push({
+                                field,
+                                op,
+                                value: decodeValue(value, field, tableInfo),
+                                values: [],
+                            });
                         }
                     }
                 }
@@ -253,7 +268,7 @@
     function decodeValue(str: string, field: string, tableInfo?: TableInfo | null): Value {
         if (str === "") return { tag: "Null" };
         // Try to detect type from the table schema
-        const col = tableInfo?.columns.find(c => c.name === field);
+        const col = tableInfo?.columns.find((c) => c.name === field);
         if (col) {
             const typeLower = col.sql_type.toLowerCase();
             if (typeLower.includes("int8") || typeLower === "bigint" || typeLower === "bigserial") {
@@ -331,14 +346,13 @@
     async function loadRowByPk(pkStr: string) {
         if (!selectedTable || !currentTable) return;
 
-        const pkCol = currentTable.columns.find(c => c.primary_key);
+        const pkCol = currentTable.columns.find((c) => c.primary_key);
         if (!pkCol) return;
 
         const pkValue = parsePkValue(pkStr, pkCol.sql_type);
 
         try {
             const result = await client.get({
-                database_url: databaseUrl,
                 table: selectedTable,
                 pk: pkValue,
             });
@@ -404,7 +418,11 @@
                 if (decoded?.isDashboard && hasDashboard(config)) {
                     showDashboard = true;
                     // No need to load table data for dashboard
-                } else if (decoded && decoded.table && schema.tables.some(t => t.name === decoded.table)) {
+                } else if (
+                    decoded &&
+                    decoded.table &&
+                    schema.tables.some((t) => t.name === decoded.table)
+                ) {
                     // Apply hash state for table view
                     isUpdatingFromHash = true;
                     showDashboard = false;
@@ -437,7 +455,7 @@
                     showDashboard = true;
                 } else {
                     // Default to first visible table
-                    const firstVisible = schema.tables.find(t => !isTableHidden(config, t.name));
+                    const firstVisible = schema.tables.find((t) => !isTableHidden(config, t.name));
                     if (firstVisible) {
                         selectTable(firstVisible.name);
                     }
@@ -457,7 +475,6 @@
         error = null;
         try {
             const request: ListRequest = {
-                database_url: databaseUrl,
                 table: selectedTable,
                 filters,
                 sort: sort ? [sort] : [],
@@ -488,7 +505,10 @@
     async function loadFkDisplayValues(loadedRows: Row[]) {
         if (!currentTable || !schema || loadedRows.length === 0) return;
 
-        console.log(`[FK lookup] Starting for table ${currentTable.name}, FKs:`, currentTable.foreign_keys.map(fk => `${fk.columns[0]} -> ${fk.references_table}`));
+        console.log(
+            `[FK lookup] Starting for table ${currentTable.name}, FKs:`,
+            currentTable.foreign_keys.map((fk) => `${fk.columns[0]} -> ${fk.references_table}`),
+        );
 
         // Collect FK values grouped by referenced table
         const fkValuesByTable = new Map<string, Set<string>>();
@@ -502,7 +522,7 @@
             }
 
             for (const row of loadedRows) {
-                const field = row.fields.find(f => f.name === colName);
+                const field = row.fields.find((f) => f.name === colName);
                 if (field && field.value.tag !== "Null") {
                     const pkStr = formatPkValue(field.value);
                     fkValuesByTable.get(refTable)!.add(pkStr);
@@ -510,7 +530,10 @@
             }
         }
 
-        console.log(`[FK lookup] Collected values:`, Object.fromEntries([...fkValuesByTable.entries()].map(([k, v]) => [k, [...v]])));
+        console.log(
+            `[FK lookup] Collected values:`,
+            Object.fromEntries([...fkValuesByTable.entries()].map(([k, v]) => [k, [...v]])),
+        );
 
         // Fetch rows from each referenced table using IN filter (single query per table)
         const newLookup = new Map(fkLookup);
@@ -520,10 +543,10 @@
         for (const [tableName, pkValues] of fkValuesByTable) {
             if (pkValues.size === 0) continue;
 
-            const tableInfo = schema.tables.find(t => t.name === tableName);
+            const tableInfo = schema.tables.find((t) => t.name === tableName);
             if (!tableInfo) continue;
 
-            const pkCol = tableInfo.columns.find(c => c.primary_key);
+            const pkCol = tableInfo.columns.find((c) => c.primary_key);
             if (!pkCol) continue;
 
             if (!newLookup.has(tableName)) {
@@ -532,17 +555,27 @@
             const tableCache = newLookup.get(tableName)!;
 
             // Filter out already-cached values
-            const uncachedPks = [...pkValues].filter(pk => !tableCache.has(pk));
+            const uncachedPks = [...pkValues].filter((pk) => !tableCache.has(pk));
             if (uncachedPks.length === 0) continue;
 
             // Convert to Value array for IN filter
-            const inValues = uncachedPks.map(pk => parsePkValue(pk, pkCol.sql_type));
+            const inValues = uncachedPks.map((pk) => parsePkValue(pk, pkCol.sql_type));
 
             // Find the label column for this table
-            const labelCol = tableInfo.columns.find(c => c.label);
-            const displayCol = labelCol ?? tableInfo.columns.find(c =>
-                ['name', 'title', 'label', 'display_name', 'username', 'email', 'slug'].includes(c.name.toLowerCase())
-            );
+            const labelCol = tableInfo.columns.find((c) => c.label);
+            const displayCol =
+                labelCol ??
+                tableInfo.columns.find((c) =>
+                    [
+                        "name",
+                        "title",
+                        "label",
+                        "display_name",
+                        "username",
+                        "email",
+                        "slug",
+                    ].includes(c.name.toLowerCase()),
+                );
 
             // Only select PK and display columns to optimize the query
             const selectCols = [pkCol.name];
@@ -553,37 +586,43 @@
             // Single batch fetch using IN filter
             const startTime = performance.now();
             fetchPromises.push(
-                client.list({
-                    database_url: databaseUrl,
-                    table: tableName,
-                    filters: [{
-                        field: pkCol.name,
-                        op: { tag: "In" },
-                        value: { tag: "Null" }, // Not used for In
-                        values: inValues,
-                    }],
-                    sort: [],
-                    limit: inValues.length,
-                    offset: null,
-                    select: selectCols,
-                }).then(result => {
-                    const elapsed = performance.now() - startTime;
-                    console.log(`[FK lookup] ${tableName}: fetched ${result.ok ? result.value.rows.length : 0} rows in ${elapsed.toFixed(0)}ms`);
-                    if (result.ok) {
-                        // Add each fetched row to cache
-                        for (const row of result.value.rows) {
-                            const pkField = row.fields.find(f => f.name === pkCol.name);
-                            if (pkField) {
-                                const pkStr = formatPkValue(pkField.value);
-                                tableCache.set(pkStr, row);
+                client
+                    .list({
+                        table: tableName,
+                        filters: [
+                            {
+                                field: pkCol.name,
+                                op: { tag: "In" },
+                                value: { tag: "Null" }, // Not used for In
+                                values: inValues,
+                            },
+                        ],
+                        sort: [],
+                        limit: inValues.length,
+                        offset: null,
+                        select: selectCols,
+                    })
+                    .then((result) => {
+                        const elapsed = performance.now() - startTime;
+                        console.log(
+                            `[FK lookup] ${tableName}: fetched ${result.ok ? result.value.rows.length : 0} rows in ${elapsed.toFixed(0)}ms`,
+                        );
+                        if (result.ok) {
+                            // Add each fetched row to cache
+                            for (const row of result.value.rows) {
+                                const pkField = row.fields.find((f) => f.name === pkCol.name);
+                                if (pkField) {
+                                    const pkStr = formatPkValue(pkField.value);
+                                    tableCache.set(pkStr, row);
+                                }
                             }
+                        } else {
+                            console.error(`[FK lookup] ${tableName} error:`, result.error);
                         }
-                    } else {
-                        console.error(`[FK lookup] ${tableName} error:`, result.error);
-                    }
-                }).catch((e) => {
-                    console.error(`[FK lookup] ${tableName} exception:`, e);
-                })
+                    })
+                    .catch((e) => {
+                        console.error(`[FK lookup] ${tableName} exception:`, e);
+                    }),
             );
         }
 
@@ -646,7 +685,7 @@
         if (!table) return;
 
         // Find the PK column
-        const pkCol = table.columns.find(c => c.primary_key);
+        const pkCol = table.columns.find((c) => c.primary_key);
         if (!pkCol) return;
 
         // Add to breadcrumbs with a label we'll update after loading
@@ -660,12 +699,14 @@
 
         // Navigate to the table with a filter for the specific row
         selectedTable = targetTable;
-        filters = [{
-            field: pkCol.name,
-            op: { tag: "Eq" },
-            value: pkValue,
-            values: [],
-        }];
+        filters = [
+            {
+                field: pkCol.name,
+                op: { tag: "Eq" },
+                value: pkValue,
+                values: [],
+            },
+        ];
         sort = null;
         offset = 0;
 
@@ -675,7 +716,7 @@
         if (rows.length > 0 && currentTable) {
             const label = createBreadcrumbLabel(currentTable, rows[0]);
             breadcrumbs = breadcrumbs.map((b, i) =>
-                i === breadcrumbs.length - 1 ? { ...b, label } : b
+                i === breadcrumbs.length - 1 ? { ...b, label } : b,
             );
         }
     }
@@ -691,15 +732,17 @@
 
         // If there's a PK value, filter to that row; otherwise show all
         if (entry.pkValue) {
-            const table = schema?.tables.find(t => t.name === entry.table);
-            const pkCol = table?.columns.find(c => c.primary_key);
+            const table = schema?.tables.find((t) => t.name === entry.table);
+            const pkCol = table?.columns.find((c) => c.primary_key);
             if (pkCol) {
-                filters = [{
-                    field: pkCol.name,
-                    op: { tag: "Eq" },
-                    value: entry.pkValue,
-                    values: [],
-                }];
+                filters = [
+                    {
+                        field: pkCol.name,
+                        op: { tag: "Eq" },
+                        value: entry.pkValue,
+                        values: [],
+                    },
+                ];
             } else {
                 filters = [];
             }
@@ -797,7 +840,6 @@
         try {
             if (isCreating) {
                 const result = await client.create({
-                    database_url: databaseUrl,
                     table: selectedTable,
                     data,
                 });
@@ -814,11 +856,10 @@
 
                 // For updates, only send the modified fields
                 const updateData: Row = dirtyFields
-                    ? { fields: data.fields.filter(f => dirtyFields.has(f.name)) }
+                    ? { fields: data.fields.filter((f) => dirtyFields.has(f.name)) }
                     : data;
 
                 const result = await client.update({
-                    database_url: databaseUrl,
                     table: selectedTable,
                     pk,
                     data: updateData,
@@ -853,7 +894,6 @@
         };
 
         const result = await client.update({
-            database_url: databaseUrl,
             table: selectedTable,
             pk,
             data: updateData,
@@ -867,7 +907,7 @@
         if (editingRow) {
             editingRow = {
                 fields: editingRow.fields.map((f) =>
-                    f.name === fieldName ? { name: fieldName, value: newValue } : f
+                    f.name === fieldName ? { name: fieldName, value: newValue } : f,
                 ),
             };
         }
@@ -880,7 +920,7 @@
         const table = getTableByName(schema, tableName);
         if (!table) return;
 
-        const pkCol = table.columns.find(c => c.primary_key);
+        const pkCol = table.columns.find((c) => c.primary_key);
         if (!pkCol) return;
 
         // Add breadcrumb entry
@@ -907,7 +947,7 @@
         if (editingRow && currentTable) {
             const label = createBreadcrumbLabel(currentTable, editingRow);
             breadcrumbs = breadcrumbs.map((b, i) =>
-                i === breadcrumbs.length - 1 ? { ...b, label } : b
+                i === breadcrumbs.length - 1 ? { ...b, label } : b,
             );
         }
     }
@@ -926,7 +966,6 @@
 
         try {
             const result = await client.delete({
-                database_url: databaseUrl,
                 table: selectedTable,
                 pk,
             });
@@ -945,142 +984,141 @@
 </script>
 
 <Tooltip.Provider>
-<div class="h-full bg-background text-foreground">
-    {#if loading && !schema}
-        <div class="flex items-center justify-center h-full p-8 text-muted-foreground">
-            Loading schema...
-        </div>
-    {:else if schema}
-        <div class="max-w-6xl mx-auto h-full max-h-screen grid grid-cols-[200px_1fr]">
-            <TableList
-                tables={visibleTables}
-                selected={selectedTable}
-                onSelect={selectTable}
-                {config}
-                showDashboardButton={hasDashboard(config)}
-                onDashboard={goToDashboard}
-                dashboardActive={showDashboard}
-                {timeMode}
-                onTimeModeChange={(mode) => timeMode = mode}
-            />
-
-            {#if showDashboard && config?.dashboard}
-                <!-- Dashboard view -->
-                <Dashboard
+    <div class="h-full bg-background text-foreground">
+        {#if loading && !schema}
+            <div class="flex items-center justify-center h-full p-8 text-muted-foreground">
+                Loading schema...
+            </div>
+        {:else if schema}
+            <div class="max-w-6xl mx-auto h-full max-h-screen grid grid-cols-[200px_1fr]">
+                <TableList
+                    tables={visibleTables}
+                    selected={selectedTable}
+                    onSelect={selectTable}
                     {config}
-                    {schema}
-                    {client}
-                    {databaseUrl}
-                    onSelectTable={selectTable}
+                    showDashboardButton={hasDashboard(config)}
+                    onDashboard={goToDashboard}
+                    dashboardActive={showDashboard}
+                    {timeMode}
+                    onTimeModeChange={(mode) => (timeMode = mode)}
                 />
-            {:else if editingRow && currentTable}
-                <!-- Detail view with inline editing -->
-                <RowDetail
-                    {columns}
-                    row={editingRow}
-                    table={currentTable}
-                    schema={schema}
-                    {client}
-                    {databaseUrl}
-                    tableName={selectedTable ?? ""}
-                    {config}
-                    onFieldSave={saveField}
-                    onDelete={deleteRow}
-                    onClose={closeEditor}
-                    {deleting}
-                    onNavigate={handleRelatedNavigate}
-                />
-            {:else if isCreating}
-                <!-- Create new row form -->
-                <RowEditor
-                    {columns}
-                    row={null}
-                    onSave={saveRow}
-                    onClose={closeEditor}
-                    {saving}
-                    table={currentTable ?? undefined}
-                    schema={schema ?? undefined}
-                    {client}
-                    {databaseUrl}
-                    fullscreen={true}
-                    tableName={selectedTable ?? ""}
-                />
-            {:else}
-                <!-- Table list view -->
-                <section class="p-6 md:p-8 overflow-auto flex flex-col max-h-screen">
-                    {#if selectedTable && currentTable}
-                        <Breadcrumb entries={breadcrumbs} onNavigate={navigateToBreadcrumb} />
 
-                        <div class="flex justify-between items-center mb-6">
-                            <h2 class="text-lg font-medium text-foreground uppercase tracking-wide flex items-center gap-2">
-                                <DynamicIcon name={currentTable.icon ?? "table"} size={20} class="opacity-70" />
-                                {selectedTable}
-                            </h2>
-                            <Button onclick={openCreateDialog}>
-                                <Plus size={16} />
-                                New
-                            </Button>
-                        </div>
+                {#if showDashboard && config?.dashboard}
+                    <!-- Dashboard view -->
+                    <Dashboard {config} {schema} {client} onSelectTable={selectTable} />
+                {:else if editingRow && currentTable}
+                    <!-- Detail view with inline editing -->
+                    <RowDetail
+                        {columns}
+                        row={editingRow}
+                        table={currentTable}
+                        {schema}
+                        {client}
+                        tableName={selectedTable ?? ""}
+                        {config}
+                        onFieldSave={saveField}
+                        onDelete={deleteRow}
+                        onClose={closeEditor}
+                        {deleting}
+                        onNavigate={handleRelatedNavigate}
+                    />
+                {:else if isCreating}
+                    <!-- Create new row form -->
+                    <RowEditor
+                        {columns}
+                        row={null}
+                        onSave={saveRow}
+                        onClose={closeEditor}
+                        {saving}
+                        table={currentTable ?? undefined}
+                        schema={schema ?? undefined}
+                        {client}
+                        fullscreen={true}
+                        tableName={selectedTable ?? ""}
+                    />
+                {:else}
+                    <!-- Table list view -->
+                    <section class="p-6 md:p-8 overflow-auto flex flex-col max-h-screen">
+                        {#if selectedTable && currentTable}
+                            <Breadcrumb entries={breadcrumbs} onNavigate={navigateToBreadcrumb} />
 
-                        {#if error}
-                            <p class="text-destructive mb-6 text-sm">
-                                {error}
-                            </p>
-                        {/if}
-
-                        <FilterInput
-                            {columns}
-                            {filters}
-                            onFiltersChange={setFilters}
-                        />
-
-                        {#if loading}
-                            <div class="flex-1 flex items-center justify-center text-muted-foreground">
-                                Loading...
+                            <div class="flex justify-between items-center mb-6">
+                                <h2
+                                    class="text-lg font-medium text-foreground uppercase tracking-wide flex items-center gap-2"
+                                >
+                                    <DynamicIcon
+                                        name={currentTable.icon ?? "table"}
+                                        size={20}
+                                        class="opacity-70"
+                                    />
+                                    {selectedTable}
+                                </h2>
+                                <Button onclick={openCreateDialog}>
+                                    <Plus size={16} />
+                                    New
+                                </Button>
                             </div>
-                        {:else if rows.length === 0}
-                            <div class="flex-1 flex items-center justify-center text-muted-foreground/60">
-                                No rows found.
-                            </div>
+
+                            {#if error}
+                                <p class="text-destructive mb-6 text-sm">
+                                    {error}
+                                </p>
+                            {/if}
+
+                            <FilterInput {columns} {filters} onFiltersChange={setFilters} />
+
+                            {#if loading}
+                                <div
+                                    class="flex-1 flex items-center justify-center text-muted-foreground"
+                                >
+                                    Loading...
+                                </div>
+                            {:else if rows.length === 0}
+                                <div
+                                    class="flex-1 flex items-center justify-center text-muted-foreground/60"
+                                >
+                                    No rows found.
+                                </div>
+                            {:else}
+                                <DataTable
+                                    columns={displayColumns}
+                                    {rows}
+                                    {sort}
+                                    onSort={handleSort}
+                                    onRowClick={openEditor}
+                                    table={currentTable}
+                                    {schema}
+                                    {client}
+                                    onFkClick={navigateToFk}
+                                    {fkLookup}
+                                    {timeMode}
+                                    rowExpand={getRowExpand(config, selectedTable ?? "")}
+                                    imageColumns={getImageColumns(config, selectedTable ?? "")}
+                                />
+
+                                <Pagination
+                                    {offset}
+                                    {limit}
+                                    rowCount={rows.length}
+                                    total={totalRows}
+                                    onPrev={prevPage}
+                                    onNext={nextPage}
+                                />
+                            {/if}
                         {:else}
-                            <DataTable
-                                columns={displayColumns}
-                                {rows}
-                                {sort}
-                                onSort={handleSort}
-                                onRowClick={openEditor}
-                                table={currentTable}
-                                {schema}
-                                {client}
-                                {databaseUrl}
-                                onFkClick={navigateToFk}
-                                {fkLookup}
-                                {timeMode}
-                                rowExpand={getRowExpand(config, selectedTable ?? "")}
-                                imageColumns={getImageColumns(config, selectedTable ?? "")}
-                            />
-
-                            <Pagination
-                                {offset}
-                                {limit}
-                                rowCount={rows.length}
-                                total={totalRows}
-                                onPrev={prevPage}
-                                onNext={nextPage}
-                            />
+                            <div
+                                class="flex-1 flex items-center justify-center text-muted-foreground/60"
+                            >
+                                Select a table
+                            </div>
                         {/if}
-                    {:else}
-                        <div class="flex-1 flex items-center justify-center text-muted-foreground/60">
-                            Select a table
-                        </div>
-                    {/if}
-                </section>
-            {/if}
-        </div>
-    {:else if error}
-        <p class="text-destructive p-8 text-sm">
-            {error}
-        </p>
-    {/if}
-</div>
+                    </section>
+                {/if}
+            </div>
+        {:else if error}
+            <p class="text-destructive p-8 text-sm">
+                {error}
+            </p>
+        {/if}
+    </div>
 </Tooltip.Provider>
