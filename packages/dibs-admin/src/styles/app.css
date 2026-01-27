@@ -48,7 +48,7 @@
         --foreground: oklch(0.92 0.01 60);
         --card: oklch(0.18 0.01 280);
         --card-foreground: oklch(0.92 0.01 60);
-        --popover: oklch(0.2 0.012 280);
+        --popover: oklch(0.16 0.01 280);
         --popover-foreground: oklch(0.92 0.01 60);
         /* Primary - teal/cyan that works well in dark mode */
         --primary: oklch(0.72 0.14 175);
@@ -59,16 +59,16 @@
         /* Muted - slightly elevated from background */
         --muted: oklch(0.24 0.012 280);
         --muted-foreground: oklch(0.68 0.02 60);
-        /* Accent - warm purple-ish that's readable */
-        --accent: oklch(0.32 0.04 280);
+        /* Accent - slightly lighter for better visibility on hover */
+        --accent: oklch(0.26 0.025 280);
         --accent-foreground: oklch(0.92 0.01 60);
         /* Destructive - warm red, not too saturated */
         --destructive: oklch(0.6 0.18 20);
         --destructive-foreground: oklch(0.98 0 0);
         /* Borders and inputs - visible but not harsh */
-        --border: oklch(0.32 0.02 280);
-        --input: oklch(0.22 0.015 280);
-        --ring: oklch(0.65 0.12 175);
+        --border: oklch(0.36 0.02 280);
+        --input: oklch(0.32 0.02 280);
+        --ring: oklch(0.6 0.1 175);
         /* Charts - vibrant but not garish */
         --chart-1: oklch(0.7 0.15 175);
         --chart-2: oklch(0.72 0.14 145);

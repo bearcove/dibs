@@ -38,9 +38,9 @@
     }
 
     .input:focus {
-        outline: 2px solid var(--ring);
-        outline-offset: 0;
+        outline: none;
         border-color: var(--ring);
+        box-shadow: 0 0 0 1px var(--ring);
     }
 
     .input:disabled {
