@@ -15,7 +15,7 @@
     {#snippet child({ props })}
         <button {...props} class="select-trigger {className}">
             {@render children?.()}
-            <CaretDown size={14} class="select-icon" />
+            <CaretDownIcon size={14} class="select-icon" />
         </button>
     {/snippet}
 </SelectPrimitive.Trigger>
