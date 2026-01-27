@@ -22,23 +22,23 @@
 
 <style>
     :global(.select-trigger) {
-        display: inline-flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem;
+        display: block;
+        position: relative;
+        width: 100%;
+        box-sizing: border-box;
         height: 2.25rem;
-        padding: 0.5rem 0.75rem;
-        border-radius: var(--radius-md, 0.375rem);
+        padding: 0.5rem 2rem 0.5rem 0.75rem;
+        border-radius: 0.375rem;
         border: 1px solid var(--border);
         background-color: var(--input);
         font-size: 0.875rem;
         font-weight: 500;
         color: var(--foreground);
         cursor: pointer;
+        text-align: left;
         transition:
             border-color 0.15s,
             background-color 0.15s;
-        min-width: 8rem;
     }
 
     :global(.select-trigger:hover) {
@@ -62,7 +62,11 @@
     }
 
     :global(.select-icon) {
-        flex-shrink: 0;
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
         color: var(--muted-foreground);
+        pointer-events: none;
     }
 </style>

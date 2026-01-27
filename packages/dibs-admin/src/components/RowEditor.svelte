@@ -602,14 +602,14 @@
 
 <style>
     .field-group {
-        margin-bottom: 1.25rem;
+        margin-bottom: 1rem;
     }
 
     .field-label-row {
         display: flex;
         align-items: center;
         gap: 0.375rem;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.375rem;
     }
 
     :global(.field-icon) {
@@ -706,7 +706,8 @@
     .form-fields {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.5rem;
+        max-width: 36rem;
     }
 
     .footer-left {
@@ -740,6 +741,7 @@
         padding: 1rem 1.5rem;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
+        max-width: 44rem;
     }
 
     @media (min-width: 768px) {

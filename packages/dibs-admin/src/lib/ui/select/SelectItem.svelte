@@ -1,6 +1,5 @@
 <script lang="ts">
     import { Select as SelectPrimitive } from "bits-ui";
-    import { Check } from "phosphor-svelte";
     import type { Snippet } from "svelte";
 
     interface Props {
@@ -15,12 +14,7 @@
 
 <SelectPrimitive.Item {value} {disabled} class="select-item {className}">
     {#snippet child({ props, selected })}
-        <div {...props} class="select-item {className}">
-            <span class="select-item-indicator">
-                {#if selected}
-                    <Check size={14} weight="bold" />
-                {/if}
-            </span>
+        <div {...props} class="select-item {className}" class:selected>
             {@render children?.()}
         </div>
     {/snippet}
@@ -28,15 +22,11 @@
 
 <style>
     :global(.select-item) {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.375rem 0.5rem 0.375rem 1.75rem;
-        border-radius: var(--radius-sm, 0.25rem);
+        display: block;
+        padding: 0.5rem 0.75rem;
         font-size: 0.875rem;
         cursor: pointer;
         outline: none;
-        position: relative;
         user-select: none;
     }
 
@@ -51,12 +41,8 @@
         opacity: 0.5;
     }
 
-    :global(.select-item-indicator) {
-        position: absolute;
-        left: 0.5rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 1rem;
+    :global(.select-item.selected) {
+        font-weight: 600;
+        background-color: oklch(from var(--accent) l c h / 0.5);
     }
 </style>

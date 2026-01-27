@@ -114,14 +114,14 @@
 
 <style>
     .loading-state {
+        display: block;
         height: 2.25rem;
-        display: flex;
-        align-items: center;
+        line-height: 2.25rem;
         padding: 0 0.75rem;
         background-color: var(--muted);
         color: var(--muted-foreground);
         font-size: 0.875rem;
-        border-radius: var(--radius-md, 0.375rem);
+        border-radius: 0.375rem;
     }
 
     .error-state {
@@ -129,7 +129,10 @@
         font-size: 0.875rem;
     }
 
+    /* Force select trigger to be block and full width */
     :global(.full-width) {
+        display: block;
         width: 100%;
+        box-sizing: border-box;
     }
 </style>

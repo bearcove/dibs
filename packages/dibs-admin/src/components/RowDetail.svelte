@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { Trash, ArrowLeft, FloppyDisk, ArrowCounterClockwise } from "phosphor-svelte";
+    import { Trash, ArrowLeft, FloppyDisk, ArrowCounterClockwise, Asterisk } from "phosphor-svelte";
     import type {
         Row,
         RowField,
@@ -263,6 +263,12 @@
         return isFieldReadOnly(col.name, detailConfig);
     }
 
+    // Check if a column is required (non-nullable, no default, not auto-generated)
+    function isColumnRequired(col: ColumnInfo): boolean {
+        if (col.auto_generated) return false;
+        return !col.nullable && !col.default;
+    }
+
     // Track a pending change (don't save yet)
     function handleFieldChange(colName: string, newStrValue: string) {
         const originalValue = getOriginalFieldValue(colName);
@@ -398,6 +404,7 @@
                     {@const controlType = getControlType(col)}
                     {@const inlineType = mapControlTypeToInlineType(controlType)}
                     {@const readOnly = isColumnReadOnly(col)}
+                    {@const required = isColumnRequired(col)}
                     {@const fkInfo = getFkInfo(col)}
                     {@const langIcon = getLangIcon(col.lang)}
                     {@const fieldValue = getFieldValue(col.name)}
@@ -410,47 +417,61 @@
                         .filter(Boolean)
                         .join(" · ")}
 
-                    <div class="field-row" class:modified={isModified}>
-                        <div class="field-row-inner">
-                            <div class="field-label-col">
-                                <div class="field-label-row">
-                                    {#if langIcon}
-                                        <DynamicIcon name={langIcon} size={14} class="field-icon" />
-                                    {:else if col.icon}
-                                        <DynamicIcon name={col.icon} size={14} class="field-icon" />
-                                    {/if}
-                                    <Label class={isModified ? "modified-label" : ""}
-                                        >{col.doc || col.name}</Label
-                                    >
-                                    {#if isModified}
-                                        <span class="modified-indicator">modified</span>
-                                    {/if}
-                                    <Tooltip.Root>
-                                        <Tooltip.Trigger>
-                                            {#snippet children({ props })}
-                                                {@const { tabindex: _, ...restProps } =
-                                                    props as Record<string, unknown>}
-                                                <span
-                                                    {...restProps}
-                                                    class="info-trigger"
-                                                    tabindex={-1}
-                                                >
-                                                    <Info size={12} />
-                                                </span>
-                                            {/snippet}
-                                        </Tooltip.Trigger>
-                                        <Tooltip.Content>
-                                            <p class="tooltip-text">
-                                                <span class="mono">{col.name}</span> · {tooltipContent}
-                                            </p>
-                                        </Tooltip.Content>
-                                    </Tooltip.Root>
-                                </div>
+                    {#if inlineType === "boolean"}
+                        <!-- Boolean fields: checkbox with label inline on same line -->
+                        <label class="field field-boolean" class:modified={isModified}>
+                            <InlineField
+                                value={fieldValue}
+                                type="boolean"
+                                {readOnly}
+                                onchange={(v) => handleFieldChange(col.name, v)}
+                            />
+                            <span class="boolean-text" class:modified-label={isModified}
+                                >{col.doc || col.name}</span
+                            >
+                            {#if isModified}
+                                <span class="modified-indicator">modified</span>
+                            {/if}
+                        </label>
+                    {:else}
+                        <!-- Other fields: label above, value below -->
+                        <div class="field" class:modified={isModified}>
+                            <div class="field-label">
+                                {#if langIcon}
+                                    <DynamicIcon name={langIcon} size={14} class="field-icon" />
+                                {:else if col.icon}
+                                    <DynamicIcon name={col.icon} size={14} class="field-icon" />
+                                {/if}
+                                <Label class={isModified ? "modified-label" : ""}
+                                    >{col.doc || col.name}</Label
+                                >
+                                {#if required}
+                                    <Asterisk size={10} class="required-indicator" weight="bold" />
+                                {/if}
+                                {#if isModified}
+                                    <span class="modified-indicator">modified</span>
+                                {/if}
+                                <Tooltip.Root>
+                                    <Tooltip.Trigger>
+                                        {#snippet children({ props })}
+                                            {@const { tabindex: _, ...restProps } = props as Record<
+                                                string,
+                                                unknown
+                                            >}
+                                            <span {...restProps} class="info-trigger" tabindex={-1}>
+                                                <Info size={12} />
+                                            </span>
+                                        {/snippet}
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Content>
+                                        <p class="tooltip-text">
+                                            <span class="mono">{col.name}</span> · {tooltipContent}
+                                        </p>
+                                    </Tooltip.Content>
+                                </Tooltip.Root>
                             </div>
-
-                            <div class="field-value-col">
+                            <div class="field-value">
                                 {#if fkInfo && !readOnly}
-                                    <!-- FK field with special handling -->
                                     <FkSelect
                                         value={fieldValue}
                                         fkTable={fkInfo.fkTable}
@@ -471,7 +492,7 @@
                                 {/if}
                             </div>
                         </div>
-                    </div>
+                    {/if}
                 {:else}
                     <!-- Field group -->
                     {@const group = item}
@@ -490,9 +511,29 @@
                                     {@const fieldValue = getFieldValue(col.name)}
                                     {@const isModified = pendingChanges.has(col.name)}
 
-                                    <div class="group-field-row" class:modified={isModified}>
-                                        <div class="field-row-inner">
-                                            <div class="group-field-label">
+                                    {#if inlineType === "boolean"}
+                                        <label
+                                            class="field field-boolean"
+                                            class:modified={isModified}
+                                        >
+                                            <InlineField
+                                                value={fieldValue}
+                                                type="boolean"
+                                                {readOnly}
+                                                onchange={(v) => handleFieldChange(col.name, v)}
+                                            />
+                                            <span
+                                                class="boolean-text"
+                                                class:modified-label={isModified}
+                                                >{col.doc || col.name}</span
+                                            >
+                                            {#if isModified}
+                                                <span class="modified-indicator">modified</span>
+                                            {/if}
+                                        </label>
+                                    {:else}
+                                        <div class="field" class:modified={isModified}>
+                                            <div class="field-label">
                                                 <Label class={isModified ? "modified-label" : ""}>
                                                     {col.doc || col.name}
                                                     {#if isModified}
@@ -502,7 +543,7 @@
                                                     {/if}
                                                 </Label>
                                             </div>
-                                            <div class="field-value-col">
+                                            <div class="field-value">
                                                 {#if fkInfo && !readOnly}
                                                     <FkSelect
                                                         value={fieldValue}
@@ -526,7 +567,7 @@
                                                 {/if}
                                             </div>
                                         </div>
-                                    </div>
+                                    {/if}
                                 {/if}
                             {/each}
                         </div>
@@ -630,41 +671,49 @@
         }
     }
 
+    /* Fields container - simple block layout with fixed width */
     .fields-container {
-        max-width: 36rem;
+        width: 36rem;
+        max-width: 100%;
     }
 
-    /* Stacked field layout */
-    .field-row {
+    /* Individual field - label on top, value below */
+    .field {
         margin-bottom: 1rem;
-        position: relative;
     }
 
-    /* Modified highlight as pseudo-element to avoid layout shift */
-    .field-row.modified::before {
-        content: "";
-        position: absolute;
-        inset: -0.5rem -1rem;
+    .field.modified {
         background-color: oklch(from var(--accent) l c h / 0.1);
-        border-radius: var(--radius-md, 0.375rem);
-        pointer-events: none;
-        z-index: -1;
+        margin-left: -1rem;
+        margin-right: -1rem;
+        padding: 0.5rem 1rem;
+        border-radius: 0.375rem;
     }
 
-    .field-row-inner {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .field-label-col {
-        /* No longer fixed width - stacked on top */
-    }
-
-    .field-label-row {
+    .field-label {
         display: flex;
         align-items: center;
         gap: 0.375rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .field-value {
+        /* Children (InlineField, FkSelect) handle their own styling */
+    }
+
+    /* Boolean fields - checkbox and label inline on same line */
+    .field-boolean {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+        margin-bottom: 1rem;
+    }
+
+    .boolean-text {
+        font-size: 0.875rem;
+        color: var(--foreground);
+        user-select: none;
     }
 
     :global(.field-icon) {
@@ -674,6 +723,11 @@
 
     :global(.modified-label) {
         color: var(--primary);
+    }
+
+    :global(.required-indicator) {
+        color: var(--destructive);
+        flex-shrink: 0;
     }
 
     .modified-indicator {
@@ -702,13 +756,9 @@
         font-family: ui-monospace, monospace;
     }
 
-    .field-value-col {
-        /* Full width for the value */
-    }
-
-    /* Field groups */
+    /* Field groups (collapsible sections) */
     .field-group {
-        margin-bottom: 1.25rem;
+        margin-bottom: 1rem;
     }
 
     .group-title {
@@ -723,29 +773,12 @@
     }
 
     .group-fields {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    .group-field-row {
-        /* Same as field-row but inside groups */
-    }
-
-    .group-field-row.modified {
-        background-color: oklch(from var(--accent) l c h / 0.15);
-        margin-left: -1rem;
-        margin-right: -1rem;
-        padding: 1rem;
-        border-radius: var(--radius-md, 0.375rem);
-    }
-
-    .group-field-label {
-        /* Label above value */
+        /* Fields inside groups use same .field class */
     }
 
     .related-section {
         margin-top: 2rem;
-        max-width: 36rem;
+        width: 36rem;
+        max-width: 100%;
     }
 </style>

@@ -22,10 +22,10 @@
 <style>
     :global(.select-content) {
         z-index: 50;
-        min-width: var(--bits-select-trigger-width, 8rem);
+        width: var(--bits-select-anchor-width, 8rem);
         max-height: 20rem;
         overflow: hidden;
-        border-radius: var(--radius-md, 0.375rem);
+        border-radius: 0.375rem;
         border: 1px solid var(--border);
         background-color: var(--popover);
         color: var(--popover-foreground);
@@ -35,6 +35,6 @@
     }
 
     :global(.select-viewport) {
-        padding: 0.25rem;
+        padding: 0.25rem 0;
     }
 </style>

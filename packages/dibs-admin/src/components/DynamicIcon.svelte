@@ -6,9 +6,10 @@
         name: string;
         class?: string;
         size?: number;
+        fallback?: string;
     }
 
-    let { name, class: className = "", size = 16 }: Props = $props();
+    let { name, class: className = "", size = 16, fallback = "hash" }: Props = $props();
 
     // Convert kebab-case to PascalCase for icon lookup
     function toPascalCase(str: string): string {
@@ -31,7 +32,7 @@
         return null;
     }
 
-    let Icon = $derived(getIcon(name));
+    let Icon = $derived(getIcon(name) ?? getIcon(fallback));
 </script>
 
 {#if Icon}
