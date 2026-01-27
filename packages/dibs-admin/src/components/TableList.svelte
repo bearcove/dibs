@@ -79,6 +79,7 @@
         border-right: 1px solid var(--sidebar-border);
         display: flex;
         flex-direction: column;
+        min-height: 100vh;
     }
 
     .nav-button {

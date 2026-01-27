@@ -242,7 +242,6 @@
 
     :global(.tile-content) {
         flex: 1;
-        padding-top: 0;
     }
 
     .status-text {

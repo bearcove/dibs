@@ -577,6 +577,7 @@
         padding: 1rem 1.5rem;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
+        max-width: 44rem;
     }
 
     @media (min-width: 768px) {
@@ -630,35 +631,34 @@
     }
 
     .fields-container {
-        max-width: 42rem;
+        max-width: 36rem;
     }
 
+    /* Stacked field layout */
     .field-row {
-        padding: 0.75rem 0;
-        border-bottom: 1px solid oklch(from var(--border) l c h / 0.5);
+        margin-bottom: 1rem;
+        position: relative;
     }
 
-    .field-row:last-child {
-        border-bottom: none;
-    }
-
-    .field-row.modified {
-        background-color: oklch(from var(--accent) l c h / 0.2);
-        margin: 0 -0.75rem;
-        padding: 0.75rem;
+    /* Modified highlight as pseudo-element to avoid layout shift */
+    .field-row.modified::before {
+        content: "";
+        position: absolute;
+        inset: -0.5rem -1rem;
+        background-color: oklch(from var(--accent) l c h / 0.1);
         border-radius: var(--radius-md, 0.375rem);
+        pointer-events: none;
+        z-index: -1;
     }
 
     .field-row-inner {
         display: flex;
-        align-items: flex-start;
-        gap: 1rem;
+        flex-direction: column;
+        gap: 0.5rem;
     }
 
     .field-label-col {
-        width: 10rem;
-        flex-shrink: 0;
-        padding-top: 0.5rem;
+        /* No longer fixed width - stacked on top */
     }
 
     .field-label-row {
@@ -680,6 +680,7 @@
         font-size: 0.625rem;
         color: var(--primary);
         font-weight: 500;
+        margin-left: 0.25rem;
     }
 
     .info-trigger {
@@ -702,48 +703,49 @@
     }
 
     .field-value-col {
-        flex: 1;
-        min-width: 0;
+        /* Full width for the value */
     }
 
+    /* Field groups */
     .field-group {
-        padding: 0.75rem 0;
-        border-bottom: 1px solid oklch(from var(--border) l c h / 0.5);
+        margin-bottom: 1.25rem;
     }
 
     .group-title {
         cursor: pointer;
-        font-size: 0.875rem;
+        font-size: 0.7rem;
         font-weight: 600;
         color: var(--muted-foreground);
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        margin-bottom: 1rem;
+        padding: 0.25rem 0;
+        margin-bottom: 0.75rem;
     }
 
     .group-fields {
-        padding-left: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
     }
 
     .group-field-row {
-        padding: 0.5rem 0;
+        /* Same as field-row but inside groups */
     }
 
     .group-field-row.modified {
-        background-color: oklch(from var(--accent) l c h / 0.2);
-        margin: 0 -0.75rem;
-        padding: 0.5rem 0.75rem;
+        background-color: oklch(from var(--accent) l c h / 0.15);
+        margin-left: -1rem;
+        margin-right: -1rem;
+        padding: 1rem;
         border-radius: var(--radius-md, 0.375rem);
     }
 
     .group-field-label {
-        width: 9rem;
-        flex-shrink: 0;
-        padding-top: 0.5rem;
+        /* Label above value */
     }
 
     .related-section {
         margin-top: 2rem;
-        max-width: 42rem;
+        max-width: 36rem;
     }
 </style>

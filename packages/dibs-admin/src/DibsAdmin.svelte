@@ -1113,6 +1113,7 @@
 <style>
     .admin-root {
         height: 100%;
+        min-height: 100vh;
         background-color: var(--background);
         color: var(--foreground);
     }
@@ -1127,12 +1128,10 @@
     }
 
     .admin-layout {
-        max-width: 72rem;
-        margin: 0 auto;
         height: 100%;
-        max-height: 100vh;
+        min-height: 100vh;
         display: grid;
-        grid-template-columns: 200px 1fr;
+        grid-template-columns: 220px 1fr;
     }
 
     .table-section {
@@ -1141,6 +1140,7 @@
         display: flex;
         flex-direction: column;
         max-height: 100vh;
+        max-width: 72rem;
     }
 
     @media (min-width: 768px) {

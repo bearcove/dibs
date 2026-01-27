@@ -602,14 +602,14 @@
 
 <style>
     .field-group {
-        margin-bottom: 1rem;
+        margin-bottom: 1.25rem;
     }
 
     .field-label-row {
         display: flex;
         align-items: center;
         gap: 0.375rem;
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.5rem;
     }
 
     :global(.field-icon) {

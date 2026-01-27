@@ -1,10 +1,7 @@
 /* DibsAdmin component styles */
 
 .dibs-admin {
-    font-family:
-        system-ui,
-        -apple-system,
-        sans-serif;
+    font-family: var(--font-sans);
     background: var(--da-bg-primary);
     color: var(--da-text-primary);
     min-height: 100%;
@@ -212,7 +209,6 @@
 }
 
 .dibs-admin td {
-    font-family: "SF Mono", "Menlo", "Monaco", monospace;
     max-width: 300px;
     overflow: hidden;
     text-overflow: ellipsis;

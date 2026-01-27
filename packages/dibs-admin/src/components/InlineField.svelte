@@ -1,13 +1,6 @@
 <script lang="ts">
     import { Pencil } from "phosphor-svelte";
-    import {
-        Input,
-        NumberInput,
-        Checkbox,
-        Textarea,
-        Select,
-        DatetimeInput,
-    } from "../lib/ui/index";
+    import { Input, NumberInput, Checkbox, Textarea, Select, DatetimeInput } from "../lib/ui/index";
     import CodeMirrorEditor from "./CodeMirrorEditor.svelte";
 
     type FieldType =
@@ -96,6 +89,11 @@
             if (!isNaN(date.getTime())) {
                 return date.toLocaleString();
             }
+        }
+        // For textarea/codemirror, show more content (up to ~500 chars / 8 lines)
+        if (type === "textarea" || type === "codemirror") {
+            if (val.length > 500) return val.slice(0, 500) + "…";
+            return val;
         }
         // Truncate long values for display
         if (val.length > 100) return val.slice(0, 100) + "…";
@@ -213,6 +211,7 @@
             type="button"
             class="display-value"
             class:readonly={readOnly || disabled}
+            class:multiline={type === "textarea" || type === "codemirror"}
             onclick={startEdit}
             disabled={readOnly || disabled}
         >
@@ -221,7 +220,10 @@
             </span>
         </button>
         {#if !readOnly && !disabled}
-            <span class="edit-icon">
+            <span
+                class="edit-icon"
+                class:multiline-icon={type === "textarea" || type === "codemirror"}
+            >
                 <Pencil size={14} />
             </span>
         {/if}
@@ -248,10 +250,14 @@
         gap: 0.75rem;
         height: 2.25rem;
         padding: 0 0.75rem;
+        background-color: var(--input);
+        border-radius: var(--radius-md, 0.375rem);
+        border: 1px solid var(--border);
     }
 
     .bool-label {
         font-size: 0.875rem;
+        font-weight: 500;
     }
 
     :global(.edit-input) {
@@ -277,35 +283,58 @@
         min-height: 2.25rem;
         border-radius: var(--radius-md, 0.375rem);
         font-size: 0.875rem;
-        transition: background-color 0.15s;
-        border: none;
-        background: transparent;
+        font-weight: 500;
+        transition:
+            background-color 0.15s,
+            border-color 0.15s;
+        border: 1px solid var(--border);
+        background-color: var(--input);
         cursor: pointer;
         color: var(--foreground);
     }
 
     .display-value:hover:not(.readonly) {
-        background-color: oklch(from var(--accent) l c h / 0.5);
+        border-color: var(--ring);
+        background-color: var(--accent);
     }
 
-    .inline-field:hover .display-value:not(.readonly) {
-        background-color: oklch(from var(--accent) l c h / 0.3);
+    .display-value:focus {
+        outline: none;
+        border-color: var(--ring);
     }
 
     .display-value.readonly {
-        color: var(--muted-foreground);
+        background-color: transparent;
+        border-color: transparent;
+        color: var(--foreground);
         cursor: default;
+        font-weight: 400;
     }
 
     .display-value .empty {
-        color: oklch(from var(--muted-foreground) l c h / 0.6);
+        color: var(--muted-foreground);
+        font-weight: 400;
+        font-style: italic;
+    }
+
+    .display-value.multiline {
+        white-space: pre-wrap;
+        min-height: 6rem;
+        align-items: flex-start;
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
     }
 
     .edit-icon {
         opacity: 0;
         transition: opacity 0.15s;
-        color: oklch(from var(--muted-foreground) l c h / 0.6);
+        color: var(--muted-foreground);
         padding-right: 0.5rem;
+    }
+
+    .edit-icon.multiline-icon {
+        align-self: flex-start;
+        margin-top: 0.75rem;
     }
 
     .inline-field:hover .edit-icon {

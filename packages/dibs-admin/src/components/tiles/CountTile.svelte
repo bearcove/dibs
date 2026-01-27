@@ -109,10 +109,6 @@
         background-color: oklch(from var(--accent) l c h / 0.5);
     }
 
-    :global(.tile-content) {
-        padding: 1.5rem;
-    }
-
     .tile-inner {
         display: flex;
         align-items: center;

@@ -2,21 +2,8 @@
 @import "../../../packages/dibs-admin/src/styles/app.css";
 @source "../../../packages/dibs-admin/src/**/*.svelte";
 
-@font-face {
-    font-family: "Recursive";
-    src: url("https://fonts.gstatic.com/s/recursive/v38/8vJN7wMr0mhh-RQChyHEH05TlDnqeyM1Gn9KPnk.woff2") format("woff2");
-    font-weight: 300 1000;
-    font-display: swap;
-}
-
-:root {
-    --font-mono: "Recursive", ui-monospace, monospace;
-}
-
-* {
-    font-family: var(--font-mono);
-}
-
-html, body, #app {
+html,
+body,
+#app {
     height: 100%;
 }

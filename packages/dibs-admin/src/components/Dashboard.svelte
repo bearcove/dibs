@@ -67,6 +67,7 @@
         font-size: 1.5rem;
         font-weight: 600;
         color: var(--foreground);
+        margin-top: 0;
         margin-bottom: 2rem;
     }
 

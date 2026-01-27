@@ -29,21 +29,26 @@
         height: 2.25rem;
         padding: 0.5rem 0.75rem;
         border-radius: var(--radius-md, 0.375rem);
-        border: 1px solid var(--input);
-        background-color: transparent;
+        border: 1px solid var(--border);
+        background-color: var(--input);
         font-size: 0.875rem;
+        font-weight: 500;
         color: var(--foreground);
         cursor: pointer;
         transition:
             border-color 0.15s,
-            outline 0.15s;
+            background-color 0.15s;
         min-width: 8rem;
+    }
+
+    :global(.select-trigger:hover) {
+        border-color: var(--ring);
+        background-color: var(--accent);
     }
 
     :global(.select-trigger:focus) {
         outline: none;
         border-color: var(--ring);
-        box-shadow: 0 0 0 1px var(--ring);
     }
 
     :global(.select-trigger:disabled) {
@@ -53,6 +58,7 @@
 
     :global(.select-trigger[data-placeholder]) {
         color: var(--muted-foreground);
+        font-weight: 400;
     }
 
     :global(.select-icon) {
