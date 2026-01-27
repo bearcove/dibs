@@ -43,7 +43,7 @@
                         <span class="old-value" title={change.oldValue}>
                             {formatValue(change.oldValue)}
                         </span>
-                        <ArrowRight size={14} class="arrow-icon" />
+                        <ArrowRightIcon size={14} class="arrow-icon" />
                         <span class="new-value" title={change.newValue}>
                             {formatValue(change.newValue)}
                         </span>

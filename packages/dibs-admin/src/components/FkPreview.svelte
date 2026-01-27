@@ -55,7 +55,7 @@
         <div class="status-message error">{error}</div>
     {:else if row && table}
         <div class="header">
-            <ArrowSquareOut size={12} class="icon" />
+            <ArrowSquareOutIcon size={12} class="icon" />
             <span class="table-name">{table.name}</span>
         </div>
         <div class="fields">

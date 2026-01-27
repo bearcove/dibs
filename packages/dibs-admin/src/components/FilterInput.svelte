@@ -333,7 +333,7 @@
                         onclick={() => removeFilter(i)}
                         aria-label="Remove filter"
                     >
-                        <X size={12} />
+                        <XIcon size={12} />
                     </button>
                 </Badge>
             {/each}

@@ -111,7 +111,7 @@
     onmouseleave={handleMouseLeave}
 >
     {displayValue}
-    <ArrowSquareOut size={12} class="link-icon" />
+    <ArrowSquareOutIcon size={12} class="link-icon" />
 </button>
 
 {#if showPreview}

@@ -43,9 +43,9 @@
 >
     {#snippet children({ checked: isChecked, indeterminate })}
         {#if indeterminate}
-            <Minus size={12} weight="bold" />
+            <MinusIcon size={12} weight="bold" />
         {:else if isChecked}
-            <Check size={12} weight="bold" />
+            <CheckIcon size={12} weight="bold" />
         {/if}
     {/snippet}
 </CheckboxPrimitive.Root>

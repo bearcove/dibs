@@ -14,7 +14,7 @@
     <nav class="breadcrumb">
         {#each entries as entry, i}
             {#if i > 0}
-                <CaretRight size={12} class="separator" />
+                <CaretRightIcon size={12} class="separator" />
             {/if}
             {#if i < entries.length - 1}
                 <button class="breadcrumb-link" onclick={() => onNavigate(i)}>

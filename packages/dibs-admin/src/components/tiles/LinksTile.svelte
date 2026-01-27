@@ -23,7 +23,7 @@
                 <li>
                     <button class="link-button" onclick={() => onSelectTable(link.table)}>
                         <span>{link.label}</span>
-                        <ArrowRight size={14} class="link-arrow" />
+                        <ArrowRightIcon size={14} class="link-arrow" />
                     </button>
                 </li>
             {/each}

@@ -18,7 +18,7 @@
         {@render children?.()}
         {#if showCloseButton}
             <DialogPrimitive.Close class="dialog-close">
-                <X size={16} />
+                <XIcon size={16} />
                 <span class="sr-only">Close</span>
             </DialogPrimitive.Close>
         {/if}

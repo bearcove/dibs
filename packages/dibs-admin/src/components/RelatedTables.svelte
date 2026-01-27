@@ -498,9 +498,9 @@
                     <button class="relation-header" onclick={() => toggleRelation(relation)}>
                         <span class="caret-icon">
                             {#if isExpanded}
-                                <CaretDown size={14} />
+                                <CaretDownIcon size={14} />
                             {:else}
-                                <CaretRight size={14} />
+                                <CaretRightIcon size={14} />
                             {/if}
                         </span>
 

@@ -22,7 +22,7 @@
 
 <div class="pagination">
     <Button variant="ghost" size="sm" onclick={onPrev} disabled={!hasPrev}>
-        <CaretLeft size={14} />
+        <CaretLeftIcon size={14} />
         Prev
     </Button>
     <span class="pagination-info">
@@ -33,7 +33,7 @@
     </span>
     <Button variant="ghost" size="sm" onclick={onNext} disabled={!hasNext}>
         Next
-        <CaretRight size={14} />
+        <CaretRightIcon size={14} />
     </Button>
 </div>
 

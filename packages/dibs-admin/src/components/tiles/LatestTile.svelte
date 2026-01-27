@@ -169,7 +169,7 @@
                 {title}
             </span>
             <button class="view-all-btn" onclick={() => onSelectTable(config.table)}>
-                <ArrowRight size={16} />
+                <ArrowRightIcon size={16} />
             </button>
         </Card.Title>
     </Card.Header>
