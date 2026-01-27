@@ -12,12 +12,8 @@
 </script>
 
 <TooltipPrimitive.Portal>
-    <TooltipPrimitive.Content {sideOffset}>
-        {#snippet child({ props })}
-            <div {...props} class="tooltip-content {className}">
-                {@render children?.()}
-            </div>
-        {/snippet}
+    <TooltipPrimitive.Content class="tooltip-content {className}" {sideOffset}>
+        {@render children?.()}
     </TooltipPrimitive.Content>
 </TooltipPrimitive.Portal>
 
