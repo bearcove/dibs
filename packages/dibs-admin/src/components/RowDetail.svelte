@@ -1,5 +1,12 @@
 <script lang="ts">
-    import { Trash, ArrowLeft, FloppyDisk, ArrowCounterClockwise, Asterisk } from "phosphor-svelte";
+    import {
+        TrashIcon,
+        ArrowLeftIcon,
+        FloppyDiskIcon,
+        ArrowCounterClockwiseIcon,
+        AsteriskIcon,
+        InfoIcon,
+    } from "phosphor-svelte";
     import type {
         Row,
         RowField,
@@ -11,7 +18,6 @@
     } from "../types";
     import type { DibsAdminConfig, DetailConfig, FieldGroupConfig } from "../types/config";
     import { Button, Label, Tooltip } from "../lib/ui/index";
-    import { Info } from "phosphor-svelte";
     import {
         getDetailConfig,
         isFieldReadOnly,
@@ -20,6 +26,7 @@
         getTableLabel,
     } from "../lib/config";
     import { getFkForColumn, getTableByName } from "../lib/fk-utils";
+    import { resolveFieldIcon, type ResolvedIcon } from "../lib/icons";
     import InlineField from "./InlineField.svelte";
     import FkSelect from "./FkSelect.svelte";
     import DynamicIcon from "./DynamicIcon.svelte";
@@ -333,21 +340,6 @@
         return { fkTable: targetTable };
     }
 
-    function getLangIcon(lang: string | null | undefined): string | null {
-        if (!lang) return null;
-        switch (lang.toLowerCase()) {
-            case "markdown":
-            case "md":
-                return "file-text";
-            case "json":
-                return "braces";
-            case "html":
-                return "file-code";
-            default:
-                return "code";
-        }
-    }
-
     // Check if column is a ColumnInfo (not FieldGroupConfig)
     function isColumnInfo(item: ColumnInfo | FieldGroupConfig): item is ColumnInfo {
         return "name" in item && "sql_type" in item;
@@ -359,7 +351,7 @@
     <header class="panel-header">
         <div class="header-left">
             <Button variant="ghost" size="icon" onclick={onClose}>
-                <ArrowLeft size={20} />
+                <ArrowLeftIcon size={20} />
             </Button>
             <div>
                 <h1 class="panel-title">
@@ -369,26 +361,36 @@
             </div>
         </div>
 
-        <!-- Actions -->
+        <!-- Actions - always rendered to avoid layout shift -->
         <div class="header-actions">
             {#if saveError}
                 <span class="error-text">{saveError}</span>
             {/if}
 
-            {#if hasChanges}
-                <Button variant="ghost" size="sm" onclick={discardChanges}>
-                    <ArrowCounterClockwise size={16} />
-                    Discard
-                </Button>
-                <Button variant="default" size="sm" onclick={handleSaveClick}>
-                    <FloppyDisk size={16} />
-                    Save Changes ({pendingChanges.size})
-                </Button>
-            {/if}
+            <Button
+                variant="ghost"
+                size="sm"
+                onclick={discardChanges}
+                disabled={!hasChanges}
+                class={hasChanges ? "" : "invisible"}
+            >
+                <ArrowCounterClockwiseIcon size={16} />
+                Discard
+            </Button>
+            <Button
+                variant="default"
+                size="sm"
+                onclick={handleSaveClick}
+                disabled={!hasChanges}
+                class={hasChanges ? "" : "invisible"}
+            >
+                <FloppyDiskIcon size={16} />
+                Save {hasChanges ? `(${pendingChanges.size})` : ""}
+            </Button>
 
             {#if onDelete}
                 <Button variant="destructive" size="sm" onclick={handleDelete} disabled={deleting}>
-                    <Trash size={16} />
+                    <TrashIcon size={16} />
                     {deleting ? "Deleting..." : "Delete"}
                 </Button>
             {/if}
@@ -406,7 +408,7 @@
                     {@const readOnly = isColumnReadOnly(col)}
                     {@const required = isColumnRequired(col)}
                     {@const fkInfo = getFkInfo(col)}
-                    {@const langIcon = getLangIcon(col.lang)}
+                    {@const fieldIcon = resolveFieldIcon(col, table, schema)}
                     {@const fieldValue = getFieldValue(col.name)}
                     {@const isModified = pendingChanges.has(col.name)}
                     {@const tooltipContent = [
@@ -429,27 +431,29 @@
                             <span class="boolean-text" class:modified-label={isModified}
                                 >{col.doc || col.name}</span
                             >
-                            {#if isModified}
-                                <span class="modified-indicator">modified</span>
-                            {/if}
                         </label>
                     {:else}
                         <!-- Other fields: label above, value below -->
                         <div class="field" class:modified={isModified}>
                             <div class="field-label">
-                                {#if langIcon}
-                                    <DynamicIcon name={langIcon} size={14} class="field-icon" />
-                                {:else if col.icon}
-                                    <DynamicIcon name={col.icon} size={14} class="field-icon" />
+                                {#if fieldIcon.type === "custom"}
+                                    <DynamicIcon
+                                        name={fieldIcon.name}
+                                        size={14}
+                                        class="field-icon"
+                                    />
+                                {:else}
+                                    <fieldIcon.Icon size={14} class="field-icon" />
                                 {/if}
                                 <Label class={isModified ? "modified-label" : ""}
                                     >{col.doc || col.name}</Label
                                 >
                                 {#if required}
-                                    <Asterisk size={10} class="required-indicator" weight="bold" />
-                                {/if}
-                                {#if isModified}
-                                    <span class="modified-indicator">modified</span>
+                                    <AsteriskIcon
+                                        size={10}
+                                        class="required-indicator"
+                                        weight="bold"
+                                    />
                                 {/if}
                                 <Tooltip.Root>
                                     <Tooltip.Trigger>
@@ -459,7 +463,7 @@
                                                 unknown
                                             >}
                                             <span {...restProps} class="info-trigger" tabindex={-1}>
-                                                <Info size={12} />
+                                                <InfoIcon size={12} />
                                             </span>
                                         {/snippet}
                                     </Tooltip.Trigger>
@@ -508,6 +512,7 @@
                                     {@const inlineType = mapControlTypeToInlineType(controlType)}
                                     {@const readOnly = isColumnReadOnly(col)}
                                     {@const fkInfo = getFkInfo(col)}
+                                    {@const fieldIcon = resolveFieldIcon(col, table, schema)}
                                     {@const fieldValue = getFieldValue(col.name)}
                                     {@const isModified = pendingChanges.has(col.name)}
 
@@ -527,20 +532,21 @@
                                                 class:modified-label={isModified}
                                                 >{col.doc || col.name}</span
                                             >
-                                            {#if isModified}
-                                                <span class="modified-indicator">modified</span>
-                                            {/if}
                                         </label>
                                     {:else}
                                         <div class="field" class:modified={isModified}>
                                             <div class="field-label">
+                                                {#if fieldIcon.type === "custom"}
+                                                    <DynamicIcon
+                                                        name={fieldIcon.name}
+                                                        size={14}
+                                                        class="field-icon"
+                                                    />
+                                                {:else}
+                                                    <fieldIcon.Icon size={14} class="field-icon" />
+                                                {/if}
                                                 <Label class={isModified ? "modified-label" : ""}>
                                                     {col.doc || col.name}
-                                                    {#if isModified}
-                                                        <span class="modified-indicator"
-                                                            >modified</span
-                                                        >
-                                                    {/if}
                                                 </Label>
                                             </div>
                                             <div class="field-value">
@@ -653,6 +659,10 @@
         gap: 0.75rem;
     }
 
+    :global(.header-actions .invisible) {
+        visibility: hidden;
+    }
+
     .error-text {
         font-size: 0.75rem;
         color: var(--destructive);
@@ -677,17 +687,18 @@
         max-width: 100%;
     }
 
-    /* Individual field - label on top, value below */
+    /* Individual field - always has padding/background for no layout shift */
     .field {
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.375rem;
+        background-color: transparent;
+        border: 1px solid transparent;
     }
 
     .field.modified {
-        background-color: oklch(from var(--accent) l c h / 0.1);
-        margin-left: -1rem;
-        margin-right: -1rem;
-        padding: 0.5rem 1rem;
-        border-radius: 0.375rem;
+        background-color: oklch(from var(--primary) l c h / 0.1);
+        border-color: oklch(from var(--primary) l c h / 0.3);
     }
 
     .field-label {
@@ -707,7 +718,16 @@
         align-items: center;
         gap: 0.75rem;
         cursor: pointer;
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.375rem;
+        background-color: transparent;
+        border: 1px solid transparent;
+    }
+
+    .field-boolean.modified {
+        background-color: oklch(from var(--primary) l c h / 0.1);
+        border-color: oklch(from var(--primary) l c h / 0.3);
     }
 
     .boolean-text {
