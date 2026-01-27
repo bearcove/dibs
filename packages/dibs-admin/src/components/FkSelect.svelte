@@ -1,7 +1,7 @@
 <script lang="ts">
-    import type { TableInfo, SquelClient, ListRequest } from "../types.js";
-    import { getDisplayColumn, getPkValue, formatValueForDisplay } from "../lib/fk-utils.js";
-    import { Select } from "../lib/ui/index.js";
+    import type { TableInfo, SquelClient, ListRequest } from "../types";
+    import { getDisplayColumn, getPkValue, formatValueForDisplay } from "../lib/fk-utils";
+    import { Select } from "../lib/ui/index";
 
     interface Props {
         value: string;

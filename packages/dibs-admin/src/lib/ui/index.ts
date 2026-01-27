@@ -9,8 +9,8 @@ export { default as NumberInput } from "./NumberInput.svelte";
 export { default as DatetimeInput } from "./DatetimeInput.svelte";
 
 // Complex components - namespace export for composition
-export * as Select from "./select/index.js";
-export * as Dialog from "./dialog/index.js";
-export * as Tooltip from "./tooltip/index.js";
-export * as Card from "./card/index.js";
-export * as AlertDialog from "./alert-dialog/index.js";
+export * as Select from "./select/index";
+export * as Dialog from "./dialog/index";
+export * as Tooltip from "./tooltip/index";
+export * as Card from "./card/index";
+export * as AlertDialog from "./alert-dialog/index";

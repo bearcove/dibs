@@ -8,8 +8,8 @@ import type {
     FilterConfig,
     TableDefaults,
     RowExpandConfig,
-} from "../types/config.js";
-import type { TableInfo, ColumnInfo, Filter, Sort, Value } from "../types.js";
+} from "../types/config";
+import type { TableInfo, ColumnInfo, Filter, Sort, Value } from "../types";
 
 // =============================================================================
 // Default Values

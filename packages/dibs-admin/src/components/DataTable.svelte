@@ -20,10 +20,10 @@
         TableInfo,
         SchemaInfo,
         SquelClient,
-    } from "../types.js";
-    import type { RowExpandConfig } from "../types/config.js";
+    } from "../types";
+    import type { RowExpandConfig } from "../types/config";
     import type { Component } from "svelte";
-    import { getFkForColumn, getTableByName } from "../lib/fk-utils.js";
+    import { getFkForColumn, getTableByName } from "../lib/fk-utils";
     import FkCell from "./FkCell.svelte";
     import DynamicIcon from "./DynamicIcon.svelte";
     import MarkdownRenderer from "./MarkdownRenderer.svelte";

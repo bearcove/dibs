@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AlertDialog, Button } from "../lib/ui/index.js";
+    import { AlertDialog, Button } from "../lib/ui/index";
     import { ArrowRight } from "phosphor-svelte";
 
     interface Change {

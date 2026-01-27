@@ -1,6 +1,6 @@
 <script lang="ts">
-    import type { ColumnInfo, Filter, FilterOp, Value } from "../types.js";
-    import { Badge, Button } from "../lib/ui/index.js";
+    import type { ColumnInfo, Filter, FilterOp, Value } from "../types";
+    import { Badge, Button } from "../lib/ui/index";
     import { X } from "phosphor-svelte";
 
     interface Props {

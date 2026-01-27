@@ -1,5 +1,5 @@
 import type { Component } from "svelte";
-import type { Filter } from "../types.js";
+import type { Filter } from "../types";
 
 // =============================================================================
 // Sort and Filter Configuration

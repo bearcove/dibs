@@ -2,7 +2,7 @@
  * Foreign key utilities for the admin UI.
  */
 
-import type { TableInfo, ForeignKeyInfo, ColumnInfo, Row, Value, SchemaInfo } from "../types.js";
+import type { TableInfo, ForeignKeyInfo, ColumnInfo, Row, Value, SchemaInfo } from "../types";
 
 /**
  * Get the FK info for a column, if it's part of a foreign key.

@@ -5,8 +5,8 @@
         LatestRecordsTile,
         CountTile,
         QuickLinksTile,
-    } from "../types/config.js";
-    import type { SchemaInfo, SquelClient } from "../types.js";
+    } from "../types/config";
+    import type { SchemaInfo, SquelClient } from "../types";
     import LatestTile from "./tiles/LatestTile.svelte";
     import CountTileComponent from "./tiles/CountTile.svelte";
     import LinksTile from "./tiles/LinksTile.svelte";

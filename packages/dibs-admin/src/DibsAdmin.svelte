@@ -13,8 +13,8 @@
         Value,
         ListRequest,
         DibsError,
-    } from "./types.js";
-    import type { DibsAdminConfig } from "./types/config.js";
+    } from "./types";
+    import type { DibsAdminConfig } from "./types/config";
     import TableList from "./components/TableList.svelte";
     import DataTable from "./components/DataTable.svelte";
     import FilterInput from "./components/FilterInput.svelte";
@@ -23,9 +23,9 @@
     import RowDetail from "./components/RowDetail.svelte";
     import Breadcrumb from "./components/Breadcrumb.svelte";
     import Dashboard from "./components/Dashboard.svelte";
-    import { Button, Tooltip } from "./lib/ui/index.js";
-    import type { BreadcrumbEntry } from "./lib/fk-utils.js";
-    import { createBreadcrumbLabel, getTableByName, getPkValue } from "./lib/fk-utils.js";
+    import { Button, Tooltip } from "./lib/ui/index";
+    import type { BreadcrumbEntry } from "./lib/fk-utils";
+    import { createBreadcrumbLabel, getTableByName, getPkValue } from "./lib/fk-utils";
     import {
         isTableHidden,
         getTableLabel,
@@ -38,7 +38,7 @@
         isColumnSortable,
         getRowExpand,
         getImageColumns,
-    } from "./lib/config.js";
+    } from "./lib/config";
 
     interface Props {
         client: SquelServiceCaller;

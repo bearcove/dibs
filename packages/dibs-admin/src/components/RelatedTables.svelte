@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { TableInfo, SchemaInfo, Row, Filter, Value, SquelClient } from "../types.js";
+    import type { TableInfo, SchemaInfo, Row, Filter, Value, SquelClient } from "../types";
     import { CaretDown, CaretRight, Table as TableIcon } from "phosphor-svelte";
     import DynamicIcon from "./DynamicIcon.svelte";
 

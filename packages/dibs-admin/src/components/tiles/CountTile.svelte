@@ -1,8 +1,8 @@
 <script lang="ts">
-    import type { CountTile } from "../../types/config.js";
-    import type { SchemaInfo, SquelClient } from "../../types.js";
-    import { filterConfigsToFilters } from "../../lib/config.js";
-    import { Card } from "../../lib/ui/index.js";
+    import type { CountTile } from "../../types/config";
+    import type { SchemaInfo, SquelClient } from "../../types";
+    import { filterConfigsToFilters } from "../../lib/config";
+    import { Card } from "../../lib/ui/index";
     import DynamicIcon from "../DynamicIcon.svelte";
 
     interface Props {

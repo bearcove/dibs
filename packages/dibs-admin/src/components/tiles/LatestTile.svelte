@@ -1,8 +1,8 @@
 <script lang="ts">
     import { ArrowRight } from "phosphor-svelte";
-    import type { LatestRecordsTile } from "../../types/config.js";
-    import type { SchemaInfo, SquelClient, Row, Value } from "../../types.js";
-    import { Card } from "../../lib/ui/index.js";
+    import type { LatestRecordsTile } from "../../types/config";
+    import type { SchemaInfo, SquelClient, Row, Value } from "../../types";
+    import { Card } from "../../lib/ui/index";
     import DynamicIcon from "../DynamicIcon.svelte";
 
     interface Props {

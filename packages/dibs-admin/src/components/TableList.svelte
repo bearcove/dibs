@@ -1,8 +1,8 @@
 <script lang="ts">
     import { Clock, House } from "phosphor-svelte";
-    import type { TableInfo } from "../types.js";
-    import type { DibsAdminConfig } from "../types/config.js";
-    import { getTableLabel } from "../lib/config.js";
+    import type { TableInfo } from "../types";
+    import type { DibsAdminConfig } from "../types/config";
+    import { getTableLabel } from "../lib/config";
     import DynamicIcon from "./DynamicIcon.svelte";
 
     interface Props {

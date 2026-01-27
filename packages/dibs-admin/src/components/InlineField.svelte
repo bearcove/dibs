@@ -7,7 +7,7 @@
         Textarea,
         Select,
         DatetimeInput,
-    } from "../lib/ui/index.js";
+    } from "../lib/ui/index";
     import CodeMirrorEditor from "./CodeMirrorEditor.svelte";
 
     type FieldType =

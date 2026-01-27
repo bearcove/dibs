@@ -1,6 +1,6 @@
 <script lang="ts">
     import { CaretLeft, CaretRight } from "phosphor-svelte";
-    import { Button } from "../lib/ui/index.js";
+    import { Button } from "../lib/ui/index";
 
     interface Props {
         offset: number;

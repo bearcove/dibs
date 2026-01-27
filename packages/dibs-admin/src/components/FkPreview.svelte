@@ -1,7 +1,7 @@
 <script lang="ts">
     import { ArrowSquareOut } from "phosphor-svelte";
-    import type { Row, TableInfo, Value } from "../types.js";
-    import { formatValueForDisplay, getDisplayColumn } from "../lib/fk-utils.js";
+    import type { Row, TableInfo, Value } from "../types";
+    import { formatValueForDisplay, getDisplayColumn } from "../lib/fk-utils";
 
     interface Props {
         row: Row | null;

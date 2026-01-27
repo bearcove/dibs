@@ -8,9 +8,9 @@
         TableInfo,
         SchemaInfo,
         SquelClient,
-    } from "../types.js";
-    import type { DibsAdminConfig, DetailConfig, FieldGroupConfig } from "../types/config.js";
-    import { Button, Label, Tooltip } from "../lib/ui/index.js";
+    } from "../types";
+    import type { DibsAdminConfig, DetailConfig, FieldGroupConfig } from "../types/config";
+    import { Button, Label, Tooltip } from "../lib/ui/index";
     import { Info } from "phosphor-svelte";
     import {
         getDetailConfig,
@@ -18,8 +18,8 @@
         isFieldHidden,
         shouldShowRelations,
         getTableLabel,
-    } from "../lib/config.js";
-    import { getFkForColumn, getTableByName } from "../lib/fk-utils.js";
+    } from "../lib/config";
+    import { getFkForColumn, getTableByName } from "../lib/fk-utils";
     import InlineField from "./InlineField.svelte";
     import FkSelect from "./FkSelect.svelte";
     import DynamicIcon from "./DynamicIcon.svelte";

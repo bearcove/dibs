@@ -15,7 +15,7 @@
         TableInfo,
         SchemaInfo,
         SquelClient,
-    } from "../types.js";
+    } from "../types";
     import {
         Button,
         Input,
@@ -27,8 +27,8 @@
         Dialog,
         Select,
         Tooltip,
-    } from "../lib/ui/index.js";
-    import { getFkForColumn, getTableByName } from "../lib/fk-utils.js";
+    } from "../lib/ui/index";
+    import { getFkForColumn, getTableByName } from "../lib/fk-utils";
     import FkSelect from "./FkSelect.svelte";
     import DynamicIcon from "./DynamicIcon.svelte";
     import CodeMirrorEditor from "./CodeMirrorEditor.svelte";

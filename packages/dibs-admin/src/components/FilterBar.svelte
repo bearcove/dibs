@@ -1,7 +1,7 @@
 <script lang="ts">
     import { Plus, X } from "phosphor-svelte";
-    import type { ColumnInfo, Filter, FilterOp, Value } from "../types.js";
-    import { Button, Input, Badge, Select } from "../lib/ui/index.js";
+    import type { ColumnInfo, Filter, FilterOp, Value } from "../types";
+    import { Button, Input, Badge, Select } from "../lib/ui/index";
 
     interface Props {
         columns: ColumnInfo[];
