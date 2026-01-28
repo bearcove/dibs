@@ -3,7 +3,7 @@
     import PlusIcon from "phosphor-svelte/lib/PlusIcon";
     import HouseIcon from "phosphor-svelte/lib/HouseIcon";
     import DynamicIcon from "./components/DynamicIcon.svelte";
-    import { goto } from "@mateothegreat/svelte5-router";
+    import { useRouter } from "@dvcol/svelte-simple-router";
     import type {
         SquelServiceCaller,
         SchemaInfo,
@@ -47,42 +47,55 @@
     } from "@bearcove/dibs-admin/lib/config";
     import { schemaCache } from "./lib/schema-cache.js";
 
+    interface RouteNames {
+        dashboard?: string;   // Route for /admin (dashboard)
+        table?: string;       // Route for /admin/:table
+        tableNew?: string;    // Route for /admin/:table/new
+        tableRow?: string;    // Route for /admin/:table/:pk
+    }
+
     interface Props {
         client: SquelServiceCaller;
         config?: DibsAdminConfig;
-        basePath?: string;
+        routes?: RouteNames;
     }
 
-    let { client, config, basePath = "" }: Props = $props();
+    let { client, config, routes }: Props = $props();
+
+    // Get router for navigation
+    const router = useRouter();
+
+    // Route params - the source of truth for navigation state
+    const routeParams = $derived(router?.current?.route?.params as { table?: string; pk?: string } | undefined);
+
+    // Derived from route params
+    const selectedTable = $derived(routeParams?.table ?? null);
+    const showDashboard = $derived(!routeParams?.table);
+    const editingPk = $derived(
+        routeParams?.pk && routeParams.pk !== "new" ? routeParams.pk : null
+    );
+    const isCreating = $derived(routeParams?.pk === "new");
 
     // Schema state - initialize from cache if available
     let schema = $state<SchemaInfo | null>(schemaCache.get(client) ?? null);
-    let selectedTable = $state<string | null>(null);
     let loading = $state(false);
     let error = $state<string | null>(null);
-
-    // Dashboard state
-    let showDashboard = $state(false);
 
     // Data state
     let rows = $state<Row[]>([]);
     let totalRows = $state<bigint | null>(null);
 
-    // Query state
+    // Query state (local, could be query params in future)
     let filters = $state<Filter[]>([]);
     let sort = $state<Sort | null>(null);
     let limit = $derived(selectedTable ? getPageSize(config, selectedTable) : 25);
     let offset = $state(0);
 
-    // Router state - prevent infinite loops
-    let isUpdatingFromUrl = false;
-    let isUpdatingUrl = false;
-    let schemaLoaded = false; // Prevent double-loading on mount
+    // Prevent double-loading on mount
+    let schemaLoaded = false;
 
     // Editor state
     let editingRow = $state<Row | null>(null);
-    let editingPk = $state<string | null>(null); // PK value as string for URL
-    let isCreating = $state(false);
     let saving = $state(false);
     let deleting = $state(false);
 
@@ -108,254 +121,35 @@
     );
 
     // ==========================================================================
-    // Path-based routing (using svelte5-router)
+    // Router-based navigation
     // ==========================================================================
 
-    // Op tags to URL-safe strings
-    const opToString: Record<string, string> = {
-        Eq: "eq",
-        Ne: "ne",
-        Lt: "lt",
-        Lte: "lte",
-        Gt: "gt",
-        Gte: "gte",
-        Like: "like",
-        ILike: "ilike",
-        IsNull: "null",
-        IsNotNull: "notnull",
-        In: "in",
-    };
-    const stringToOp: Record<string, string> = Object.fromEntries(
-        Object.entries(opToString).map(([k, v]) => [v, k]),
-    );
-
-    function encodePath(): string {
-        // Dashboard view: basePath or basePath/
-        if (showDashboard || !selectedTable) {
-            return basePath || "/";
+    // Navigate to dashboard
+    function navigateToDashboard() {
+        if (routes?.dashboard) {
+            router?.push({ name: routes.dashboard });
         }
-
-        // Detail view: basePath/table/pk
-        if (editingPk !== null) {
-            return `${basePath}/${encodeURIComponent(selectedTable)}/${encodeURIComponent(editingPk)}`;
-        }
-
-        // Create view: basePath/table/new
-        if (isCreating) {
-            return `${basePath}/${encodeURIComponent(selectedTable)}/new`;
-        }
-
-        // List view: basePath/table?filters
-        let path = `${basePath}/${encodeURIComponent(selectedTable)}`;
-        const params = new URLSearchParams();
-
-        for (const f of filters) {
-            const opStr = opToString[f.op.tag] ?? "eq";
-            const key = `${f.field}__${opStr}`;
-            if (f.op.tag === "In") {
-                // Encode In values as comma-separated
-                const vals = f.values.map((v) => encodeValue(v)).join(",");
-                params.append(key, vals);
-            } else if (f.op.tag === "IsNull" || f.op.tag === "IsNotNull") {
-                params.append(key, "");
-            } else {
-                params.append(key, encodeValue(f.value));
-            }
-        }
-
-        if (sort) {
-            params.append("_sort", `${sort.field}__${sort.dir.tag.toLowerCase()}`);
-        }
-        if (offset > 0) {
-            params.append("_offset", String(offset));
-        }
-
-        const qs = params.toString();
-        return qs ? `${path}?${qs}` : path;
     }
 
-    function encodeValue(v: Value): string {
-        if (v.tag === "Null") return "";
-        if (typeof v.value === "bigint") return v.value.toString();
-        return String(v.value);
+    // Navigate to table list view
+    function navigateToTable(table: string) {
+        if (routes?.table) {
+            router?.push({ name: routes.table, params: { table } });
+        }
     }
 
-    type DecodedUrl = {
-        table: string | null;
-        filters: Filter[];
-        sort: Sort | null;
-        offset: number;
-        rowPk: string | null; // If viewing a specific row
-        isCreating: boolean; // If creating a new row
-        isDashboard: boolean; // If showing dashboard
-    };
-
-    function decodeUrl(pathname: string, search: string, schemaInfo?: SchemaInfo | null): DecodedUrl | null {
-        // Strip basePath from pathname
-        let path = pathname;
-        if (basePath && pathname.startsWith(basePath)) {
-            path = pathname.slice(basePath.length);
+    // Navigate to new row view
+    function navigateToNewRow(table: string) {
+        if (routes?.tableNew) {
+            router?.push({ name: routes.tableNew, params: { table } });
         }
-
-        // Normalize: remove leading slash
-        if (path.startsWith("/")) {
-            path = path.slice(1);
-        }
-
-        // Dashboard view: empty path
-        if (path === "" || path === "/") {
-            return {
-                table: null,
-                filters: [],
-                sort: null,
-                offset: 0,
-                rowPk: null,
-                isCreating: false,
-                isDashboard: true,
-            };
-        }
-
-        const pathSegments = path.split("/").map((s) => decodeURIComponent(s));
-
-        const table = pathSegments[0];
-        if (!table) return null;
-
-        // Check for detail view: basePath/table/pk or basePath/table/new
-        let rowPk: string | null = null;
-        let isCreating = false;
-        if (pathSegments.length > 1) {
-            const secondSegment = pathSegments[1];
-            if (secondSegment === "new") {
-                isCreating = true;
-            } else if (secondSegment) {
-                rowPk = secondSegment;
-            }
-        }
-
-        // Find table info for type inference
-        const tableInfo = schemaInfo?.tables.find((t) => t.name === table) ?? currentTable;
-
-        const decodedFilters: Filter[] = [];
-        let decodedSort: Sort | null = null;
-        let decodedOffset = 0;
-
-        if (search) {
-            // Remove leading ? if present
-            const queryString = search.startsWith("?") ? search.slice(1) : search;
-            const params = new URLSearchParams(queryString);
-            for (const [key, value] of params.entries()) {
-                if (key === "_sort") {
-                    const [field, dir] = value.split("__");
-                    if (field && dir) {
-                        decodedSort = { field, dir: dir === "desc" ? { tag: "Desc" } : { tag: "Asc" } };
-                    }
-                } else if (key === "_offset") {
-                    decodedOffset = parseInt(value, 10) || 0;
-                } else if (key.includes("__")) {
-                    const [field, opStr] = key.split("__");
-                    const opTag = stringToOp[opStr];
-                    if (field && opTag) {
-                        const op = { tag: opTag } as Filter["op"];
-                        if (opTag === "In") {
-                            const values = value
-                                .split(",")
-                                .map((v) => decodeValue(v, field, tableInfo));
-                            decodedFilters.push({ field, op, value: { tag: "Null" }, values });
-                        } else if (opTag === "IsNull" || opTag === "IsNotNull") {
-                            decodedFilters.push({ field, op, value: { tag: "Null" }, values: [] });
-                        } else {
-                            decodedFilters.push({
-                                field,
-                                op,
-                                value: decodeValue(value, field, tableInfo),
-                                values: [],
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        return { table, filters: decodedFilters, sort: decodedSort, offset: decodedOffset, rowPk, isCreating, isDashboard: false };
     }
 
-    function decodeValue(str: string, field: string, tableInfo?: TableInfo | null): Value {
-        if (str === "") return { tag: "Null" };
-        // Try to detect type from the table schema
-        const col = tableInfo?.columns.find((c) => c.name === field);
-        if (col) {
-            const typeLower = col.sql_type.toLowerCase();
-            if (typeLower.includes("int8") || typeLower === "bigint" || typeLower === "bigserial") {
-                return { tag: "I64", value: BigInt(str) };
-            }
-            if (typeLower.includes("int")) {
-                return { tag: "I32", value: parseInt(str, 10) };
-            }
-            if (typeLower.includes("bool")) {
-                return { tag: "Bool", value: str === "true" || str === "1" };
-            }
+    // Navigate to row detail view
+    function navigateToRow(table: string, pk: string) {
+        if (routes?.tableRow) {
+            router?.push({ name: routes.tableRow, params: { table, pk } });
         }
-        // Default to string
-        return { tag: "String", value: str };
-    }
-
-    function updateUrl() {
-        if (isUpdatingFromUrl) return;
-        isUpdatingUrl = true;
-        const newPath = encodePath();
-        const currentPath = window.location.pathname + window.location.search;
-        if (currentPath !== newPath) {
-            goto(newPath);
-        }
-        isUpdatingUrl = false;
-    }
-
-    async function applyUrl() {
-        const decoded = decodeUrl(window.location.pathname, window.location.search, schema);
-        if (!decoded) return;
-
-        isUpdatingFromUrl = true;
-
-        // Handle dashboard view
-        if (decoded.isDashboard) {
-            showDashboard = true;
-            selectedTable = null;
-            editingPk = null;
-            editingRow = null;
-            isCreating = false;
-            isUpdatingFromUrl = false;
-            return;
-        }
-
-        showDashboard = false;
-
-        // Only apply if different from current state
-        if (decoded.table !== selectedTable) {
-            selectedTable = decoded.table;
-            breadcrumbs = decoded.table ? [{ table: decoded.table, label: decoded.table }] : [];
-        }
-
-        filters = decoded.filters;
-        sort = decoded.sort;
-        offset = decoded.offset;
-
-        // Handle detail view state
-        if (decoded.rowPk !== null) {
-            editingPk = decoded.rowPk;
-            isCreating = false;
-            // Load the specific row
-            await loadRowByPk(decoded.rowPk);
-        } else if (decoded.isCreating) {
-            editingPk = null;
-            editingRow = null;
-            isCreating = true;
-        } else {
-            editingPk = null;
-            editingRow = null;
-            isCreating = false;
-        }
-
-        isUpdatingFromUrl = false;
     }
 
     async function loadRowByPk(pkStr: string) {
@@ -375,40 +169,27 @@
                 editingRow = result.value;
             } else {
                 // Row not found, go back to list
-                editingPk = null;
                 editingRow = null;
+                navigateToTable(selectedTable);
             }
         } catch (e) {
             console.error("Failed to load row:", e);
-            editingPk = null;
             editingRow = null;
+            navigateToTable(selectedTable);
         }
     }
 
-    // Listen for popstate (back/forward)
+    // Load data when route changes (selectedTable is derived from route)
     $effect(() => {
-        function handlePopState() {
-            if (isUpdatingUrl) return;
-            applyUrl();
+        if (schema && selectedTable) {
             loadData();
         }
-        window.addEventListener("popstate", handlePopState);
-        return () => window.removeEventListener("popstate", handlePopState);
     });
 
-    // Update URL when state changes
+    // Load row when viewing a specific row
     $effect(() => {
-        // Depend on these values
-        void selectedTable;
-        void filters;
-        void sort;
-        void offset;
-        void editingPk;
-        void isCreating;
-        void showDashboard;
-        // Update URL (but not during initial load or when applying URL)
-        if (schema && (selectedTable || showDashboard)) {
-            updateUrl();
+        if (schema && selectedTable && editingPk && !editingRow) {
+            loadRowByPk(editingPk);
         }
     });
 
@@ -439,55 +220,16 @@
             if (!schema) return;
         }
 
-        if (schema.tables.length > 0) {
-            // Check if there's a URL path to apply
-            const decoded = decodeUrl(window.location.pathname, window.location.search, schema);
+        // Initialize breadcrumbs if we have a table from the route
+        if (selectedTable) {
+            breadcrumbs = [{ table: selectedTable, label: selectedTable }];
+        }
 
-            // Handle dashboard view from URL
-            if (decoded?.isDashboard && hasDashboard(config)) {
-                showDashboard = true;
-                // No need to load table data for dashboard
-            } else if (
-                decoded &&
-                decoded.table &&
-                schema.tables.some((t) => t.name === decoded.table)
-            ) {
-                // Apply URL state for table view
-                isUpdatingFromUrl = true;
-                showDashboard = false;
-                selectedTable = decoded.table;
-                filters = decoded.filters;
-                sort = decoded.sort;
-                offset = decoded.offset;
-                breadcrumbs = [{ table: decoded.table, label: decoded.table }];
-
-                // Handle detail/create views
-                if (decoded.rowPk !== null) {
-                    editingPk = decoded.rowPk;
-                    isCreating = false;
-                } else if (decoded.isCreating) {
-                    editingPk = null;
-                    isCreating = true;
-                }
-
-                isUpdatingFromUrl = false;
-
-                // Load data first, then load specific row if needed
-                await loadData();
-
-                // If viewing a specific row, load it
-                if (decoded.rowPk !== null) {
-                    await loadRowByPk(decoded.rowPk);
-                }
-            } else if (hasDashboard(config)) {
-                // Default to dashboard if configured
-                showDashboard = true;
-            } else {
-                // Default to first visible table
-                const firstVisible = schema.tables.find((t) => !isTableHidden(config, t.name));
-                if (firstVisible) {
-                    selectTable(firstVisible.name);
-                }
+        // If no table selected and no dashboard, navigate to first table
+        if (!selectedTable && !hasDashboard(config) && schema.tables.length > 0) {
+            const firstVisible = schema.tables.find((t) => !isTableHidden(config, t.name));
+            if (firstVisible) {
+                navigateToTable(firstVisible.name);
             }
         }
     }
@@ -680,28 +422,22 @@
     }
 
     function selectTable(tableName: string, resetBreadcrumbs = true) {
-        showDashboard = false;
-        selectedTable = tableName;
+        // Reset local query state
         filters = [];
         sort = null;
         offset = 0;
-        // Clear detail/create view state
-        editingPk = null;
         editingRow = null;
-        isCreating = false;
         if (resetBreadcrumbs) {
             breadcrumbs = [{ table: tableName, label: tableName }];
         }
-        loadData();
+        // Navigate via router
+        navigateToTable(tableName);
     }
 
     function goToDashboard() {
-        showDashboard = true;
-        selectedTable = null;
-        editingPk = null;
         editingRow = null;
-        isCreating = false;
         breadcrumbs = [];
+        navigateToDashboard();
     }
 
     // Navigate to an FK target
@@ -724,28 +460,11 @@
 
         breadcrumbs = [...breadcrumbs, newEntry];
 
-        // Navigate to the table with a filter for the specific row
-        selectedTable = targetTable;
-        filters = [
-            {
-                field: pkCol.name,
-                op: { tag: "Eq" },
-                value: pkValue,
-                values: [],
-            },
-        ];
-        sort = null;
-        offset = 0;
-
-        await loadData();
-
-        // Update the breadcrumb label with the actual display value
-        if (rows.length > 0 && currentTable) {
-            const label = createBreadcrumbLabel(currentTable, rows[0]);
-            breadcrumbs = breadcrumbs.map((b, i) =>
-                i === breadcrumbs.length - 1 ? { ...b, label } : b,
-            );
-        }
+        // Navigate to the row detail view
+        const pkStr = pkValue.tag !== "Null"
+            ? (typeof pkValue.value === "bigint" ? pkValue.value.toString() : String(pkValue.value))
+            : "";
+        navigateToRow(targetTable, pkStr);
     }
 
     // Navigate back via breadcrumb
@@ -755,31 +474,20 @@
         const entry = breadcrumbs[index];
         breadcrumbs = breadcrumbs.slice(0, index + 1);
 
-        selectedTable = entry.table;
-
-        // If there's a PK value, filter to that row; otherwise show all
-        if (entry.pkValue) {
-            const table = schema?.tables.find((t) => t.name === entry.table);
-            const pkCol = table?.columns.find((c) => c.primary_key);
-            if (pkCol) {
-                filters = [
-                    {
-                        field: pkCol.name,
-                        op: { tag: "Eq" },
-                        value: entry.pkValue,
-                        values: [],
-                    },
-                ];
-            } else {
-                filters = [];
-            }
-        } else {
-            filters = [];
-        }
-
+        // Reset query state
+        filters = [];
         sort = null;
         offset = 0;
-        loadData();
+
+        // Navigate via router
+        if (entry.pkValue) {
+            const pkStr = entry.pkValue.tag !== "Null"
+                ? (typeof entry.pkValue.value === "bigint" ? entry.pkValue.value.toString() : String(entry.pkValue.value))
+                : "";
+            navigateToRow(entry.table, pkStr);
+        } else {
+            navigateToTable(entry.table);
+        }
     }
 
     function handleSort(column: string) {
@@ -832,22 +540,27 @@
 
     function openEditor(row: Row) {
         editingRow = row;
-        isCreating = false;
-        // Set the pk for URL
-        const pk = getPrimaryKeyValue(row);
-        editingPk = pk ? formatPkValue(pk) : null;
+        // Navigate to row detail view
+        if (selectedTable) {
+            const pk = getPrimaryKeyValue(row);
+            if (pk) {
+                navigateToRow(selectedTable, formatPkValue(pk));
+            }
+        }
     }
 
     function openCreateDialog() {
         editingRow = null;
-        editingPk = null;
-        isCreating = true;
+        if (selectedTable) {
+            navigateToNewRow(selectedTable);
+        }
     }
 
     function closeEditor() {
         editingRow = null;
-        editingPk = null;
-        isCreating = false;
+        if (selectedTable) {
+            navigateToTable(selectedTable);
+        }
     }
 
     function getPrimaryKeyValue(row: Row): Value | null {
@@ -941,7 +654,7 @@
     }
 
     // Navigate to a related record (opens detail view directly)
-    async function handleRelatedNavigate(tableName: string, pkValue: Value) {
+    function handleRelatedNavigate(tableName: string, pkValue: Value) {
         if (!schema) return;
 
         const table = getTableByName(schema, tableName);
@@ -959,24 +672,13 @@
         };
         breadcrumbs = [...breadcrumbs, newEntry];
 
-        // Switch table and load the specific row's detail view
-        selectedTable = tableName;
+        // Reset query state
         filters = [];
         sort = null;
         offset = 0;
-        editingPk = pkStr;
-        isCreating = false;
 
-        // Load the row data
-        await loadRowByPk(pkStr);
-
-        // Update breadcrumb with display label
-        if (editingRow && currentTable) {
-            const label = createBreadcrumbLabel(currentTable, editingRow);
-            breadcrumbs = breadcrumbs.map((b, i) =>
-                i === breadcrumbs.length - 1 ? { ...b, label } : b,
-            );
-        }
+        // Navigate to row detail view
+        navigateToRow(tableName, pkStr);
     }
 
     async function deleteRow() {

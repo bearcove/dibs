@@ -50,9 +50,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.39.11
         version: 6.39.11
-      '@mateothegreat/svelte5-router':
-        specifier: ^2.16.19
-        version: 2.16.19(svelte@5.48.3)
+      '@dvcol/svelte-simple-router':
+        specifier: ^2.7.2
+        version: 2.7.2(svelte@5.48.3)
       '@replit/codemirror-vim':
         specifier: ^6.3.0
         version: 6.3.0(@codemirror/commands@6.10.1)(@codemirror/language@6.12.1)(@codemirror/search@6.6.0)(@codemirror/state@6.5.4)(@codemirror/view@6.39.11)
@@ -158,6 +158,22 @@ packages:
 
   '@codemirror/view@6.39.11':
     resolution: {integrity: sha512-bWdeR8gWM87l4DB/kYSF9A+dVackzDb/V56Tq7QVrQ7rn86W0rgZFtlL3g3pem6AeGcb9NQNoy3ao4WpW4h5tQ==}
+
+  '@dvcol/common-utils@1.34.0':
+    resolution: {integrity: sha512-8PojenuhCK8FZyWcToYII5W0WNiaYw+wi6UPfPExHbA2gANuBtjVzdZVYVOJNEMdHXMNatR9b3m37ppl8+1Mnw==}
+    engines: {node: '>=20', pnpm: '>= 8'}
+
+  '@dvcol/svelte-simple-router@2.7.2':
+    resolution: {integrity: sha512-n5lyygj6x1rEi66ZKTxeG1tucDL9Mxf20fuefupoKhhvGR5hssjkxlc44tmFAcCXI8B4koDcUDVSJ5ZRfbUMZg==}
+    engines: {node: '>=20', pnpm: '>= 8'}
+    peerDependencies:
+      svelte: '>=5'
+
+  '@dvcol/svelte-utils@1.21.1':
+    resolution: {integrity: sha512-6o0phiLOZeCKgeRPeI5gfXbw/aLZfwAR6MKNcXVBDVt+84Yy2LJ6kSTAiQyCiAxsc3OGlY3IMylrBXf4Yp6ogw==}
+    engines: {node: '>=20', pnpm: '>= 8'}
+    peerDependencies:
+      svelte: '>=5'
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -369,11 +385,6 @@ packages:
 
   '@marijn/find-cluster-break@1.0.2':
     resolution: {integrity: sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g==}
-
-  '@mateothegreat/svelte5-router@2.16.19':
-    resolution: {integrity: sha512-SNkR15x3b0HLNM33BORKF9U6elHHWZxg42yikNUKW1YNjkYRBLBgDkVSJTqRIC6aE8Wt4vqmKKmHzQTK2EKiqA==}
-    peerDependencies:
-      svelte: ^5.0.0
 
   '@replit/codemirror-vim@6.3.0':
     resolution: {integrity: sha512-aTx931ULAMuJx6xLf7KQDOL7CxD+Sa05FktTDrtLaSy53uj01ll3Zf17JdKsriER248oS55GBzg0CfCTjEneAQ==}
@@ -682,6 +693,10 @@ packages:
     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
     engines: {node: ^10 || ^12 || >=14}
 
+  pretty-bytes@6.1.1:
+    resolution: {integrity: sha512-mQUvGU6aUFQ+rNvTIAcZuWGRT9a6f6Yrg9bHs4ImKF+HZCEK+plBvnAZYSIQztknZF2qnzNtr6F8s0+IuptdlQ==}
+    engines: {node: ^14.13.1 || >=16.0.0}
+
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
@@ -745,6 +760,10 @@ packages:
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
+    hasBin: true
+
+  uuid@11.1.0:
+    resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
     hasBin: true
 
   vite@6.4.1:
@@ -921,6 +940,22 @@ snapshots:
       style-mod: 4.1.3
       w3c-keyname: 2.2.8
 
+  '@dvcol/common-utils@1.34.0':
+    dependencies:
+      pretty-bytes: 6.1.1
+      uuid: 11.1.0
+
+  '@dvcol/svelte-simple-router@2.7.2(svelte@5.48.3)':
+    dependencies:
+      '@dvcol/common-utils': 1.34.0
+      '@dvcol/svelte-utils': 1.21.1(svelte@5.48.3)
+      svelte: 5.48.3
+
+  '@dvcol/svelte-utils@1.21.1(svelte@5.48.3)':
+    dependencies:
+      '@dvcol/common-utils': 1.34.0
+      svelte: 5.48.3
+
   '@esbuild/aix-ppc64@0.25.12':
     optional: true
 
@@ -1073,10 +1108,6 @@ snapshots:
       '@lezer/highlight': 1.2.3
 
   '@marijn/find-cluster-break@1.0.2': {}
-
-  '@mateothegreat/svelte5-router@2.16.19(svelte@5.48.3)':
-    dependencies:
-      svelte: 5.48.3
 
   '@replit/codemirror-vim@6.3.0(@codemirror/commands@6.10.1)(@codemirror/language@6.12.1)(@codemirror/search@6.6.0)(@codemirror/state@6.5.4)(@codemirror/view@6.39.11)':
     dependencies:
@@ -1326,6 +1357,8 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  pretty-bytes@6.1.1: {}
+
   readdirp@4.1.2: {}
 
   rollup@4.57.0:
@@ -1427,6 +1460,8 @@ snapshots:
   tslib@2.8.1: {}
 
   typescript@5.9.3: {}
+
+  uuid@11.1.0: {}
 
   vite@6.4.1:
     dependencies:
