@@ -46,7 +46,7 @@
     "svelte": "^5.0.0"
   },
   "dependencies": {
-    "@bearcove/sextant": "github:bearcove/sextant",
+    "@bearcove/sextant": "^0.1.0",
     "@bearcove/squel-service": "workspace:*",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lang-css": "^6.3.1",
