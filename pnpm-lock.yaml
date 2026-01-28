@@ -3,7 +3,7 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
-  injectWorkspacePackages: false
+  injectWorkspacePackages: true
 
 overrides:
   '@bearcove/roam-core': github:bearcove/roam#path:typescript/packages/roam-core
@@ -23,7 +23,7 @@ importers:
         version: https://codeload.github.com/bearcove/sextant/tar.gz/53d958f0c2ec32cdb7eb9ad7e617d112c733900d(svelte@5.48.3)
       '@bearcove/squel-service':
         specifier: workspace:*
-        version: link:../squel-service
+        version: file:packages/squel-service
       '@codemirror/commands':
         specifier: ^6.8.1
         version: 6.10.1
@@ -150,11 +150,18 @@ packages:
     resolution: {path: typescript/packages/roam-ws, tarball: https://codeload.github.com/bearcove/roam/tar.gz/a63b39c621a4bdfd8bd02ddd8266908c2365b991}
     version: 0.1.0
 
+  '@bearcove/roam-ws@https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-ws':
+    resolution: {path: typescript/packages/roam-ws, tarball: https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8}
+    version: 0.1.0
+
   '@bearcove/sextant@https://codeload.github.com/bearcove/sextant/tar.gz/53d958f0c2ec32cdb7eb9ad7e617d112c733900d':
     resolution: {tarball: https://codeload.github.com/bearcove/sextant/tar.gz/53d958f0c2ec32cdb7eb9ad7e617d112c733900d}
     version: 0.1.0
     peerDependencies:
       svelte: ^5.0.0
+
+  '@bearcove/squel-service@file:packages/squel-service':
+    resolution: {directory: packages/squel-service, type: directory}
 
   '@codemirror/autocomplete@6.20.0':
     resolution: {integrity: sha512-bOwvTOIJcG5FVo5gUUupiwYh8MioPLQ4UcqbcRf7UQ98X90tCa9E1kZ3Z7tqwpZxYyOvh1YTYbmZE9RTfTp5hg==}
@@ -880,9 +887,20 @@ snapshots:
       '@bearcove/roam-core': https://codeload.github.com/bearcove/roam/tar.gz/a63b39c621a4bdfd8bd02ddd8266908c2365b991#path:typescript/packages/roam-core
       '@bearcove/roam-tcp': https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-tcp
 
+  '@bearcove/roam-ws@https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-ws':
+    dependencies:
+      '@bearcove/roam-core': https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-core
+      '@bearcove/roam-tcp': https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-tcp
+
   '@bearcove/sextant@https://codeload.github.com/bearcove/sextant/tar.gz/53d958f0c2ec32cdb7eb9ad7e617d112c733900d(svelte@5.48.3)':
     dependencies:
       svelte: 5.48.3
+
+  '@bearcove/squel-service@file:packages/squel-service':
+    dependencies:
+      '@bearcove/roam-core': https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-core
+      '@bearcove/roam-postcard': https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-postcard
+      '@bearcove/roam-ws': https://codeload.github.com/bearcove/roam/tar.gz/f87a192b8f51de2cae227c256774a1cefd1079d8#path:typescript/packages/roam-ws
 
   '@codemirror/autocomplete@6.20.0':
     dependencies:
