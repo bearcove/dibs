@@ -4,12 +4,13 @@
 
 use crate::ast::*;
 use crate::schema;
+use facet_format::DeserializeError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("styx parse error: {0}")]
-    Styx(String),
+    #[error("{0}")]
+    Styx(#[from] DeserializeError),
 
     #[error("expected @query tag on '{name}'")]
     ExpectedQueryTag { name: String },
@@ -30,11 +31,22 @@ pub enum ParseError {
     ExpectedScalar,
 }
 
+impl ParseError {
+    /// Render this error as a pretty diagnostic if it's a styx parse error.
+    ///
+    /// Returns `None` for non-styx errors.
+    pub fn to_pretty(&self, filename: &str, source: &str) -> Option<String> {
+        match self {
+            ParseError::Styx(e) => Some(e.to_pretty(filename, source)),
+            _ => None,
+        }
+    }
+}
+
 /// Parse a styx source string into a QueryFile.
 pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
     // Use facet-styx for parsing
-    let schema_file: schema::QueryFile =
-        facet_styx::from_str(source).map_err(|e| ParseError::Styx(e.to_string()))?;
+    let schema_file: schema::QueryFile = facet_styx::from_str(source)?;
 
     // Convert to AST types
     let mut queries = Vec::new();
@@ -818,4 +830,19 @@ UpsertRate @upsert{
             Some("Upsert exchange rate (insert or update if exists).".to_string())
         );
     }
+}
+
+#[test]
+fn test_parse_with_schema_declaration() {
+    // Test parsing with @schema declaration at top (like real query files)
+    let source = r#"@schema {id crate:dibs-queries@1, cli dibs}
+
+AllProducts @query{
+    from product
+    select {id}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    assert_eq!(file.queries.len(), 1);
+    assert_eq!(file.queries[0].name, "AllProducts");
 }

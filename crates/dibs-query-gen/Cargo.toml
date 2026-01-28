@@ -12,6 +12,7 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 dibs-query-schema.workspace = true
 dibs-sql = { path = "../dibs-sql" }
 facet-styx = { workspace = true, features = ["tracing"] }
+facet-format = { workspace = true, features = ["ariadne"] }
 styx-parse.workspace = true
 thiserror.workspace = true
 codegen.workspace = true

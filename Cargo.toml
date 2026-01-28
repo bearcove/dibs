@@ -30,6 +30,7 @@ facet-value = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-json = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-reflect = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-testhelpers = { git = "https://github.com/facet-rs/facet", branch = "main" }
+facet-format = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres" }
 
 # styx ecosystem
