@@ -1,6 +1,10 @@
 packages:
   - "packages/*"
 
+onlyBuiltDependencies:
+  - esbuild
+  - "@bearcove/sextant"
+
 overrides:
   "@bearcove/roam-core": "github:bearcove/roam#path:typescript/packages/roam-core"
   "@bearcove/roam-postcard": "github:bearcove/roam#path:typescript/packages/roam-postcard"
