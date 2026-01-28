@@ -51,6 +51,7 @@ roam-websocket = { git = "https://github.com/bearcove/roam", branch = "main" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-postgres = { version = "0.7" }
 tokio-tungstenite = "0.26"
+deadpool-postgres = "0.14"
 
 # serialization & data
 bytes = "1"
