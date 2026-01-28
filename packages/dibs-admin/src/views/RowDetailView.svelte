@@ -1,14 +1,16 @@
 <script lang="ts">
     import RowDetail from "../components/RowDetail.svelte";
     import { getAdminContext } from "../lib/admin-context.js";
-    import { useRoute } from "@dvcol/svelte-simple-router";
+    import { useRoute, useNavigate } from "@dvcol/svelte-simple-router/router";
     import type { Row, Value, DibsError } from "@bearcove/dibs-admin/types";
 
     const ctx = getAdminContext();
-    const routeState = $derived(useRoute());
-    const params = $derived(routeState.location?.params as { table?: string; pk?: string } | undefined);
-    const tableName = $derived(params?.table ?? "");
-    const pk = $derived(params?.pk ?? "");
+    const routeState = useRoute();
+    const navigate = useNavigate();
+
+    // Get table and pk from route params
+    const tableName = $derived((routeState.route?.params as { table?: string })?.table ?? "");
+    const pk = $derived((routeState.route?.params as { pk?: string })?.pk ?? "");
 
     let row = $state<Row | null>(null);
     let loading = $state(true);
@@ -45,12 +47,12 @@
                 row = result.value;
             } else {
                 row = null;
-                ctx.navigateToTable(tableName);
+                navigate.push({ path: tableName });
             }
         } catch (e) {
             console.error("Failed to load row:", e);
             row = null;
-            ctx.navigateToTable(tableName);
+            navigate.push({ path: tableName });
         } finally {
             loading = false;
         }
@@ -141,7 +143,7 @@
                 error = formatError(result.error);
                 return;
             }
-            ctx.navigateToTable(tableName);
+            navigate.push({ path: tableName });
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);
         } finally {
@@ -150,7 +152,7 @@
     }
 
     function closeEditor() {
-        ctx.navigateToTable(tableName);
+        navigate.push({ path: tableName });
     }
 
     function handleRelatedNavigate(relatedTable: string, pkValue: Value) {
@@ -160,7 +162,7 @@
             label: `${relatedTable} #${pkStr}`,
             pkValue,
         });
-        ctx.navigateToRow(relatedTable, pkStr);
+        navigate.push({ path: `${relatedTable}/${pkStr}` });
     }
 </script>
 

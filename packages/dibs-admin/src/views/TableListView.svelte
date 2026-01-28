@@ -7,7 +7,7 @@
     import Breadcrumb from "../components/Breadcrumb.svelte";
     import { Button } from "@bearcove/dibs-admin/lib/ui";
     import { getAdminContext } from "../lib/admin-context.js";
-    import { useRoute } from "@dvcol/svelte-simple-router";
+    import { useRoute, useNavigate } from "@dvcol/svelte-simple-router/router";
     import {
         getTableLabel,
         getDisplayColumns,
@@ -26,8 +26,11 @@
     } from "@bearcove/dibs-admin/types";
 
     const ctx = getAdminContext();
-    const routeState = $derived(useRoute());
-    const tableName = $derived((routeState.location?.params as { table?: string })?.table ?? "");
+    const routeState = useRoute();
+    const navigate = useNavigate();
+
+    // Get table name from route params
+    const tableName = $derived((routeState.route?.params as { table?: string })?.table ?? "");
 
     // Data state
     let rows = $state<Row[]>([]);
@@ -252,11 +255,11 @@
         const field = row.fields.find((f) => f.name === pkCol.name);
         if (!field) return;
         const pkStr = formatPkValue(field.value);
-        ctx.navigateToRow(tableName, pkStr);
+        navigate.push({ path: `${tableName}/${pkStr}` });
     }
 
     function openCreateDialog() {
-        ctx.navigateToNewRow(tableName);
+        navigate.push({ path: `${tableName}/new` });
     }
 
     function navigateToFk(targetTable: string, pkValue: Value) {
@@ -266,7 +269,7 @@
             label: `${targetTable} #${pkStr}`,
             pkValue,
         });
-        ctx.navigateToRow(targetTable, pkStr);
+        navigate.push({ path: `${targetTable}/${pkStr}` });
     }
 
     function navigateToBreadcrumb(index: number) {
@@ -282,9 +285,9 @@
 
         if (entry.pkValue) {
             const pkStr = formatPkValue(entry.pkValue);
-            ctx.navigateToRow(entry.table, pkStr);
+            navigate.push({ path: `${entry.table}/${pkStr}` });
         } else {
-            ctx.navigateToTable(entry.table);
+            navigate.push({ path: entry.table });
         }
     }
 </script>

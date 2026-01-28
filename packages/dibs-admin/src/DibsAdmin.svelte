@@ -1,7 +1,8 @@
 <script lang="ts">
     import { untrack } from "svelte";
-    import { RouterView, RouteView, useRouter, useRoute } from "@dvcol/svelte-simple-router";
-    import type { PartialRoute } from "@dvcol/svelte-simple-router";
+    import { RouterView } from "@dvcol/svelte-simple-router/components";
+    import { useNavigate, useRoute } from "@dvcol/svelte-simple-router/router";
+    import type { Route } from "@dvcol/svelte-simple-router/models";
     import type { SquelServiceCaller, SchemaInfo, Row } from "@bearcove/dibs-admin/types";
     import type { DibsAdminConfig } from "@bearcove/dibs-admin/types/config";
     import TableList from "./components/TableList.svelte";
@@ -24,12 +25,17 @@
 
     let { client, config }: Props = $props();
 
-    // Get router for navigation
-    const router = useRouter();
-    const routeState = $derived(useRoute());
+    // Get navigation from parent router context
+    const navigate = useNavigate();
+    const routeState = useRoute();
 
-    // Derive base path from the matched route (e.g., "/admin/*" -> "/admin")
-    const basePath = $derived(routeState.route?.path?.replace(/\/?\*$/, "") ?? "");
+    // Nested routes for admin views
+    const routes: Route[] = [
+        { name: "dashboard", path: "", component: DashboardView },
+        { name: "table-list", path: ":table", component: TableListView },
+        { name: "row-create", path: ":table/new", component: RowCreateView },
+        { name: "row-detail", path: ":table/:pk", component: RowDetailView },
+    ];
 
     // Schema state
     let schema = $state<SchemaInfo | null>(schemaCache.get(client) ?? null);
@@ -41,49 +47,38 @@
     let timeMode = $state<"relative" | "absolute">("relative");
     let breadcrumbs = $state<BreadcrumbEntry[]>([]);
 
+    // Derive selected table from route params
+    const selectedTable = $derived((routeState.route?.params as { table?: string })?.table ?? null);
+
     // Prevent double-loading
     let schemaLoaded = false;
-
-    // Current location params
-    const locationParams = $derived(routeState.location?.params as { table?: string; pk?: string } | undefined);
-    const selectedTable = $derived(locationParams?.table ?? null);
-    const showDashboard = $derived(!locationParams?.table);
 
     // Filter hidden tables
     let visibleTables = $derived(
         schema?.tables.filter((t) => !isTableHidden(config, t.name)) ?? [],
     );
 
-    // Navigation functions using the derived base path
-    function navigateToDashboard() {
-        breadcrumbs = [];
-        router?.push({ path: basePath || "/" });
-    }
-
-    function navigateToTable(table: string) {
-        breadcrumbs = [{ table, label: table }];
-        router?.push({ path: `${basePath}/${table}` });
-    }
-
-    function navigateToRow(table: string, pk: string) {
-        router?.push({ path: `${basePath}/${table}/${pk}` });
-    }
-
-    function navigateToNewRow(table: string) {
-        router?.push({ path: `${basePath}/${table}/new` });
-    }
-
-    // Context
+    // Context - views will use this for navigation and shared state
     setAdminContext({
         client,
         config,
         get schema() {
             return schema;
         },
-        navigateToDashboard,
-        navigateToTable,
-        navigateToRow,
-        navigateToNewRow,
+        navigateToDashboard: () => {
+            breadcrumbs = [];
+            navigate.push({ path: "" });
+        },
+        navigateToTable: (table: string) => {
+            breadcrumbs = [{ table, label: table }];
+            navigate.push({ path: table });
+        },
+        navigateToRow: (table: string, pk: string) => {
+            navigate.push({ path: `${table}/${pk}` });
+        },
+        navigateToNewRow: (table: string) => {
+            navigate.push({ path: `${table}/new` });
+        },
         get fkLookup() {
             return fkLookup;
         },
@@ -133,49 +128,29 @@
             if (!schema) return;
         }
 
+        // If no table selected and no dashboard configured, navigate to first visible table
+        if (!selectedTable && !hasDashboard(config) && schema.tables.length > 0) {
+            const firstVisible = schema.tables.find((t) => !isTableHidden(config, t.name));
+            if (firstVisible) {
+                selectTable(firstVisible.name);
+            }
+        }
+
         // Initialize breadcrumbs if we have a table from the route
         if (selectedTable) {
             breadcrumbs = [{ table: selectedTable, label: selectedTable }];
         }
-
-        // If no table selected and no dashboard, navigate to first table
-        if (!selectedTable && !hasDashboard(config) && schema.tables.length > 0) {
-            const firstVisible = schema.tables.find((t) => !isTableHidden(config, t.name));
-            if (firstVisible) {
-                navigateToTable(firstVisible.name);
-            }
-        }
     }
 
     function selectTable(tableName: string) {
-        navigateToTable(tableName);
+        breadcrumbs = [{ table: tableName, label: tableName }];
+        navigate.push({ path: tableName });
     }
 
     function goToDashboard() {
-        navigateToDashboard();
+        breadcrumbs = [];
+        navigate.push({ path: "" });
     }
-
-    // Typed route definitions for RouteView
-    const dashboardRoute: PartialRoute = $derived({
-        name: "dibs-dashboard",
-        path: basePath || "/",
-        component: DashboardView,
-    });
-    const tableNewRoute: PartialRoute = $derived({
-        name: "dibs-table-new",
-        path: `${basePath}/:table/new`,
-        component: RowCreateView,
-    });
-    const tableRowRoute: PartialRoute = $derived({
-        name: "dibs-table-row",
-        path: `${basePath}/:table/:pk`,
-        component: RowDetailView,
-    });
-    const tableRoute: PartialRoute = $derived({
-        name: "dibs-table",
-        path: `${basePath}/:table`,
-        component: TableListView,
-    });
 </script>
 
 <Tooltip.Provider>
@@ -191,19 +166,13 @@
                     {config}
                     showDashboardButton={hasDashboard(config)}
                     onDashboard={goToDashboard}
-                    dashboardActive={showDashboard}
+                    dashboardActive={!selectedTable}
                     {timeMode}
                     onTimeModeChange={(mode) => (timeMode = mode)}
                 />
 
                 <main class="admin-content">
-                    <RouterView>
-                        <!-- Register child routes via RouteView -->
-                        <RouteView {...{ route: dashboardRoute } as any} />
-                        <RouteView {...{ route: tableNewRoute } as any} />
-                        <RouteView {...{ route: tableRowRoute } as any} />
-                        <RouteView {...{ route: tableRoute } as any} />
-                    </RouterView>
+                    <RouterView options={{ routes }} />
                 </main>
             </div>
         {:else if error}
