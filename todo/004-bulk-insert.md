@@ -1,5 +1,7 @@
 # 004: Bulk Insert
 
+**Status:** ✅ Implemented
+
 **Priority:** Medium
 
 ## Goal

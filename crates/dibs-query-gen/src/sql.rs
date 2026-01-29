@@ -633,6 +633,288 @@ pub fn generate_delete_sql(delete: &DeleteMutation) -> GeneratedSql {
     }
 }
 
+/// Generate SQL for a bulk INSERT mutation using UNNEST.
+///
+/// Generates SQL like:
+/// ```sql
+/// INSERT INTO products (handle, status, created_at)
+/// SELECT handle, status, NOW()
+/// FROM UNNEST($1::text[], $2::text[]) AS t(handle, status)
+/// RETURNING id, handle, status
+/// ```
+pub fn generate_insert_many_sql(insert: &InsertManyMutation) -> GeneratedSql {
+    let mut sql = String::new();
+    let mut param_order = Vec::new();
+    let mut column_order = std::collections::HashMap::new();
+
+    // Collect param names for UNNEST
+    let param_names: Vec<&str> = insert.params.iter().map(|p| p.name.as_str()).collect();
+
+    // INSERT INTO table (columns)
+    sql.push_str("INSERT INTO \"");
+    sql.push_str(&insert.table);
+    sql.push_str("\" (");
+
+    let columns: Vec<&str> = insert.values.iter().map(|(col, _)| col.as_str()).collect();
+    sql.push_str(
+        &columns
+            .iter()
+            .map(|c| format!("\"{}\"", c))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    sql.push(')');
+
+    // SELECT expressions FROM UNNEST
+    sql.push_str(" SELECT ");
+
+    let select_exprs: Vec<String> = insert
+        .values
+        .iter()
+        .map(|(col, expr)| value_expr_to_unnest_select(col, expr, &param_names))
+        .collect();
+    sql.push_str(&select_exprs.join(", "));
+
+    // FROM UNNEST($1::type[], $2::type[], ...) AS t(col1, col2, ...)
+    sql.push_str(" FROM UNNEST(");
+
+    let unnest_params: Vec<String> = insert
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            param_order.push(p.name.clone());
+            let pg_type = param_type_to_pg_array(&p.ty);
+            format!("${}::{}", i + 1, pg_type)
+        })
+        .collect();
+    sql.push_str(&unnest_params.join(", "));
+
+    sql.push_str(") AS t(");
+    sql.push_str(&param_names.join(", "));
+    sql.push(')');
+
+    // RETURNING
+    if !insert.returning.is_empty() {
+        sql.push_str(" RETURNING ");
+        sql.push_str(
+            &insert
+                .returning
+                .iter()
+                .map(|c| format!("\"{}\"", c))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        for (idx, col) in insert.returning.iter().enumerate() {
+            column_order.insert(col.clone(), idx);
+        }
+    }
+
+    GeneratedSql {
+        sql,
+        param_order,
+        plan: None,
+        column_order,
+    }
+}
+
+/// Generate SQL for a bulk UPSERT mutation using UNNEST with ON CONFLICT.
+///
+/// Generates SQL like:
+/// ```sql
+/// INSERT INTO products (handle, status, created_at)
+/// SELECT handle, status, NOW()
+/// FROM UNNEST($1::text[], $2::text[]) AS t(handle, status)
+/// ON CONFLICT (handle) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()
+/// RETURNING id, handle, status
+/// ```
+pub fn generate_upsert_many_sql(upsert: &UpsertManyMutation) -> GeneratedSql {
+    let mut sql = String::new();
+    let mut param_order = Vec::new();
+    let mut column_order = std::collections::HashMap::new();
+
+    // Collect param names for UNNEST
+    let param_names: Vec<&str> = upsert.params.iter().map(|p| p.name.as_str()).collect();
+
+    // INSERT INTO table (columns)
+    sql.push_str("INSERT INTO \"");
+    sql.push_str(&upsert.table);
+    sql.push_str("\" (");
+
+    let columns: Vec<&str> = upsert.values.iter().map(|(col, _)| col.as_str()).collect();
+    sql.push_str(
+        &columns
+            .iter()
+            .map(|c| format!("\"{}\"", c))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    sql.push(')');
+
+    // SELECT expressions FROM UNNEST
+    sql.push_str(" SELECT ");
+
+    let select_exprs: Vec<String> = upsert
+        .values
+        .iter()
+        .map(|(col, expr)| value_expr_to_unnest_select(col, expr, &param_names))
+        .collect();
+    sql.push_str(&select_exprs.join(", "));
+
+    // FROM UNNEST($1::type[], $2::type[], ...) AS t(col1, col2, ...)
+    sql.push_str(" FROM UNNEST(");
+
+    let unnest_params: Vec<String> = upsert
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            param_order.push(p.name.clone());
+            let pg_type = param_type_to_pg_array(&p.ty);
+            format!("${}::{}", i + 1, pg_type)
+        })
+        .collect();
+    sql.push_str(&unnest_params.join(", "));
+
+    sql.push_str(") AS t(");
+    sql.push_str(&param_names.join(", "));
+    sql.push(')');
+
+    // ON CONFLICT (columns) DO UPDATE SET ...
+    sql.push_str(" ON CONFLICT (");
+    sql.push_str(
+        &upsert
+            .conflict_columns
+            .iter()
+            .map(|c| format!("\"{}\"", c))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    sql.push_str(") DO UPDATE SET ");
+
+    // Build update assignments - update columns that are NOT in conflict_columns
+    let update_assignments: Vec<String> = upsert
+        .values
+        .iter()
+        .filter(|(col, _)| !upsert.conflict_columns.contains(col))
+        .map(|(col, expr)| {
+            let value = value_expr_to_excluded(col, expr, &param_names);
+            format!("\"{}\" = {}", col, value)
+        })
+        .collect();
+    sql.push_str(&update_assignments.join(", "));
+
+    // RETURNING
+    if !upsert.returning.is_empty() {
+        sql.push_str(" RETURNING ");
+        sql.push_str(
+            &upsert
+                .returning
+                .iter()
+                .map(|c| format!("\"{}\"", c))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        for (idx, col) in upsert.returning.iter().enumerate() {
+            column_order.insert(col.clone(), idx);
+        }
+    }
+
+    GeneratedSql {
+        sql,
+        param_order,
+        plan: None,
+        column_order,
+    }
+}
+
+/// Convert a ValueExpr to a SELECT expression for UNNEST queries.
+///
+/// For params that are in the UNNEST, reference them as column names.
+/// For other expressions (like @now), render as SQL.
+fn value_expr_to_unnest_select(_col: &str, expr: &ValueExpr, param_names: &[&str]) -> String {
+    match expr {
+        ValueExpr::Param(name) if param_names.contains(&name.as_str()) => {
+            // Reference the UNNEST column directly
+            name.clone()
+        }
+        ValueExpr::Param(name) => {
+            // This shouldn't happen for well-formed bulk inserts, but handle it
+            format!("${}", name)
+        }
+        ValueExpr::String(s) => {
+            let escaped = s.replace('\'', "''");
+            format!("'{}'", escaped)
+        }
+        ValueExpr::Int(n) => n.to_string(),
+        ValueExpr::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
+        ValueExpr::Null => "NULL".to_string(),
+        ValueExpr::FunctionCall { name, args } => {
+            if args.is_empty() {
+                format!("{}()", name.to_uppercase())
+            } else {
+                let arg_strs: Vec<String> = args
+                    .iter()
+                    .map(|a| value_expr_to_unnest_select(_col, a, param_names))
+                    .collect();
+                format!("{}({})", name.to_uppercase(), arg_strs.join(", "))
+            }
+        }
+        ValueExpr::Default => "DEFAULT".to_string(),
+    }
+}
+
+/// Convert a ValueExpr to an EXCLUDED reference for ON CONFLICT DO UPDATE.
+///
+/// For params, use EXCLUDED.column. For other expressions, render as SQL.
+fn value_expr_to_excluded(col: &str, expr: &ValueExpr, param_names: &[&str]) -> String {
+    match expr {
+        ValueExpr::Param(name) if param_names.contains(&name.as_str()) => {
+            // Use EXCLUDED.column to reference the value that would have been inserted
+            format!("EXCLUDED.\"{}\"", col)
+        }
+        ValueExpr::Param(name) => {
+            format!("${}", name)
+        }
+        ValueExpr::String(s) => {
+            let escaped = s.replace('\'', "''");
+            format!("'{}'", escaped)
+        }
+        ValueExpr::Int(n) => n.to_string(),
+        ValueExpr::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
+        ValueExpr::Null => "NULL".to_string(),
+        ValueExpr::FunctionCall { name, args } => {
+            if args.is_empty() {
+                format!("{}()", name.to_uppercase())
+            } else {
+                let arg_strs: Vec<String> = args
+                    .iter()
+                    .map(|a| value_expr_to_excluded(col, a, param_names))
+                    .collect();
+                format!("{}({})", name.to_uppercase(), arg_strs.join(", "))
+            }
+        }
+        ValueExpr::Default => "DEFAULT".to_string(),
+    }
+}
+
+/// Convert a ParamType to PostgreSQL array type.
+fn param_type_to_pg_array(ty: &ParamType) -> &'static str {
+    match ty {
+        ParamType::String => "text[]",
+        ParamType::Int => "bigint[]",
+        ParamType::Bool => "boolean[]",
+        ParamType::Uuid => "uuid[]",
+        ParamType::Decimal => "numeric[]",
+        ParamType::Timestamp => "timestamptz[]",
+        ParamType::Bytes => "bytea[]",
+        ParamType::Optional(inner) => {
+            // For optional, use the inner type's array
+            param_type_to_pg_array(inner)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1580,5 +1862,124 @@ ProductWithLatestEnglishTranslation @query{
 
         // Param should be tracked
         assert_eq!(sql.param_order, vec!["locale"]);
+    }
+
+    #[test]
+    fn test_insert_many_sql() {
+        let source = r#"
+BulkCreateProducts @insert-many{
+  params{
+    handle @string
+    status @string
+  }
+  into products
+  values{
+    handle $handle
+    status $status
+    created_at @now
+  }
+  returning{ id, handle, status }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        assert_eq!(file.insert_manys.len(), 1);
+
+        let sql = generate_insert_many_sql(&file.insert_manys[0]);
+
+        // Check INSERT INTO with correct columns
+        assert!(
+            sql.sql.contains("INSERT INTO \"products\""),
+            "SQL: {}",
+            sql.sql
+        );
+        assert!(sql.sql.contains("\"handle\""), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("\"status\""), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("\"created_at\""), "SQL: {}", sql.sql);
+
+        // Check SELECT FROM UNNEST pattern
+        assert!(sql.sql.contains("SELECT"), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("FROM UNNEST("), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("$1::text[]"), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("$2::text[]"), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("AS t(handle, status)"), "SQL: {}", sql.sql);
+
+        // Check NOW() function is in select
+        assert!(sql.sql.contains("NOW()"), "SQL: {}", sql.sql);
+
+        // Check RETURNING
+        assert!(sql.sql.contains("RETURNING"), "SQL: {}", sql.sql);
+
+        // Check params
+        assert_eq!(sql.param_order, vec!["handle", "status"]);
+    }
+
+    #[test]
+    fn test_upsert_many_sql() {
+        let source = r#"
+BulkUpsertProducts @upsert-many{
+  params{
+    handle @string
+    status @string
+  }
+  into products
+  on-conflict{
+    target{ handle }
+    update{ status, updated_at @now }
+  }
+  values{
+    handle $handle
+    status $status
+    created_at @now
+  }
+  returning{ id, handle, status }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        assert_eq!(file.upsert_manys.len(), 1);
+
+        let sql = generate_upsert_many_sql(&file.upsert_manys[0]);
+
+        // Check INSERT INTO
+        assert!(
+            sql.sql.contains("INSERT INTO \"products\""),
+            "SQL: {}",
+            sql.sql
+        );
+
+        // Check SELECT FROM UNNEST
+        assert!(sql.sql.contains("SELECT"), "SQL: {}", sql.sql);
+        assert!(sql.sql.contains("FROM UNNEST("), "SQL: {}", sql.sql);
+
+        // Check ON CONFLICT
+        assert!(
+            sql.sql.contains("ON CONFLICT (\"handle\")"),
+            "SQL: {}",
+            sql.sql
+        );
+        assert!(sql.sql.contains("DO UPDATE SET"), "SQL: {}", sql.sql);
+
+        // Check that handle is NOT in update (it's the conflict target)
+        let update_part = sql.sql.split("DO UPDATE SET").nth(1).unwrap();
+        assert!(
+            !update_part.contains("\"handle\" ="),
+            "handle should not be in UPDATE SET: {}",
+            sql.sql
+        );
+
+        // Check that status uses EXCLUDED
+        assert!(sql.sql.contains("EXCLUDED.\"status\""), "SQL: {}", sql.sql);
+
+        // Check that updated_at uses NOW()
+        assert!(
+            update_part.contains("NOW()"),
+            "updated_at should use NOW(): {}",
+            sql.sql
+        );
+
+        // Check RETURNING
+        assert!(sql.sql.contains("RETURNING"), "SQL: {}", sql.sql);
+
+        // Check params
+        assert_eq!(sql.param_order, vec!["handle", "status"]);
     }
 }

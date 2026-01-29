@@ -124,8 +124,16 @@ pub fn generate_rust_code_with_planner(
         generate_insert_code(&ctx, insert, &mut scope);
     }
 
+    for insert_many in &file.insert_manys {
+        generate_insert_many_code(&ctx, insert_many, &mut scope);
+    }
+
     for upsert in &file.upserts {
         generate_upsert_code(&ctx, upsert, &mut scope);
+    }
+
+    for upsert_many in &file.upsert_manys {
+        generate_upsert_many_code(&ctx, upsert_many, &mut scope);
     }
 
     for update in &file.updates {
@@ -1490,6 +1498,159 @@ fn generate_upsert_code(_ctx: &CodegenContext, upsert: &UpsertMutation, scope: &
     scope.push_fn(func);
 }
 
+fn generate_insert_many_code(ctx: &CodegenContext, insert: &InsertManyMutation, scope: &mut Scope) {
+    let fn_name = to_snake_case(&insert.name);
+    let generated = crate::sql::generate_insert_many_sql(insert);
+
+    // Generate params struct
+    let params_struct_name = format!("{}Params", insert.name);
+    generate_bulk_params_struct(
+        ctx,
+        &params_struct_name,
+        &insert.table,
+        &insert.params,
+        scope,
+    );
+
+    // Generate result struct if RETURNING is used
+    let return_ty = if insert.returning.is_empty() {
+        "Result<u64, QueryError>".to_string()
+    } else {
+        let struct_name = format!("{}Result", insert.name);
+        generate_mutation_result_struct(ctx, &struct_name, &insert.table, &insert.returning, scope);
+        format!("Result<Vec<{}>, QueryError>", struct_name)
+    };
+
+    let mut func = Function::new(&fn_name);
+    if let Some(doc) = &insert.doc_comment {
+        func.doc(doc);
+    }
+    func.vis("pub");
+    func.set_async(true);
+    func.generic("C");
+    func.arg("client", "&C");
+    func.arg("items", format!("&[{}]", params_struct_name));
+
+    func.ret(&return_ty);
+    func.bound("C", "tokio_postgres::GenericClient");
+
+    let body = generate_bulk_mutation_body(&generated, &insert.params, insert.returning.is_empty());
+    func.line(block_to_string(&body));
+
+    scope.push_fn(func);
+}
+
+fn generate_upsert_many_code(ctx: &CodegenContext, upsert: &UpsertManyMutation, scope: &mut Scope) {
+    let fn_name = to_snake_case(&upsert.name);
+    let generated = crate::sql::generate_upsert_many_sql(upsert);
+
+    // Generate params struct
+    let params_struct_name = format!("{}Params", upsert.name);
+    generate_bulk_params_struct(
+        ctx,
+        &params_struct_name,
+        &upsert.table,
+        &upsert.params,
+        scope,
+    );
+
+    // Generate result struct if RETURNING is used
+    let return_ty = if upsert.returning.is_empty() {
+        "Result<u64, QueryError>".to_string()
+    } else {
+        let struct_name = format!("{}Result", upsert.name);
+        generate_mutation_result_struct(ctx, &struct_name, &upsert.table, &upsert.returning, scope);
+        format!("Result<Vec<{}>, QueryError>", struct_name)
+    };
+
+    let mut func = Function::new(&fn_name);
+    if let Some(doc) = &upsert.doc_comment {
+        func.doc(doc);
+    }
+    func.vis("pub");
+    func.set_async(true);
+    func.generic("C");
+    func.arg("client", "&C");
+    func.arg("items", format!("&[{}]", params_struct_name));
+
+    func.ret(&return_ty);
+    func.bound("C", "tokio_postgres::GenericClient");
+
+    let body = generate_bulk_mutation_body(&generated, &upsert.params, upsert.returning.is_empty());
+    func.line(block_to_string(&body));
+
+    scope.push_fn(func);
+}
+
+/// Generate a params struct for bulk operations.
+fn generate_bulk_params_struct(
+    ctx: &CodegenContext,
+    struct_name: &str,
+    table: &str,
+    params: &[Param],
+    scope: &mut Scope,
+) {
+    let mut st = Struct::new(struct_name);
+    st.vis("pub");
+    st.derive("Debug");
+    st.derive("Clone");
+
+    for param in params {
+        let rust_ty = ctx
+            .schema
+            .column_type(table, &param.name)
+            .unwrap_or_else(|| param_type_to_rust(&param.ty));
+        st.field(format!("pub {}", param.name), &rust_ty);
+    }
+
+    scope.push_struct(st);
+}
+
+/// Generate body for bulk mutation (INSERT MANY / UPSERT MANY).
+fn generate_bulk_mutation_body(
+    generated: &crate::sql::GeneratedSql,
+    params: &[Param],
+    execute_only: bool,
+) -> Block {
+    let mut block = Block::new("");
+
+    // SQL constant
+    block.line(format!("const SQL: &str = r#\"{}\"#;", generated.sql));
+    block.line("");
+
+    // Convert slice of structs to parallel arrays
+    block.line("// Convert items to parallel arrays for UNNEST");
+    for param in params {
+        let rust_ty = param_type_to_rust(&param.ty);
+        block.line(format!(
+            "let {}_arr: Vec<{}> = items.iter().map(|i| i.{}.clone()).collect();",
+            param.name, rust_ty, param.name
+        ));
+    }
+    block.line("");
+
+    // Build the params reference array
+    let param_refs: Vec<String> = params.iter().map(|p| format!("&{}_arr", p.name)).collect();
+
+    if execute_only {
+        // No RETURNING - use execute
+        block.line(format!(
+            "let affected = client.execute(SQL, &[{}]).await?;",
+            param_refs.join(", ")
+        ));
+        block.line("Ok(affected)");
+    } else {
+        // Has RETURNING - use query
+        block.line(format!(
+            "let rows = client.query(SQL, &[{}]).await?;",
+            param_refs.join(", ")
+        ));
+        block.line("rows.iter().map(|row| Ok(from_row(row)?)).collect()");
+    }
+
+    block
+}
+
 fn generate_update_code(_ctx: &CodegenContext, update: &UpdateMutation, scope: &mut Scope) {
     let fn_name = to_snake_case(&update.name);
     let generated = crate::sql::generate_update_sql(update);
@@ -2461,5 +2622,170 @@ InsertLog @insert{
         // Should use execute() instead of query()
         assert!(code.code.contains("client.execute"));
         assert!(code.code.contains("Result<u64, QueryError>"));
+    }
+
+    #[test]
+    fn test_generate_insert_many_code() {
+        let source = r#"
+BulkCreateProducts @insert-many{
+  params{
+    handle @string
+    status @string
+  }
+  into products
+  values{
+    handle $handle
+    status $status
+    created_at @now
+  }
+  returning{ id, handle, status }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let code = generate_rust_code(&file);
+
+        // Should generate params struct
+        assert!(
+            code.code.contains("pub struct BulkCreateProductsParams"),
+            "Should generate params struct"
+        );
+        assert!(
+            code.code.contains("pub handle: String"),
+            "Params struct should have handle field"
+        );
+        assert!(
+            code.code.contains("pub status: String"),
+            "Params struct should have status field"
+        );
+
+        // Should generate result struct
+        assert!(
+            code.code.contains("pub struct BulkCreateProductsResult"),
+            "Should generate result struct"
+        );
+
+        // Should generate function that takes slice
+        assert!(
+            code.code.contains("pub async fn bulk_create_products"),
+            "Should generate bulk_create_products function"
+        );
+        assert!(
+            code.code.contains("items: &[BulkCreateProductsParams]"),
+            "Function should take slice of params"
+        );
+
+        // Should return Vec of results
+        assert!(
+            code.code
+                .contains("Result<Vec<BulkCreateProductsResult>, QueryError>"),
+            "Should return Vec of results"
+        );
+
+        // Should convert to parallel arrays
+        assert!(
+            code.code.contains("handle_arr"),
+            "Should create handle array"
+        );
+        assert!(
+            code.code.contains("status_arr"),
+            "Should create status array"
+        );
+
+        // Should use UNNEST
+        assert!(code.code.contains("UNNEST"), "SQL should use UNNEST");
+    }
+
+    #[test]
+    fn test_generate_upsert_many_code() {
+        let source = r#"
+BulkUpsertProducts @upsert-many{
+  params{
+    handle @string
+    status @string
+  }
+  into products
+  on-conflict{
+    target{ handle }
+    update{ status, updated_at @now }
+  }
+  values{
+    handle $handle
+    status $status
+    created_at @now
+  }
+  returning{ id, handle, status }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let code = generate_rust_code(&file);
+
+        // Should generate params struct
+        assert!(
+            code.code.contains("pub struct BulkUpsertProductsParams"),
+            "Should generate params struct"
+        );
+
+        // Should generate result struct
+        assert!(
+            code.code.contains("pub struct BulkUpsertProductsResult"),
+            "Should generate result struct"
+        );
+
+        // Should generate function
+        assert!(
+            code.code.contains("pub async fn bulk_upsert_products"),
+            "Should generate bulk_upsert_products function"
+        );
+        assert!(
+            code.code.contains("items: &[BulkUpsertProductsParams]"),
+            "Function should take slice of params"
+        );
+
+        // Should have ON CONFLICT in SQL
+        assert!(
+            code.code.contains("ON CONFLICT"),
+            "SQL should use ON CONFLICT"
+        );
+        assert!(
+            code.code.contains("DO UPDATE SET"),
+            "SQL should have DO UPDATE SET"
+        );
+    }
+
+    #[test]
+    fn test_generate_insert_many_without_returning() {
+        let source = r#"
+BulkInsertLogs @insert-many{
+  params{
+    message @string
+  }
+  into logs
+  values{
+    message $message
+    created_at @now
+  }
+}
+"#;
+        let file = parse_query_file(source).unwrap();
+        let code = generate_rust_code(&file);
+
+        // Should NOT generate result struct
+        assert!(
+            !code.code.contains("pub struct BulkInsertLogsResult"),
+            "Should NOT generate result struct"
+        );
+
+        // Should generate params struct
+        assert!(
+            code.code.contains("pub struct BulkInsertLogsParams"),
+            "Should generate params struct"
+        );
+
+        // Should use execute() and return u64
+        assert!(code.code.contains("client.execute"), "Should use execute()");
+        assert!(
+            code.code.contains("Result<u64, QueryError>"),
+            "Should return Result<u64>"
+        );
     }
 }

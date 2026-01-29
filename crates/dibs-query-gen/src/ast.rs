@@ -9,7 +9,9 @@ use styx_parse::Span;
 pub struct QueryFile {
     pub queries: Vec<Query>,
     pub inserts: Vec<InsertMutation>,
+    pub insert_manys: Vec<InsertManyMutation>,
     pub upserts: Vec<UpsertMutation>,
+    pub upsert_manys: Vec<UpsertManyMutation>,
     pub updates: Vec<UpdateMutation>,
     pub deletes: Vec<DeleteMutation>,
 }
@@ -227,6 +229,47 @@ pub struct UpsertMutation {
     /// Source span.
     pub span: Option<Span>,
     /// Parameters.
+    pub params: Vec<Param>,
+    /// Target table.
+    pub table: String,
+    /// Conflict target columns.
+    pub conflict_columns: Vec<String>,
+    /// Values to insert/update.
+    pub values: Vec<(String, ValueExpr)>,
+    /// Columns to return.
+    pub returning: Vec<String>,
+}
+
+/// A bulk INSERT mutation (insert multiple rows with UNNEST).
+#[derive(Debug, Clone)]
+pub struct InsertManyMutation {
+    /// Mutation name.
+    pub name: String,
+    /// Doc comment from the styx file (/// comments).
+    pub doc_comment: Option<String>,
+    /// Source span.
+    pub span: Option<Span>,
+    /// Parameters - each becomes an array parameter for UNNEST.
+    pub params: Vec<Param>,
+    /// Target table.
+    pub table: String,
+    /// Values to insert (column -> value expression).
+    /// Params reference UNNEST columns, other expressions are applied to each row.
+    pub values: Vec<(String, ValueExpr)>,
+    /// Columns to return.
+    pub returning: Vec<String>,
+}
+
+/// A bulk UPSERT mutation (upsert multiple rows with UNNEST + ON CONFLICT).
+#[derive(Debug, Clone)]
+pub struct UpsertManyMutation {
+    /// Mutation name.
+    pub name: String,
+    /// Doc comment from the styx file (/// comments).
+    pub doc_comment: Option<String>,
+    /// Source span.
+    pub span: Option<Span>,
+    /// Parameters - each becomes an array parameter for UNNEST.
     pub params: Vec<Param>,
     /// Target table.
     pub table: String,

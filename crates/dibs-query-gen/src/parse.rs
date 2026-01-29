@@ -51,7 +51,9 @@ pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
     // Convert to AST types
     let mut queries = Vec::new();
     let mut inserts = Vec::new();
+    let mut insert_manys = Vec::new();
     let mut upserts = Vec::new();
+    let mut upsert_manys = Vec::new();
     let mut updates = Vec::new();
     let mut deletes = Vec::new();
 
@@ -65,8 +67,14 @@ pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
             schema::Decl::Insert(i) => {
                 inserts.push(convert_insert(name, &i, doc_comment));
             }
+            schema::Decl::InsertMany(i) => {
+                insert_manys.push(convert_insert_many(name, &i, doc_comment));
+            }
             schema::Decl::Upsert(u) => {
                 upserts.push(convert_upsert(name, &u, doc_comment));
+            }
+            schema::Decl::UpsertMany(u) => {
+                upsert_manys.push(convert_upsert_many(name, &u, doc_comment));
             }
             schema::Decl::Update(u) => {
                 updates.push(convert_update(name, &u, doc_comment));
@@ -80,7 +88,9 @@ pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
     Ok(QueryFile {
         queries,
         inserts,
+        insert_manys,
         upserts,
+        upsert_manys,
         updates,
         deletes,
     })
@@ -429,6 +439,80 @@ fn convert_upsert(name: &str, u: &schema::Upsert, doc_comment: Option<String>) -
     }
 
     UpsertMutation {
+        name: name.to_string(),
+        doc_comment,
+        span: None,
+        params: convert_params(&u.params),
+        table: u.into.clone(),
+        conflict_columns: u.on_conflict.target.columns.keys().cloned().collect(),
+        values,
+        returning: convert_returning(&u.returning),
+    }
+}
+
+/// Convert schema InsertMany to AST InsertManyMutation.
+fn convert_insert_many(
+    name: &str,
+    i: &schema::InsertMany,
+    doc_comment: Option<String>,
+) -> InsertManyMutation {
+    InsertManyMutation {
+        name: name.to_string(),
+        doc_comment,
+        span: None,
+        params: convert_params(&i.params),
+        table: i.into.clone(),
+        values: convert_values(&i.values),
+        returning: convert_returning(&i.returning),
+    }
+}
+
+/// Convert schema UpsertMany to AST UpsertManyMutation.
+fn convert_upsert_many(
+    name: &str,
+    u: &schema::UpsertMany,
+    doc_comment: Option<String>,
+) -> UpsertManyMutation {
+    // Merge values with update columns that have explicit values (same logic as convert_upsert)
+    let mut values = convert_values(&u.values);
+
+    // Add update-only columns (like updated_at @now) that aren't in values
+    for (col, update_val) in &u.on_conflict.update.columns {
+        if !values.iter().any(|(c, _)| c == col) {
+            // This column is only in the update clause, add it
+            let expr = match update_val {
+                Some(schema::UpdateValue::Default) => ValueExpr::Default,
+                Some(schema::UpdateValue::Other { tag, content }) => {
+                    match (tag.as_ref(), content.as_ref()) {
+                        (None, Some(schema::Payload::Scalar(s))) => convert_value_string(s),
+                        (Some(name), None) => ValueExpr::FunctionCall {
+                            name: name.clone(),
+                            args: vec![],
+                        },
+                        (Some(name), Some(schema::Payload::Seq(args))) => {
+                            let converted_args = args.iter().map(convert_value_expr).collect();
+                            ValueExpr::FunctionCall {
+                                name: name.clone(),
+                                args: converted_args,
+                            }
+                        }
+                        (None, None) => ValueExpr::Null,
+                        (None, Some(schema::Payload::Seq(_))) => {
+                            panic!("Unexpected bare sequence in update value")
+                        }
+                        (Some(_), Some(schema::Payload::Scalar(s))) => convert_value_string(s),
+                    }
+                }
+                None => {
+                    // Bare column name - use the value from VALUES
+                    continue;
+                }
+            };
+            values.push((col.clone(), expr));
+        }
+    }
+
+    UpsertManyMutation {
         name: name.to_string(),
         doc_comment,
         span: None,
