@@ -1290,6 +1290,312 @@ CreateProductNoReturn @insert{
 }
 
 // ============================================================================
+// Bulk Insert/Upsert Integration Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_insert_many_mutation() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+
+    let source = r#"
+BulkCreateProducts @insert-many{
+    params {handle @string, status @string}
+    into product
+    values {handle $handle, status $status}
+    returning {id, handle, status}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    assert_eq!(file.insert_manys.len(), 1);
+    let insert_many = &file.insert_manys[0];
+
+    // Generate SQL
+    let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
+    tracing::info!("Generated INSERT MANY SQL: {}", generated.sql);
+
+    // Verify SQL structure uses UNNEST
+    assert!(
+        generated.sql.contains("INSERT INTO \"product\""),
+        "Should INSERT INTO product: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("SELECT"),
+        "Should have SELECT: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("FROM UNNEST("),
+        "Should use UNNEST: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("$1::text[]"),
+        "Should have typed array param: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("RETURNING"),
+        "Should have RETURNING: {}",
+        generated.sql
+    );
+
+    // Execute bulk insert with multiple rows
+    let handles = vec![
+        "bulk-1".to_string(),
+        "bulk-2".to_string(),
+        "bulk-3".to_string(),
+    ];
+    let statuses = vec![
+        "draft".to_string(),
+        "active".to_string(),
+        "archived".to_string(),
+    ];
+
+    let rows: Vec<Row> = client
+        .query(&generated.sql, &[&handles, &statuses])
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 3, "Should return 3 rows");
+
+    // Verify returned data
+    let returned_handles: Vec<String> = rows.iter().map(|r| r.get("handle")).collect();
+    assert!(returned_handles.contains(&"bulk-1".to_string()));
+    assert!(returned_handles.contains(&"bulk-2".to_string()));
+    assert!(returned_handles.contains(&"bulk-3".to_string()));
+
+    // Verify all rows were inserted
+    let verify: Vec<Row> = client
+        .query("SELECT * FROM product ORDER BY handle", &[])
+        .await
+        .unwrap();
+    assert_eq!(verify.len(), 3, "Should have 3 products in database");
+}
+
+#[tokio::test]
+async fn test_insert_many_without_returning() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+
+    let source = r#"
+BulkCreateProductsNoReturn @insert-many{
+    params {handle @string, status @string}
+    into product
+    values {handle $handle, status $status}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let insert_many = &file.insert_manys[0];
+
+    let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
+    tracing::info!(
+        "Generated INSERT MANY SQL (no returning): {}",
+        generated.sql
+    );
+
+    // Should NOT have RETURNING
+    assert!(
+        !generated.sql.contains("RETURNING"),
+        "Should NOT have RETURNING"
+    );
+
+    // Execute
+    let handles = vec!["no-ret-1".to_string(), "no-ret-2".to_string()];
+    let statuses = vec!["draft".to_string(), "active".to_string()];
+
+    let rows_affected = client
+        .execute(&generated.sql, &[&handles, &statuses])
+        .await
+        .unwrap();
+
+    assert_eq!(rows_affected, 2, "Should affect 2 rows");
+
+    // Verify
+    let verify: Vec<Row> = client.query("SELECT * FROM product", &[]).await.unwrap();
+    assert_eq!(verify.len(), 2);
+}
+
+#[tokio::test]
+async fn test_upsert_many_insert() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+
+    let source = r#"
+BulkUpsertProducts @upsert-many{
+    params {handle @string, status @string}
+    into product
+    on-conflict {
+        target {handle}
+        update {status}
+    }
+    values {handle $handle, status $status}
+    returning {id, handle, status}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    assert_eq!(file.upsert_manys.len(), 1);
+    let upsert_many = &file.upsert_manys[0];
+
+    let generated = dibs_query_gen::generate_upsert_many_sql(upsert_many);
+    tracing::info!("Generated UPSERT MANY SQL: {}", generated.sql);
+
+    // Verify SQL structure
+    assert!(
+        generated.sql.contains("FROM UNNEST("),
+        "Should use UNNEST: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("ON CONFLICT (\"handle\")"),
+        "Should have ON CONFLICT: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("DO UPDATE SET"),
+        "Should have DO UPDATE SET: {}",
+        generated.sql
+    );
+    assert!(
+        generated.sql.contains("EXCLUDED"),
+        "Should use EXCLUDED: {}",
+        generated.sql
+    );
+
+    // First bulk upsert - should insert all
+    let handles = vec!["upsert-1".to_string(), "upsert-2".to_string()];
+    let statuses = vec!["draft".to_string(), "active".to_string()];
+
+    let rows: Vec<Row> = client
+        .query(&generated.sql, &[&handles, &statuses])
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2, "Should return 2 rows");
+
+    // Verify inserts
+    let verify: Vec<Row> = client
+        .query("SELECT handle, status FROM product ORDER BY handle", &[])
+        .await
+        .unwrap();
+    assert_eq!(verify.len(), 2);
+
+    let status_1: String = verify[0].get("status");
+    let status_2: String = verify[1].get("status");
+    assert_eq!(status_1, "draft");
+    assert_eq!(status_2, "active");
+}
+
+#[tokio::test]
+async fn test_upsert_many_update() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+
+    // Insert initial data
+    client
+        .execute(
+            "INSERT INTO product (handle, status) VALUES ('existing-1', 'draft'), ('existing-2', 'draft')",
+            &[],
+        )
+        .await
+        .unwrap();
+
+    let source = r#"
+BulkUpsertProducts @upsert-many{
+    params {handle @string, status @string}
+    into product
+    on-conflict {
+        target {handle}
+        update {status}
+    }
+    values {handle $handle, status $status}
+    returning {id, handle, status}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let upsert_many = &file.upsert_manys[0];
+    let generated = dibs_query_gen::generate_upsert_many_sql(upsert_many);
+
+    // Upsert with mix of existing and new
+    let handles = vec![
+        "existing-1".to_string(), // exists - should update
+        "existing-2".to_string(), // exists - should update
+        "new-3".to_string(),      // new - should insert
+    ];
+    let statuses = vec![
+        "published".to_string(),
+        "archived".to_string(),
+        "draft".to_string(),
+    ];
+
+    let rows: Vec<Row> = client
+        .query(&generated.sql, &[&handles, &statuses])
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 3, "Should return 3 rows");
+
+    // Verify all statuses were updated/inserted correctly
+    let verify: Vec<Row> = client
+        .query("SELECT handle, status FROM product ORDER BY handle", &[])
+        .await
+        .unwrap();
+    assert_eq!(verify.len(), 3, "Should have 3 products total");
+
+    // Check each one
+    for row in verify {
+        let handle: String = row.get("handle");
+        let status: String = row.get("status");
+        match handle.as_str() {
+            "existing-1" => assert_eq!(
+                status, "published",
+                "existing-1 should be updated to published"
+            ),
+            "existing-2" => assert_eq!(
+                status, "archived",
+                "existing-2 should be updated to archived"
+            ),
+            "new-3" => assert_eq!(status, "draft", "new-3 should be inserted as draft"),
+            _ => panic!("Unexpected handle: {}", handle),
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_insert_many_empty_array() {
+    let (_container, client) = setup_postgres().await;
+    create_test_tables(&client).await;
+
+    let source = r#"
+BulkCreateProducts @insert-many{
+    params {handle @string, status @string}
+    into product
+    values {handle $handle, status $status}
+    returning {id, handle, status}
+}
+"#;
+    let file = parse_query_file(source).unwrap();
+    let insert_many = &file.insert_manys[0];
+    let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
+
+    // Execute with empty arrays
+    let handles: Vec<String> = vec![];
+    let statuses: Vec<String> = vec![];
+
+    let rows: Vec<Row> = client
+        .query(&generated.sql, &[&handles, &statuses])
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 0, "Should return 0 rows for empty input");
+
+    // Verify nothing was inserted
+    let verify: Vec<Row> = client.query("SELECT * FROM product", &[]).await.unwrap();
+    assert_eq!(verify.len(), 0, "Should have 0 products");
+}
+
+// ============================================================================
 // JSONB Operator Integration Tests
 // ============================================================================
 
