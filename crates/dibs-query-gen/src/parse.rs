@@ -737,7 +737,7 @@ AllProducts @query{
     }
 
     #[test]
-    fn test_parse_query_with_params() {
+    fn test_parse_query_with_params_in_parse() {
         let source = r#"
 ProductByHandle @query{
   params {

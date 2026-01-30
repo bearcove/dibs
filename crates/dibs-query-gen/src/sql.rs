@@ -1542,7 +1542,7 @@ ProductWithTranslation @query{
   params { handle @string, locale @string }
   from product
   where { handle $handle }
-  select{
+  select {
     id
     translation @rel{
       from product_translation

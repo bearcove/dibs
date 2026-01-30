@@ -63,12 +63,12 @@ AllProducts @query{
     fn test_parse_query_with_params() {
         let source = r#"
 ProductByHandle @query{
-    params{
+    params {
         handle @string
         limit @int
     }
     from product
-    select{ id, handle }
+    select { id, handle }
 }
 "#;
         let file: QueryFile = parse(source);
