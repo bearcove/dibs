@@ -1426,7 +1426,7 @@ dependencies = [
 [[package]]
 name = "facet-styx"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "ariadne 0.6.0",
  "facet",
@@ -4256,7 +4256,7 @@ dependencies = [
 [[package]]
 name = "styx-cst"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "rowan",
  "styx-tokenizer",
@@ -4265,7 +4265,7 @@ dependencies = [
 [[package]]
 name = "styx-embed"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "blake3",
  "goblin",
@@ -4277,7 +4277,7 @@ dependencies = [
 [[package]]
 name = "styx-embed-macros"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "blake3",
  "lz4_flex",
@@ -4289,7 +4289,7 @@ dependencies = [
 [[package]]
 name = "styx-format"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "styx-cst",
  "styx-parse",
@@ -4299,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "dirs",
  "eyre",
@@ -4327,7 +4327,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-ext"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "facet",
  "roam",
@@ -4337,7 +4337,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-test-schema"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "facet",
 ]
@@ -4345,7 +4345,7 @@ dependencies = [
 [[package]]
 name = "styx-parse"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "facet",
  "styx-tokenizer",
@@ -4355,7 +4355,7 @@ dependencies = [
 [[package]]
 name = "styx-tokenizer"
 version = "1.0.0"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "facet",
  "tracing",
@@ -4364,7 +4364,7 @@ dependencies = [
 [[package]]
 name = "styx-tree"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#0afc6bb7e41208de9a53b20b40242d8b1892ba11"
+source = "git+https://github.com/bearcove/styx?branch=main#0cb49ff67e79ff2c3e4fc4f5d2f3364044037bbd"
 dependencies = [
  "ariadne 0.6.0",
  "facet",
@@ -5875,6 +5875,6 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.17"
+version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02aae0f83f69aafc94776e879363e9771d7ecbffe2c7fbb6c14c5e00dfe88439"
+checksum = "1966f8ac2c1f76987d69a74d0e0f929241c10e78136434e3be70ff7f58f64214"

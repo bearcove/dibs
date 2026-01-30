@@ -426,7 +426,7 @@ async fn test_simple_query_against_postgres() {
     let source = r#"
 AllProducts @query{
   from product
-  select{ id, handle, status }
+  select { id, handle, status }
 }
 "#;
     let file = parse_query_file("<test>", source).unwrap();
@@ -457,13 +457,13 @@ async fn test_option_relation_query_against_postgres() {
     let source = r#"
 ProductWithTranslation @query{
   from product
-  select{
+  select {
     id
     handle
     translation @rel{
       from product_translation
       first true
-      select{ title, description }
+      select { title, description }
     }
   }
 }
@@ -506,12 +506,12 @@ async fn test_vec_relation_query_against_postgres() {
     let source = r#"
 ProductWithVariants @query{
   from product
-  select{
+  select {
     id
     handle
     variants @rel{
       from product_variant
-      select{ id, sku }
+      select { id, sku }
     }
   }
 }
@@ -591,16 +591,16 @@ async fn test_filtered_query_with_params() {
     // Query with WHERE clause and parameters
     let source = r#"
 ProductByHandle @query{
-  params{ handle @string }
+  params { handle @string }
   from product
-  where{ handle $handle }
+  where { handle $handle }
   first true
-  select{
+  select {
     id
     handle
     variants @rel{
       from product_variant
-      select{ sku }
+      select { sku }
     }
   }
 }
@@ -652,7 +652,7 @@ async fn test_count_query_against_postgres() {
     let source = r#"
 ProductWithVariantCount @query{
   from product
-  select{
+  select {
     id
     handle
     variant_count @count(product_variant)
@@ -711,14 +711,14 @@ async fn test_relation_where_literal() {
     let source = r#"
 ProductWithEnglishTranslation @query{
   from product
-  select{
+  select {
     id
     handle
     translation @rel{
       from product_translation
-      where{ locale "en" }
+      where { locale "en" }
       first true
-      select{ title, description }
+      select { title, description }
     }
   }
 }
@@ -785,16 +785,16 @@ async fn test_relation_where_param() {
     // Query with relation-level WHERE using a parameter
     let source = r#"
 ProductWithTranslationByLocale @query{
-  params{ locale @string }
+  params { locale @string }
   from product
-  select{
+  select {
     id
     handle
     translation @rel{
       from product_translation
-      where{ locale $locale }
+      where { locale $locale }
       first true
-      select{ title, description }
+      select { title, description }
     }
   }
 }
@@ -853,17 +853,17 @@ async fn test_relation_where_with_base_where() {
     // Query with BOTH base WHERE and relation WHERE
     let source = r#"
 ActiveProductWithTranslation @query{
-  params{ status @string, locale @string }
+  params { status @string, locale @string }
   from product
-  where{ status $status }
-  select{
+  where { status $status }
+  select {
     id
     handle
     translation @rel{
       from product_translation
-      where{ locale $locale }
+      where { locale $locale }
       first true
-      select{ title }
+      select { title }
     }
   }
 }
