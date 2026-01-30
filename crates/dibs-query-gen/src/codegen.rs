@@ -1821,7 +1821,7 @@ mod tests {
         let source = r#"
 AllProducts @query{
   from product
-  select{ id, handle, status }
+  select { id, handle, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1838,11 +1838,11 @@ AllProducts @query{
     fn test_generate_query_with_params() {
         let source = r#"
 ProductByHandle @query{
-  params{ handle @string }
+  params { handle @string }
   from product
-  where{ handle $handle }
+  where { handle $handle }
   first true
-  select{ id, handle }
+  select { id, handle }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1858,11 +1858,11 @@ ProductByHandle @query{
         let source = r#"
 ProductListing @query{
   from product
-  select{
+  select {
     id
     translation @rel{
       first true
-      select{ title, description }
+      select { title, description }
     }
   }
 }
@@ -1882,17 +1882,11 @@ ProductListing @query{
     fn test_generate_raw_sql_query() {
         let source = r#"
 TrendingProducts @query{
-  params{
-    locale @string
-    days @int
-  }
+  params { locale @string, days @int }
   sql <<SQL
     SELECT id, title FROM products WHERE locale = $1
   SQL
-  returns{
-    id @int
-    title @string
-  }
+  returns { id @int, title @string }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1924,17 +1918,15 @@ TrendingProducts @query{
 
         let source = r#"
 ProductWithTranslation @query{
-  params{ handle @string }
+  params { handle @string }
   from product
-  where{ handle $handle }
+  where { handle $handle }
   first true
-  select{
-    id
-    handle
-    translation @rel{
+  select {
+    id, handle, translation @rel{
       from product_translation
       first true
-      select{ title, description }
+      select { title, description }
     }
   }
 }
@@ -2059,11 +2051,9 @@ ProductWithTranslation @query{
 ProductWithVariants @query{
   from product
   select{
-    id
-    handle
-    variants @rel{
+    id, handle, variants @rel{
       from product_variant
-      select{ id, sku }
+      select { id, sku }
     }
   }
 }
@@ -2194,11 +2184,7 @@ ProductWithVariants @query{
         let source = r#"
 ProductWithVariantCount @query{
   from product
-  select{
-    id
-    handle
-    variant_count @count(product_variant)
-  }
+  select { id, handle, variant_count @count(product_variant) }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2286,19 +2272,13 @@ ProductWithVariantCount @query{
         let source = r#"
 ProductWithVariantsAndPrices @query{
   from product
-  select{
-    id
-    handle
-    variants @rel{
+  select {
+    id, handle, variants @rel{
       from product_variant
-      select{
-        id
-        sku
-        prices @rel{
+      select { id, sku, prices @rel{
           from variant_price
-          select{ id, currency_code, amount }
-        }
-      }
+          select { id, currency_code, amount }
+      }}
     }
   }
 }
@@ -2491,17 +2471,10 @@ ProductWithVariantsAndPrices @query{
     fn test_generate_insert_code() {
         let source = r#"
 CreateUser @insert{
-  params{
-    name @string
-    email @string
-  }
+  params { name @string, email @string }
   into users
-  values{
-    name $name
-    email $email
-    created_at @now
-  }
-  returning{ id, name, email, created_at }
+  values { name $name, email $email, created_at @now }
+  returning { id, name, email, created_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2523,22 +2496,14 @@ CreateUser @insert{
     fn test_generate_upsert_code() {
         let source = r#"
 UpsertProduct @upsert{
-  params{
-    id @uuid
-    name @string
-    price @decimal
-  }
+  params { id @uuid, name @string, price @decimal }
   into products
-  on-conflict{
-    target{ id }
-    update{ name, price, updated_at @now }
+  on-conflict {
+    target { id }
+    update { name, price, updated_at @now }
   }
-  values{
-    id $id
-    name $name
-    price $price
-  }
-  returning{ id, name, price, updated_at }
+  values { id $id, name $name, price $price }
+  returning { id, name, price, updated_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2555,17 +2520,11 @@ UpsertProduct @upsert{
     fn test_generate_update_code() {
         let source = r#"
 UpdateUserEmail @update{
-  params{
-    id @uuid
-    email @string
-  }
+  params{ id @uuid, email @string }
   table users
-  set{
-    email $email
-    updated_at @now
-  }
-  where{ id $id }
-  returning{ id, email, updated_at }
+  set { email $email, updated_at @now }
+  where { id $id }
+  returning { id, email, updated_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2582,12 +2541,10 @@ UpdateUserEmail @update{
     fn test_generate_delete_code() {
         let source = r#"
 DeleteUser @delete{
-  params{
-    id @uuid
-  }
+  params { id @uuid }
   from users
-  where{ id $id }
-  returning{ id }
+  where { id $id }
+  returning { id }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2603,14 +2560,9 @@ DeleteUser @delete{
     fn test_generate_insert_without_returning() {
         let source = r#"
 InsertLog @insert{
-  params{
-    message @string
-  }
+  params { message @string }
   into logs
-  values{
-    message $message
-    created_at @now
-  }
+  values { message $message, created_at @now }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2628,17 +2580,10 @@ InsertLog @insert{
     fn test_generate_insert_many_code() {
         let source = r#"
 BulkCreateProducts @insert-many{
-  params{
-    handle @string
-    status @string
-  }
+  params { handle @string, status @string }
   into products
-  values{
-    handle $handle
-    status $status
-    created_at @now
-  }
-  returning{ id, handle, status }
+  values { handle $handle, status $status, created_at @now }
+  returning { id, handle, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2699,21 +2644,14 @@ BulkCreateProducts @insert-many{
     fn test_generate_upsert_many_code() {
         let source = r#"
 BulkUpsertProducts @upsert-many{
-  params{
-    handle @string
-    status @string
-  }
+  params { handle @string, status @string }
   into products
-  on-conflict{
-    target{ handle }
-    update{ status, updated_at @now }
+  on-conflict {
+    target { handle }
+    update { status, updated_at @now }
   }
-  values{
-    handle $handle
-    status $status
-    created_at @now
-  }
-  returning{ id, handle, status }
+  values { handle $handle, status $status, created_at @now }
+  returning { id, handle, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -2756,14 +2694,9 @@ BulkUpsertProducts @upsert-many{
     fn test_generate_insert_many_without_returning() {
         let source = r#"
 BulkInsertLogs @insert-many{
-  params{
-    message @string
-  }
+  params { message @string }
   into logs
-  values{
-    message $message
-    created_at @now
-  }
+  values { message $message, created_at @now }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
