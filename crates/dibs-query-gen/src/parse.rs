@@ -7,11 +7,44 @@ use crate::schema;
 use facet_format::DeserializeError;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum ParseError {
-    #[error("{0}")]
-    Styx(#[from] DeserializeError),
+/// Errors that can occur when parsing a query file.
+///
+/// Stores the filename and source so that `Debug` can render a pretty ariadne report
+/// for deserialization errors.
+///
+/// The `Deserialize` variant wraps deserialization errors from facet-styx, which have
+/// full source location information.
+///
+/// The `Validation` variant is for errors that occur after parsing succeeds.
+/// These currently lack source location information - see:
+/// <https://github.com/bearcove/styx/issues/45>
+pub struct ParseError {
+    /// The filename being parsed (for error reporting).
+    pub filename: String,
+    /// The source text (for error reporting).
+    pub source: String,
+    /// The kind of error.
+    pub kind: ParseErrorKind,
+}
 
+/// The specific kind of parse error.
+#[derive(Debug, Error)]
+pub enum ParseErrorKind {
+    /// Deserialization error from facet-styx (has source location).
+    #[error("{0}")]
+    Deserialize(#[from] DeserializeError),
+
+    /// Validation error after parsing (lacks source location for now).
+    #[error("{0}")]
+    Validation(#[from] ValidationError),
+}
+
+/// Validation errors that occur after parsing succeeds.
+///
+/// These currently lack source location information - see:
+/// <https://github.com/bearcove/styx/issues/45>
+#[derive(Debug, Error)]
+pub enum ValidationError {
     #[error("expected @query tag on '{name}'")]
     ExpectedQueryTag { name: String },
 
@@ -31,22 +64,71 @@ pub enum ParseError {
     ExpectedScalar,
 }
 
-impl ParseError {
-    /// Render this error as a pretty diagnostic if it's a styx parse error.
-    ///
-    /// Returns `None` for non-styx errors.
-    pub fn to_pretty(&self, filename: &str, source: &str) -> Option<String> {
-        match self {
-            ParseError::Styx(e) => Some(e.to_pretty(filename, source)),
-            _ => None,
+impl std::fmt::Debug for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            ParseErrorKind::Deserialize(e) => {
+                let report = e.to_pretty(&self.filename, &self.source);
+                write!(f, "{}", report)
+            }
+            ParseErrorKind::Validation(e) => {
+                // Validation errors don't have spans yet, just show the message
+                write!(f, "{}: {}", self.filename, e)
+            }
         }
     }
 }
 
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl std::error::Error for ParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.kind)
+    }
+}
+
+impl ParseError {
+    /// Create a new parse error with context.
+    pub fn new(
+        filename: impl Into<String>,
+        source: impl Into<String>,
+        kind: ParseErrorKind,
+    ) -> Self {
+        Self {
+            filename: filename.into(),
+            source: source.into(),
+            kind,
+        }
+    }
+
+    /// Create a deserialization error.
+    pub fn deserialize(
+        filename: impl Into<String>,
+        source: impl Into<String>,
+        err: DeserializeError,
+    ) -> Self {
+        Self::new(filename, source, ParseErrorKind::Deserialize(err))
+    }
+
+    /// Create a validation error.
+    pub fn validation(
+        filename: impl Into<String>,
+        source: impl Into<String>,
+        err: ValidationError,
+    ) -> Self {
+        Self::new(filename, source, ParseErrorKind::Validation(err))
+    }
+}
+
 /// Parse a styx source string into a QueryFile.
-pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
+pub fn parse_query_file(filename: &str, source: &str) -> Result<QueryFile, ParseError> {
     // Use facet-styx for parsing
-    let schema_file: schema::QueryFile = facet_styx::from_str(source)?;
+    let schema_file: schema::QueryFile =
+        facet_styx::from_str(source).map_err(|e| ParseError::deserialize(filename, source, e))?;
 
     // Convert to AST types
     let mut queries = Vec::new();
@@ -62,7 +144,10 @@ pub fn parse_query_file(source: &str) -> Result<QueryFile, ParseError> {
         let doc_comment = documented_name.doc.map(|lines| lines.join("\n"));
         match decl {
             schema::Decl::Query(q) => {
-                queries.push(convert_query(name, &q, doc_comment)?);
+                queries.push(
+                    convert_query(name, &q, doc_comment)
+                        .map_err(|e| ParseError::validation(filename, source, e))?,
+                );
             }
             schema::Decl::Insert(i) => {
                 inserts.push(convert_insert(name, &i, doc_comment));
@@ -101,7 +186,7 @@ fn convert_query(
     name: &str,
     q: &schema::Query,
     doc_comment: Option<String>,
-) -> Result<Query, ParseError> {
+) -> Result<Query, ValidationError> {
     // Check for raw SQL mode
     if let Some(sql) = &q.sql {
         let returns = if let Some(returns) = &q.returns {
@@ -138,13 +223,16 @@ fn convert_query(
     }
 
     // Structured query
-    let from = q.from.clone().ok_or_else(|| ParseError::MissingFrom {
+    let from = q.from.clone().ok_or_else(|| ValidationError::MissingFrom {
         name: name.to_string(),
     })?;
 
-    let select_schema = q.select.as_ref().ok_or_else(|| ParseError::MissingSelect {
-        name: name.to_string(),
-    })?;
+    let select_schema = q
+        .select
+        .as_ref()
+        .ok_or_else(|| ValidationError::MissingSelect {
+            name: name.to_string(),
+        })?;
 
     Ok(Query {
         name: name.to_string(),
@@ -639,7 +727,7 @@ AllProducts @query{
   select{ id, handle, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         assert_eq!(file.queries.len(), 1);
 
         let q = &file.queries[0];
@@ -662,7 +750,7 @@ ProductByHandle @query{
   select{ id, handle }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let q = &file.queries[0];
 
         assert_eq!(q.params.len(), 2);
@@ -687,7 +775,7 @@ ProductListing @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let q = &file.queries[0];
 
         assert_eq!(q.select.len(), 2);
@@ -730,7 +818,7 @@ TrendingProducts @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let q = &file.queries[0];
 
         assert!(q.is_raw());
@@ -755,7 +843,7 @@ CreateUser @insert{
   returning{ id, name, email, created_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         assert_eq!(file.inserts.len(), 1);
 
         let i = &file.inserts[0];
@@ -797,7 +885,7 @@ UpsertProduct @upsert{
   returning{ id, name, price, updated_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         assert_eq!(file.upserts.len(), 1);
 
         let u = &file.upserts[0];
@@ -825,7 +913,7 @@ UpdateUserEmail @update{
   returning{ id, email, updated_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         assert_eq!(file.updates.len(), 1);
 
         let u = &file.updates[0];
@@ -849,7 +937,7 @@ DeleteUser @delete{
   returning{ id }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         assert_eq!(file.deletes.len(), 1);
 
         let d = &file.deletes[0];
@@ -889,7 +977,7 @@ UpsertRate @upsert{
   returning{ id }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         // Check query doc comment
         assert_eq!(file.queries.len(), 1);
@@ -927,7 +1015,7 @@ AllProducts @query{
     select {id}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     assert_eq!(file.queries.len(), 1);
     assert_eq!(file.queries[0].name, "AllProducts");
 }

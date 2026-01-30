@@ -429,7 +429,7 @@ AllProducts @query{
   select{ id, handle, status }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let _query = &file.queries[0];
 
     // Generate SQL
@@ -468,7 +468,7 @@ ProductWithTranslation @query{
   }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     // Generate SQL with JOINs
@@ -516,7 +516,7 @@ ProductWithVariants @query{
   }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     // Generate SQL with JOINs
@@ -605,7 +605,7 @@ ProductByHandle @query{
   }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     // Generate SQL with JOINs
@@ -659,7 +659,7 @@ ProductWithVariantCount @query{
   }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     // Generate SQL
@@ -723,7 +723,7 @@ ProductWithEnglishTranslation @query{
   }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
@@ -799,7 +799,7 @@ ProductWithTranslationByLocale @query{
   }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
@@ -868,7 +868,7 @@ ActiveProductWithTranslation @query{
   }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let generated = generate_sql_with_joins(query, Some(&planner_schema)).unwrap();
@@ -938,7 +938,7 @@ CreateProduct @insert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let insert = &file.inserts[0];
 
     // Generate SQL
@@ -1000,7 +1000,7 @@ CreateProductWithDefault @insert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let insert = &file.inserts[0];
 
     let generated = dibs_query_gen::generate_insert_sql(insert);
@@ -1036,7 +1036,7 @@ UpdateProductStatus @update{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let update = &file.updates[0];
 
     let generated = dibs_query_gen::generate_update_sql(update);
@@ -1095,7 +1095,7 @@ DeleteProduct @delete{
     returning {id, handle}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let delete = &file.deletes[0];
 
     let generated = dibs_query_gen::generate_delete_sql(delete);
@@ -1157,7 +1157,7 @@ UpsertProduct @upsert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let upsert = &file.upserts[0];
 
     let generated = dibs_query_gen::generate_upsert_sql(upsert);
@@ -1217,7 +1217,7 @@ UpsertProduct @upsert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let upsert = &file.upserts[0];
 
     let generated = dibs_query_gen::generate_upsert_sql(upsert);
@@ -1259,7 +1259,7 @@ CreateProductNoReturn @insert{
     values {handle $handle, status $status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let insert = &file.inserts[0];
 
     let generated = dibs_query_gen::generate_insert_sql(insert);
@@ -1306,7 +1306,7 @@ BulkCreateProducts @insert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     assert_eq!(file.insert_manys.len(), 1);
     let insert_many = &file.insert_manys[0];
 
@@ -1386,7 +1386,7 @@ BulkCreateProductsNoReturn @insert-many{
     values {handle $handle, status $status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let insert_many = &file.insert_manys[0];
 
     let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
@@ -1434,7 +1434,7 @@ BulkUpsertProducts @upsert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     assert_eq!(file.upsert_manys.len(), 1);
     let upsert_many = &file.upsert_manys[0];
 
@@ -1513,7 +1513,7 @@ BulkUpsertProducts @upsert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let upsert_many = &file.upsert_manys[0];
     let generated = dibs_query_gen::generate_upsert_many_sql(upsert_many);
 
@@ -1575,7 +1575,7 @@ BulkCreateProducts @insert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let insert_many = &file.insert_manys[0];
     let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
 
@@ -1612,7 +1612,7 @@ GetProductWithSpecs @query{
     where {metadata @json-get($key)}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1649,7 +1649,7 @@ GetProductBrand @query{
     where {metadata @json-get-text($key)}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1688,7 +1688,7 @@ FindByBrand @query{
     where {metadata @json-get-text("brand")}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, _planner_schema) = build_jsonb_test_schema();
@@ -1721,7 +1721,7 @@ FindPremiumProducts @query{
     where {metadata @contains("{\"premium\": true}")}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1758,7 +1758,7 @@ FindProductsByMetadata @query{
     where {metadata @contains("{\"brand\": \"Acme\"}")}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1792,7 +1792,7 @@ FindByNestedSpec @query{
     where {metadata @contains("{\"specs\": {\"color\": \"blue\"}}")}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1826,7 +1826,7 @@ FindWithPremiumKey @query{
     where {metadata @key-exists("premium")}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1865,7 +1865,7 @@ FindWithKey @query{
     where {metadata @key-exists($key)}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1906,7 +1906,7 @@ ComplexJsonQuery @query{
     }
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
@@ -1951,7 +1951,7 @@ FindWithMetadata @query{
     where {metadata @key-exists("brand")}
 }
 "#;
-    let file = parse_query_file(source).unwrap();
+    let file = parse_query_file("<test>", source).unwrap();
     let query = &file.queries[0];
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();

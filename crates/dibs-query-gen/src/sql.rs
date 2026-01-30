@@ -928,7 +928,7 @@ AllProducts @query{
   select{ id, handle, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         // Column order is non-deterministic due to HashMap iteration
@@ -949,7 +949,7 @@ ActiveProducts @query{
   select{ id, handle }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         // Check structure without depending on order
@@ -972,7 +972,7 @@ ProductByHandle @query{
   select{ id, handle }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""handle" = $1"#));
@@ -989,7 +989,7 @@ RecentProducts @query{
   select {id, handle}
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#"ORDER BY "created_at" DESC"#));
@@ -1005,7 +1005,7 @@ ActiveProducts @query{
   select{ id }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""deleted_at" IS NULL"#));
@@ -1021,7 +1021,7 @@ SearchProducts @query{
   select{ id, handle }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""handle" ILIKE $1"#));
@@ -1037,7 +1037,7 @@ PublishedProducts @query{
   select{ id }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(
@@ -1057,7 +1057,7 @@ FilteredProducts @query{
   select{ id, price }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""price" >= $1"#), "SQL: {}", sql.sql);
@@ -1074,7 +1074,7 @@ FilteredProducts @query{
   select{ id, price }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""price" <= $1"#), "SQL: {}", sql.sql);
@@ -1091,7 +1091,7 @@ NonDraftProducts @query{
   select{ id, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""status" != $1"#), "SQL: {}", sql.sql);
@@ -1108,7 +1108,7 @@ ProductsByStatus @query{
   select{ id, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(
@@ -1129,7 +1129,7 @@ ProductWithMetadata @query{
   select{ id, metadata }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""metadata" -> $1"#), "SQL: {}", sql.sql);
@@ -1145,7 +1145,7 @@ ProductWithSettings @query{
   select{ id, metadata }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(
@@ -1166,7 +1166,7 @@ ProductWithJsonValue @query{
   select{ id, metadata }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""metadata" ->> $1"#), "SQL: {}", sql.sql);
@@ -1183,7 +1183,7 @@ ProductWithMetadataContains @query{
   select{ id, metadata }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""metadata" @> $1"#), "SQL: {}", sql.sql);
@@ -1200,7 +1200,7 @@ ProductWithMetadataKey @query{
   select{ id, metadata }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains(r#""metadata" ? $1"#), "SQL: {}", sql.sql);
@@ -1216,7 +1216,7 @@ ProductWithLocale @query{
   select{ id, metadata }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(
@@ -1238,7 +1238,7 @@ PaginatedProducts @query{
   select{ id, handle }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains("LIMIT 20"), "SQL: {}", sql.sql);
@@ -1255,7 +1255,7 @@ UniqueStatuses @query{
   select{ status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains("SELECT DISTINCT"), "SQL: {}", sql.sql);
@@ -1272,7 +1272,7 @@ LatestPerCategory @query{
   select {id, category_id, handle}
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let query = &file.queries[0];
         eprintln!("distinct_on: {:?}", query.distinct_on);
         eprintln!("order_by: {:?}", query.order_by);
@@ -1302,7 +1302,7 @@ DistinctProducts @query{
   select {id, brand, category, handle}
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let query = &file.queries[0];
         eprintln!("distinct_on: {:?}", query.distinct_on);
         eprintln!("order_by: {:?}", query.order_by);
@@ -1329,7 +1329,7 @@ PaginatedProducts @query{
   select{ id, handle }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_simple_sql(&file.queries[0]);
 
         assert!(sql.sql.contains("LIMIT $1"));
@@ -1357,7 +1357,7 @@ ProductWithTranslation @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         // Build test schema
         let mut schema = PlannerSchema::default();
@@ -1431,7 +1431,7 @@ ProductWithEnglishTranslation @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = PlannerSchema::default();
         schema.tables.insert(
@@ -1490,7 +1490,7 @@ ProductWithTranslation @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = PlannerSchema::default();
         schema.tables.insert(
@@ -1553,7 +1553,7 @@ ProductWithTranslation @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = PlannerSchema::default();
         schema.tables.insert(
@@ -1619,7 +1619,7 @@ CreateUser @insert{
   returning{ id, name, email, created_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_insert_sql(&file.inserts[0]);
 
         assert!(sql.sql.contains("INSERT INTO \"users\""));
@@ -1653,7 +1653,7 @@ UpsertProduct @upsert{
   returning{ id, name, price, updated_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_upsert_sql(&file.upserts[0]);
 
         assert!(sql.sql.contains("INSERT INTO \"products\""));
@@ -1683,7 +1683,7 @@ UpdateUserEmail @update{
   returning{ id, email, updated_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_update_sql(&file.updates[0]);
 
         assert!(sql.sql.contains("UPDATE \"users\" SET"));
@@ -1706,7 +1706,7 @@ DeleteUser @delete{
   returning{ id }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let sql = generate_delete_sql(&file.deletes[0]);
 
         assert!(sql.sql.contains("DELETE FROM \"users\""));
@@ -1733,7 +1733,7 @@ ProductWithLatestTranslation @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = PlannerSchema::default();
         schema.tables.insert(
@@ -1814,7 +1814,7 @@ ProductWithLatestEnglishTranslation @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = PlannerSchema::default();
         schema.tables.insert(
@@ -1881,7 +1881,7 @@ BulkCreateProducts @insert-many{
   returning{ id, handle, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         assert_eq!(file.insert_manys.len(), 1);
 
         let sql = generate_insert_many_sql(&file.insert_manys[0]);
@@ -1934,7 +1934,7 @@ BulkUpsertProducts @upsert-many{
   returning{ id, handle, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         assert_eq!(file.upsert_manys.len(), 1);
 
         let sql = generate_upsert_many_sql(&file.upsert_manys[0]);

@@ -1824,7 +1824,7 @@ AllProducts @query{
   select{ id, handle, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(code.code.contains("pub struct AllProductsResult"));
@@ -1845,7 +1845,7 @@ ProductByHandle @query{
   select{ id, handle }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(code.code.contains("handle: &String"));
@@ -1867,7 +1867,7 @@ ProductListing @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(
@@ -1895,7 +1895,7 @@ TrendingProducts @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(code.code.contains("locale: &String"));
@@ -1939,7 +1939,7 @@ ProductWithTranslation @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = SchemaInfo::default();
         let mut product_cols = HashMap::new();
@@ -2068,7 +2068,7 @@ ProductWithVariants @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = SchemaInfo::default();
         let mut product_cols = HashMap::new();
@@ -2201,7 +2201,7 @@ ProductWithVariantCount @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = SchemaInfo::default();
         let mut product_cols = HashMap::new();
@@ -2303,7 +2303,7 @@ ProductWithVariantsAndPrices @query{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
 
         let mut schema = SchemaInfo::default();
         let mut product_cols = HashMap::new();
@@ -2504,7 +2504,7 @@ CreateUser @insert{
   returning{ id, name, email, created_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(code.code.contains("pub struct CreateUserResult"));
@@ -2541,7 +2541,7 @@ UpsertProduct @upsert{
   returning{ id, name, price, updated_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(code.code.contains("pub struct UpsertProductResult"));
@@ -2568,7 +2568,7 @@ UpdateUserEmail @update{
   returning{ id, email, updated_at }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(code.code.contains("pub struct UpdateUserEmailResult"));
@@ -2590,7 +2590,7 @@ DeleteUser @delete{
   returning{ id }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         assert!(code.code.contains("pub struct DeleteUserResult"));
@@ -2613,7 +2613,7 @@ InsertLog @insert{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         // Should NOT generate a result struct
@@ -2641,7 +2641,7 @@ BulkCreateProducts @insert-many{
   returning{ id, handle, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         // Should generate params struct
@@ -2716,7 +2716,7 @@ BulkUpsertProducts @upsert-many{
   returning{ id, handle, status }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         // Should generate params struct
@@ -2766,7 +2766,7 @@ BulkInsertLogs @insert-many{
   }
 }
 "#;
-        let file = parse_query_file(source).unwrap();
+        let file = parse_query_file("<test>", source).unwrap();
         let code = generate_rust_code(&file);
 
         // Should NOT generate result struct
