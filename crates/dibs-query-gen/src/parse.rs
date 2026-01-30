@@ -125,7 +125,7 @@ impl ParseError {
 }
 
 /// Parse a styx source string into a QueryFile.
-pub fn parse_query_file(filename: &str, source: &str) -> Result<QueryFile, ParseError> {
+pub fn parse_query_file(filename: &str, source: &str) -> Result<QueryFile, Box<ParseError>> {
     // Use facet-styx for parsing
     let schema_file: schema::QueryFile =
         facet_styx::from_str(source).map_err(|e| ParseError::deserialize(filename, source, e))?;
@@ -724,7 +724,7 @@ mod tests {
         let source = r#"
 AllProducts @query{
   from product
-  select{ id, handle, status }
+  select { id, handle, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -740,14 +740,14 @@ AllProducts @query{
     fn test_parse_query_with_params() {
         let source = r#"
 ProductByHandle @query{
-  params{
+  params {
     handle @string
     locale @string
   }
   from product
-  where{ handle $handle }
+  where { handle $handle }
   first true
-  select{ id, handle }
+  select { id, handle }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -765,12 +765,12 @@ ProductByHandle @query{
         let source = r#"
 ProductListing @query{
   from product
-  select{
+  select {
     id
     translation @rel{
-      where{ locale $locale }
+      where { locale $locale }
       first true
-      select{ title, description }
+      select { title, description }
     }
   }
 }
@@ -805,14 +805,14 @@ ProductListing @query{
     fn test_parse_raw_sql_query() {
         let source = r#"
 TrendingProducts @query{
-  params{
+  params {
     locale @string
     days @int
   }
   sql <<SQL
     SELECT id, title FROM products
   SQL
-  returns{
+  returns {
     id @int
     title @string
   }
@@ -830,17 +830,17 @@ TrendingProducts @query{
     fn test_parse_insert() {
         let source = r#"
 CreateUser @insert{
-  params{
+  params {
     name @string
     email @string
   }
   into users
-  values{
+  values {
     name $name
     email $email
     created_at @now
   }
-  returning{ id, name, email, created_at }
+  returning { id, name, email, created_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -867,22 +867,18 @@ CreateUser @insert{
     fn test_parse_upsert() {
         let source = r#"
 UpsertProduct @upsert{
-  params{
+  params {
     id @uuid
     name @string
     price @decimal
   }
   into products
-  on-conflict{
-    target{ id }
-    update{ name, price, updated_at @now }
+  on-conflict {
+    target { id }
+    update { name, price, updated_at @now }
   }
-  values{
-    id $id
-    name $name
-    price $price
-  }
-  returning{ id, name, price, updated_at }
+  values { id $id, name $name, price $price }
+  returning { id, name, price, updated_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -900,17 +896,17 @@ UpsertProduct @upsert{
     fn test_parse_update() {
         let source = r#"
 UpdateUserEmail @update{
-  params{
+  params {
     id @uuid
     email @string
   }
   table users
-  set{
+  set {
     email $email
     updated_at @now
   }
-  where{ id $id }
-  returning{ id, email, updated_at }
+  where { id $id }
+  returning { id, email, updated_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -929,12 +925,10 @@ UpdateUserEmail @update{
     fn test_parse_delete() {
         let source = r#"
 DeleteUser @delete{
-  params{
-    id @uuid
-  }
+  params { id @uuid }
   from users
-  where{ id $id }
-  returning{ id }
+  where { id $id }
+  returning { id }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -954,27 +948,27 @@ DeleteUser @delete{
 /// Returns a list of products with their IDs and handles.
 AllProducts @query{
   from product
-  select{ id, handle }
+  select { id, handle }
 }
 
 /// Create a new user in the system.
 CreateUser @insert{
-  params{ name @string }
+  params { name @string }
   into users
-  values{ name }
-  returning{ id }
+  values { name }
+  returning { id }
 }
 
 /// Upsert exchange rate (insert or update if exists).
 UpsertRate @upsert{
-  params{ currency @string, rate @decimal }
+  params { currency @string, rate @decimal }
   into exchange_rates
-  on-conflict{
-    target{ currency }
-    update{ rate }
+  on-conflict {
+    target { currency }
+    update { rate }
   }
-  values{ currency, rate }
-  returning{ id }
+  values { currency, rate }
+  returning { id }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();

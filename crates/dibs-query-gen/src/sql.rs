@@ -925,7 +925,7 @@ mod tests {
         let source = r#"
 AllProducts @query{
   from product
-  select{ id, handle, status }
+  select { id, handle, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -945,8 +945,8 @@ AllProducts @query{
         let source = r#"
 ActiveProducts @query{
   from product
-  where{ status "published", active true }
-  select{ id, handle }
+  where { status "published", active true }
+  select { id, handle }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -966,10 +966,10 @@ ActiveProducts @query{
     fn test_select_with_params() {
         let source = r#"
 ProductByHandle @query{
-  params{ handle @string }
+  params { handle @string }
   from product
-  where{ handle $handle }
-  select{ id, handle }
+  where { handle $handle }
+  select { id, handle }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1001,8 +1001,8 @@ RecentProducts @query{
         let source = r#"
 ActiveProducts @query{
   from product
-  where{ deleted_at @null }
-  select{ id }
+  where { deleted_at @null }
+  select { id }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1015,10 +1015,10 @@ ActiveProducts @query{
     fn test_ilike_filter() {
         let source = r#"
 SearchProducts @query{
-  params{ q @string }
+  params { q @string }
   from product
-  where{ handle @ilike($q) }
-  select{ id, handle }
+  where { handle @ilike($q) }
+  select { id, handle }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1033,8 +1033,8 @@ SearchProducts @query{
         let source = r#"
 PublishedProducts @query{
   from product
-  where{ published_at @not-null }
-  select{ id }
+  where { published_at @not-null }
+  select { id }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1051,10 +1051,10 @@ PublishedProducts @query{
     fn test_gte_filter() {
         let source = r#"
 FilteredProducts @query{
-  params{ min_price @int }
+  params { min_price @int }
   from product
-  where{ price @gte($min_price) }
-  select{ id, price }
+  where { price @gte($min_price) }
+  select { id, price }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1068,10 +1068,10 @@ FilteredProducts @query{
     fn test_lte_filter() {
         let source = r#"
 FilteredProducts @query{
-  params{ max_price @int }
+  params { max_price @int }
   from product
-  where{ price @lte($max_price) }
-  select{ id, price }
+  where { price @lte($max_price) }
+  select { id, price }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1085,10 +1085,10 @@ FilteredProducts @query{
     fn test_ne_filter() {
         let source = r#"
 NonDraftProducts @query{
-  params{ excluded_status @string }
+  params { excluded_status @string }
   from product
-  where{ status @ne($excluded_status) }
-  select{ id, status }
+  where { status @ne($excluded_status) }
+  select { id, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1102,10 +1102,10 @@ NonDraftProducts @query{
     fn test_in_filter() {
         let source = r#"
 ProductsByStatus @query{
-  params{ statuses @string }
+  params { statuses @string }
   from product
-  where{ status @in($statuses) }
-  select{ id, status }
+  where { status @in($statuses) }
+  select { id, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1123,10 +1123,10 @@ ProductsByStatus @query{
     fn test_json_get_operator() {
         let source = r#"
 ProductWithMetadata @query{
-  params{ key @string }
+  params { key @string }
   from product
-  where{ metadata @json-get($key) }
-  select{ id, metadata }
+  where { metadata @json-get($key) }
+  select { id, metadata }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1141,8 +1141,8 @@ ProductWithMetadata @query{
         let source = r#"
 ProductWithSettings @query{
   from product
-  where{ metadata @json-get("settings") }
-  select{ id, metadata }
+  where { metadata @json-get("settings") }
+  select { id, metadata }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1160,10 +1160,10 @@ ProductWithSettings @query{
     fn test_json_get_text_operator() {
         let source = r#"
 ProductWithJsonValue @query{
-  params{ key @string }
+  params { key @string }
   from product
-  where{ metadata @json-get-text($key) }
-  select{ id, metadata }
+  where { metadata @json-get-text($key) }
+  select { id, metadata }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1177,10 +1177,10 @@ ProductWithJsonValue @query{
     fn test_json_contains_operator() {
         let source = r#"
 ProductWithMetadataContains @query{
-  params{ json_value @string }
+  params { json_value @string }
   from product
-  where{ metadata @contains($json_value) }
-  select{ id, metadata }
+  where { metadata @contains($json_value) }
+  select { id, metadata }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1194,10 +1194,10 @@ ProductWithMetadataContains @query{
     fn test_json_key_exists_operator() {
         let source = r#"
 ProductWithMetadataKey @query{
-  params{ key @string }
+  params { key @string }
   from product
-  where{ metadata @key-exists($key) }
-  select{ id, metadata }
+  where { metadata @key-exists($key) }
+  select { id, metadata }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1212,8 +1212,8 @@ ProductWithMetadataKey @query{
         let source = r#"
 ProductWithLocale @query{
   from product
-  where{ metadata @key-exists("locale") }
-  select{ id, metadata }
+  where { metadata @key-exists("locale") }
+  select { id, metadata }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1232,10 +1232,10 @@ ProductWithLocale @query{
         let source = r#"
 PaginatedProducts @query{
   from product
-  order_by{ created_at desc }
+  order_by { created_at desc }
   limit 20
   offset 40
-  select{ id, handle }
+  select { id, handle }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1252,7 +1252,7 @@ PaginatedProducts @query{
 UniqueStatuses @query{
   from product
   distinct true
-  select{ status }
+  select { status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1297,7 +1297,7 @@ LatestPerCategory @query{
         let source = r#"
 DistinctProducts @query{
   from product
-  distinct-on (brand, category)
+  distinct-on (brand category)
   order-by {brand asc, category asc, created_at desc}
   select {id, brand, category, handle}
 }
@@ -1321,12 +1321,12 @@ DistinctProducts @query{
     fn test_pagination_params() {
         let source = r#"
 PaginatedProducts @query{
-  params{ page_size @int, page_offset @int }
+  params { page_size @int, page_offset @int }
   from product
-  order_by{ created_at desc }
+  order_by { created_at desc }
   limit $page_size
   offset $page_offset
-  select{ id, handle }
+  select { id, handle }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1343,16 +1343,16 @@ PaginatedProducts @query{
 
         let source = r#"
 ProductWithTranslation @query{
-  params{ handle @string }
+  params { handle @string }
   from product
-  where{ handle $handle }
-  select{
+  where { handle $handle }
+  select {
     id
     handle
     translation @rel{
       from product_translation
       first true
-      select{ title, description }
+      select { title, description }
     }
   }
 }
@@ -1420,13 +1420,13 @@ ProductWithTranslation @query{
         let source = r#"
 ProductWithEnglishTranslation @query{
   from product
-  select{
+  select {
     id
     translation @rel{
       from product_translation
-      where{ locale "en" }
+      where { locale en }
       first true
-      select{ title }
+      select { title }
     }
   }
 }
@@ -1477,15 +1477,15 @@ ProductWithEnglishTranslation @query{
 
         let source = r#"
 ProductWithTranslation @query{
-  params{ locale @string }
+  params { locale @string }
   from product
-  select{
+  select {
     id
     translation @rel{
       from product_translation
-      where{ locale $locale }
+      where { locale $locale }
       first true
-      select{ title }
+      select { title }
     }
   }
 }
@@ -1539,16 +1539,16 @@ ProductWithTranslation @query{
 
         let source = r#"
 ProductWithTranslation @query{
-  params{ handle @string, locale @string }
+  params { handle @string, locale @string }
   from product
-  where{ handle $handle }
+  where { handle $handle }
   select{
     id
     translation @rel{
       from product_translation
-      where{ locale $locale }
+      where { locale $locale }
       first true
-      select{ title }
+      select { title }
     }
   }
 }
@@ -1606,17 +1606,17 @@ ProductWithTranslation @query{
     fn test_insert_sql() {
         let source = r#"
 CreateUser @insert{
-  params{
+  params {
     name @string
     email @string
   }
   into users
-  values{
+  values {
     name $name
     email $email
     created_at @now
   }
-  returning{ id, name, email, created_at }
+  returning { id, name, email, created_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1635,22 +1635,22 @@ CreateUser @insert{
     fn test_upsert_sql() {
         let source = r#"
 UpsertProduct @upsert{
-  params{
+  params {
     id @uuid
     name @string
     price @decimal
   }
   into products
-  on-conflict{
-    target{ id }
-    update{ name, price, updated_at @now }
+  on-conflict {
+    target { id }
+    update { name, price, updated_at @now }
   }
-  values{
+  values {
     id $id
     name $name
     price $price
   }
-  returning{ id, name, price, updated_at }
+  returning { id, name, price, updated_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1670,17 +1670,17 @@ UpsertProduct @upsert{
     fn test_update_sql() {
         let source = r#"
 UpdateUserEmail @update{
-  params{
+  params {
     id @uuid
     email @string
   }
   table users
-  set{
+  set {
     email $email
     updated_at @now
   }
-  where{ id $id }
-  returning{ id, email, updated_at }
+  where { id $id }
+  returning { id, email, updated_at }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1698,12 +1698,12 @@ UpdateUserEmail @update{
     fn test_delete_sql() {
         let source = r#"
 DeleteUser @delete{
-  params{
+  params {
     id @uuid
   }
   from users
-  where{ id $id }
-  returning{ id }
+  where { id $id }
+  returning { id }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1868,17 +1868,17 @@ ProductWithLatestEnglishTranslation @query{
     fn test_insert_many_sql() {
         let source = r#"
 BulkCreateProducts @insert-many{
-  params{
+  params {
     handle @string
     status @string
   }
   into products
-  values{
+  values {
     handle $handle
     status $status
     created_at @now
   }
-  returning{ id, handle, status }
+  returning { id, handle, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
@@ -1917,21 +1917,21 @@ BulkCreateProducts @insert-many{
     fn test_upsert_many_sql() {
         let source = r#"
 BulkUpsertProducts @upsert-many{
-  params{
+  params {
     handle @string
     status @string
   }
   into products
-  on-conflict{
-    target{ handle }
-    update{ status, updated_at @now }
+  on-conflict {
+    target { handle }
+    update { status, updated_at @now }
   }
-  values{
+  values {
     handle $handle
     status $status
     created_at @now
   }
-  returning{ id, handle, status }
+  returning { id, handle, status }
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();

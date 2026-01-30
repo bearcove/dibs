@@ -2050,7 +2050,7 @@ ProductWithTranslation @query{
         let source = r#"
 ProductWithVariants @query{
   from product
-  select{
+  select {
     id, handle, variants @rel{
       from product_variant
       select { id, sku }
@@ -2520,7 +2520,7 @@ UpsertProduct @upsert{
     fn test_generate_update_code() {
         let source = r#"
 UpdateUserEmail @update{
-  params{ id @uuid, email @string }
+  params { id @uuid, email @string }
   table users
   set { email $email, updated_at @now }
   where { id $id }

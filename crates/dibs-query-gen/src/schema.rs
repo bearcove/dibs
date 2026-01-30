@@ -16,15 +16,14 @@ mod tests {
         let source = r#"
 AllProducts @query{
     from product
-    select{ id, handle }
+    select { id, handle }
 }
 "#;
         debug!("Parsing source: {:?}", source);
         let file: QueryFile = match facet_styx::from_str(source) {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("{}", e.render("<test>", source));
-                panic!("Parse failed");
+                panic!("Parse failed: {}", e.render("<test>", source));
             }
         };
         debug!("Parsed file: {:?}", file);
@@ -46,8 +45,7 @@ AllProducts @query{
         match facet_styx::from_str(source) {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("{}", e.render("<test>", source));
-                panic!("Parse failed");
+                panic!("Parse failed: {}", e.render("<test>", source));
             }
         }
     }
@@ -91,12 +89,12 @@ ProductByHandle @query{
     fn test_parse_query_with_optional_param() {
         let source = r#"
 SearchProducts @query{
-    params{
+    params {
         query @string
         limit @optional(@int)
     }
     from product
-    select{ id }
+    select { id }
 }
 "#;
         let file: QueryFile = parse(source);
@@ -125,10 +123,10 @@ SearchProducts @query{
     fn test_parse_query_with_where() {
         let source = r#"
 ProductByHandle @query{
-    params{ handle @string }
+    params { handle @string }
     from product
-    where{ handle $handle }
-    select{ id, handle }
+    where { handle $handle }
+    select { id, handle }
 }
 "#;
         let file: QueryFile = parse(source);
@@ -151,8 +149,8 @@ ProductByHandle @query{
         let source = r#"
 ActiveProducts @query{
     from product
-    where{ deleted_at @null }
-    select{ id }
+    where { deleted_at @null }
+    select { id }
 }
 "#;
         let file: QueryFile = parse(source);
@@ -172,10 +170,10 @@ ActiveProducts @query{
     fn test_parse_query_with_ilike_filter() {
         let source = r#"
 SearchProducts @query{
-    params{ q @string }
+    params { q @string }
     from product
-    where{ name @ilike($q) }
-    select{ id, name }
+    where { name @ilike($q) }
+    select { id, name }
 }
 "#;
         let file: QueryFile = parse(source);
@@ -200,7 +198,7 @@ SearchProducts @query{
 SingleProduct @query{
     from product
     first true
-    select{ id }
+    select { id }
 }
 "#;
         let file: QueryFile = parse(source);
@@ -238,11 +236,11 @@ ProductsSorted @query{
     fn test_parse_query_with_limit_offset() {
         let source = r#"
 PagedProducts @query{
-    params{ page @int }
+    params { page @int }
     from product
     limit 10
     offset $page
-    select{ id }
+    select { id }
 }
 "#;
         let file: QueryFile = parse(source);
@@ -258,14 +256,14 @@ PagedProducts @query{
     fn test_parse_query_with_relation() {
         let source = r#"
 ProductWithTranslation @query{
-    params{ locale @string }
+    params { locale @string }
     from product
-    select{
+    select {
         id
         translation @rel{
-            where{ locale $locale }
+            where { locale $locale }
             first true
-            select{ title, description }
+            select { title, description }
         }
     }
 }
@@ -298,7 +296,7 @@ ProductWithTranslation @query{
         let source = r#"
 ProductWithVariantCount @query{
     from product
-    select{
+    select {
         id
         variant_count @count(product_variant)
     }
@@ -332,7 +330,7 @@ ProductWithVariantCount @query{
     fn test_parse_raw_sql_query() {
         let source = r#"
 TrendingProducts @query{
-    params{
+    params {
         locale @string
         days @int
     }
@@ -340,7 +338,7 @@ TrendingProducts @query{
         SELECT id, title FROM products
         WHERE locale = $1 AND created_at > NOW() - INTERVAL '$2 days'
     SQL
-    returns{
+    returns {
         id @int
         title @string
     }
