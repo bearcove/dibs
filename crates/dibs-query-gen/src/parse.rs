@@ -194,9 +194,9 @@ fn convert_query(
                 .fields
                 .iter()
                 .map(|(name, ty)| ReturnField {
-                    name: name.clone(),
+                    name: name.value.clone(),
                     ty: convert_param_type(ty),
-                    span: None,
+                    span: name.span,
                 })
                 .collect()
         } else {
@@ -223,7 +223,7 @@ fn convert_query(
     }
 
     // Structured query
-    let from = q.from.clone().ok_or_else(|| ValidationError::MissingFrom {
+    let from_spanned = q.from.clone().ok_or_else(|| ValidationError::MissingFrom {
         name: name.to_string(),
     })?;
 
@@ -237,19 +237,19 @@ fn convert_query(
     Ok(Query {
         name: name.to_string(),
         doc_comment,
-        span: None,
+        span: from_spanned.span,
         params: convert_params(&q.params),
-        from,
+        from: from_spanned.value,
         filters: convert_filters(&q.where_clause),
         order_by: convert_order_by(&q.order_by),
-        limit: q.limit.as_ref().map(|s| parse_expr_string(s)),
-        offset: q.offset.as_ref().map(|s| parse_expr_string(s)),
-        first: q.first.unwrap_or(false),
+        limit: q.limit.as_ref().map(|s| parse_expr_string(&s.value)),
+        offset: q.offset.as_ref().map(|s| parse_expr_string(&s.value)),
+        first: q.first.as_ref().map(|s| s.value).unwrap_or(false),
         distinct: q.distinct.unwrap_or(false),
         distinct_on: q
             .distinct_on
             .as_ref()
-            .map(|d| d.0.clone())
+            .map(|d| d.0.iter().map(|s| s.value.clone()).collect())
             .unwrap_or_default(),
         select: convert_select(select_schema),
         raw_sql: None,
@@ -266,9 +266,9 @@ fn convert_params(params: &Option<schema::Params>) -> Vec<Param> {
         .params
         .iter()
         .map(|(name, ty)| Param {
-            name: name.clone(),
+            name: name.value.clone(),
             ty: convert_param_type(ty),
-            span: None,
+            span: name.span,
         })
         .collect()
 }
@@ -305,10 +305,10 @@ fn convert_filters(where_clause: &Option<schema::Where>) -> Vec<Filter> {
         .map(|(column, value)| {
             let (op, expr) = convert_filter_value(value);
             Filter {
-                column: column.clone(),
+                column: column.value.clone(),
                 op,
                 value: expr,
-                span: None,
+                span: column.span,
             }
         })
         .collect()
@@ -433,12 +433,12 @@ fn convert_order_by(order_by: &Option<schema::OrderBy>) -> Vec<OrderBy> {
         .columns
         .iter()
         .map(|(column, direction)| OrderBy {
-            column: column.clone(),
+            column: column.value.clone(),
             direction: match direction.as_deref() {
                 Some("desc") | Some("DESC") => SortDir::Desc,
                 _ => SortDir::Asc,
             },
-            span: None,
+            span: column.span,
         })
         .collect()
 }
@@ -450,22 +450,22 @@ fn convert_select(select: &schema::Select) -> Vec<Field> {
         .iter()
         .map(|(name, field_def)| match field_def {
             None => Field::Column {
-                name: name.clone(),
-                span: None,
+                name: name.value.clone(),
+                span: name.span,
             },
             Some(schema::FieldDef::Rel(rel)) => Field::Relation {
-                name: name.clone(),
-                span: None,
-                from: rel.from.clone(),
+                name: name.value.clone(),
+                span: name.span,
+                from: rel.from.as_ref().map(|s| s.value.clone()),
                 filters: convert_filters(&rel.where_clause),
                 order_by: convert_order_by(&rel.order_by),
-                first: rel.first.unwrap_or(false),
+                first: rel.first.as_ref().map(|s| s.value).unwrap_or(false),
                 select: rel.select.as_ref().map(convert_select).unwrap_or_default(),
             },
             Some(schema::FieldDef::Count(tables)) => Field::Count {
-                name: name.clone(),
-                table: tables.first().cloned().unwrap_or_default(),
-                span: None,
+                name: name.value.clone(),
+                table: tables.first().map(|s| s.clone()).unwrap_or_default(),
+                span: name.span,
             },
         })
         .collect()
@@ -476,9 +476,9 @@ fn convert_insert(name: &str, i: &schema::Insert, doc_comment: Option<String>) -
     InsertMutation {
         name: name.to_string(),
         doc_comment,
-        span: None,
+        span: i.into.span,
         params: convert_params(&i.params),
-        table: i.into.clone(),
+        table: i.into.value.clone(),
         values: convert_values(&i.values),
         returning: convert_returning(&i.returning),
     }
@@ -491,7 +491,7 @@ fn convert_upsert(name: &str, u: &schema::Upsert, doc_comment: Option<String>) -
 
     // Add update-only columns (like updated_at @now) that aren't in values
     for (col, update_val) in &u.on_conflict.update.columns {
-        if !values.iter().any(|(c, _)| c == col) {
+        if !values.iter().any(|(c, _)| c == &col.value) {
             // This column is only in the update clause, add it
             let expr = match update_val {
                 Some(schema::UpdateValue::Default) => ValueExpr::Default,
@@ -522,17 +522,23 @@ fn convert_upsert(name: &str, u: &schema::Upsert, doc_comment: Option<String>) -
                     continue;
                 }
             };
-            values.push((col.clone(), expr));
+            values.push((col.value.clone(), expr));
         }
     }
 
     UpsertMutation {
         name: name.to_string(),
         doc_comment,
-        span: None,
+        span: u.into.span,
         params: convert_params(&u.params),
-        table: u.into.clone(),
-        conflict_columns: u.on_conflict.target.columns.keys().cloned().collect(),
+        table: u.into.value.clone(),
+        conflict_columns: u
+            .on_conflict
+            .target
+            .columns
+            .keys()
+            .map(|k| k.value.clone())
+            .collect(),
         values,
         returning: convert_returning(&u.returning),
     }
@@ -547,9 +553,9 @@ fn convert_insert_many(
     InsertManyMutation {
         name: name.to_string(),
         doc_comment,
-        span: None,
+        span: i.into.span,
         params: convert_params(&i.params),
-        table: i.into.clone(),
+        table: i.into.value.clone(),
         values: convert_values(&i.values),
         returning: convert_returning(&i.returning),
     }
@@ -566,7 +572,7 @@ fn convert_upsert_many(
 
     // Add update-only columns (like updated_at @now) that aren't in values
     for (col, update_val) in &u.on_conflict.update.columns {
-        if !values.iter().any(|(c, _)| c == col) {
+        if !values.iter().any(|(c, _)| c == &col.value) {
             // This column is only in the update clause, add it
             let expr = match update_val {
                 Some(schema::UpdateValue::Default) => ValueExpr::Default,
@@ -596,17 +602,23 @@ fn convert_upsert_many(
                     continue;
                 }
             };
-            values.push((col.clone(), expr));
+            values.push((col.value.clone(), expr));
         }
     }
 
     UpsertManyMutation {
         name: name.to_string(),
         doc_comment,
-        span: None,
+        span: u.into.span,
         params: convert_params(&u.params),
-        table: u.into.clone(),
-        conflict_columns: u.on_conflict.target.columns.keys().cloned().collect(),
+        table: u.into.value.clone(),
+        conflict_columns: u
+            .on_conflict
+            .target
+            .columns
+            .keys()
+            .map(|k| k.value.clone())
+            .collect(),
         values,
         returning: convert_returning(&u.returning),
     }
@@ -617,9 +629,9 @@ fn convert_update(name: &str, u: &schema::Update, doc_comment: Option<String>) -
     UpdateMutation {
         name: name.to_string(),
         doc_comment,
-        span: None,
+        span: u.table.span,
         params: convert_params(&u.params),
-        table: u.table.clone(),
+        table: u.table.value.clone(),
         values: convert_values(&u.set),
         filters: convert_filters(&u.where_clause),
         returning: convert_returning(&u.returning),
@@ -631,9 +643,9 @@ fn convert_delete(name: &str, d: &schema::Delete, doc_comment: Option<String>) -
     DeleteMutation {
         name: name.to_string(),
         doc_comment,
-        span: None,
+        span: d.from.span,
         params: convert_params(&d.params),
-        table: d.from.clone(),
+        table: d.from.value.clone(),
         filters: convert_filters(&d.where_clause),
         returning: convert_returning(&d.returning),
     }
@@ -648,9 +660,9 @@ fn convert_values(values: &schema::Values) -> Vec<(String, ValueExpr)> {
             let value_expr = match expr {
                 Some(e) => convert_value_expr(e),
                 // Bare column name means use param with same name ($column_name)
-                None => ValueExpr::Param(col.clone()),
+                None => ValueExpr::Param(col.value.clone()),
             };
-            (col.clone(), value_expr)
+            (col.value.clone(), value_expr)
         })
         .collect()
 }
@@ -711,7 +723,7 @@ fn convert_value_string(s: &str) -> ValueExpr {
 fn convert_returning(returning: &Option<schema::Returning>) -> Vec<String> {
     returning
         .as_ref()
-        .map(|r| r.columns.keys().cloned().collect())
+        .map(|r| r.columns.keys().map(|k| k.value.clone()).collect())
         .unwrap_or_default()
 }
 

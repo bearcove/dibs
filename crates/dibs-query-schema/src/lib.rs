@@ -3,10 +3,69 @@
 //! These types define the structure of `.styx` query files and can be:
 //! - Deserialized from styx using facet-styx
 //! - Used to generate a styx schema via facet-styx's schema generation
+//! - Used by the LSP extension for diagnostics, hover, go-to-definition
 
 use facet::Facet;
+pub use facet_reflect::Span;
 pub use facet_styx::Documented;
 use indexmap::IndexMap;
+use std::ops::Deref;
+
+/// A value with source span information.
+///
+/// This struct wraps a value along with the source location where it was parsed.
+/// Used for LSP features like diagnostics, hover, and go-to-definition.
+#[derive(Debug, Clone, Facet)]
+#[facet(metadata_container)]
+pub struct Spanned<T> {
+    /// The wrapped value.
+    pub value: T,
+    /// The source span (offset and length), if available.
+    #[facet(metadata = "span")]
+    pub span: Option<Span>,
+}
+
+impl<T> Spanned<T> {
+    /// Create a new spanned value without span information.
+    pub fn new(value: T) -> Self {
+        Self { value, span: None }
+    }
+
+    /// Create a new spanned value with span information.
+    pub fn with_span(value: T, span: Span) -> Self {
+        Self {
+            value,
+            span: Some(span),
+        }
+    }
+}
+
+impl<T> Deref for Spanned<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T> From<T> for Spanned<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T: Eq> Eq for Spanned<T> {}
+
+impl<T: std::hash::Hash> std::hash::Hash for Spanned<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
 
 /// A query file - top level is a map of declaration names to declarations.
 /// Uses `Documented<String>` as keys to capture doc comments from the styx file.
@@ -46,14 +105,14 @@ pub struct Query {
     pub params: Option<Params>,
 
     /// Source table to query from (for structured queries).
-    pub from: Option<String>,
+    pub from: Option<Spanned<String>>,
 
     /// Filter conditions.
     #[facet(rename = "where")]
     pub where_clause: Option<Where>,
 
     /// Return only the first result.
-    pub first: Option<bool>,
+    pub first: Option<Spanned<bool>>,
 
     /// Use DISTINCT to return only unique rows.
     pub distinct: Option<bool>,
@@ -65,10 +124,10 @@ pub struct Query {
     pub order_by: Option<OrderBy>,
 
     /// Limit clause (number or param reference like $limit).
-    pub limit: Option<String>,
+    pub limit: Option<Spanned<String>>,
 
     /// Offset clause (number or param reference like $offset).
-    pub offset: Option<String>,
+    pub offset: Option<Spanned<String>>,
 
     /// Fields to select (for structured queries).
     pub select: Option<Select>,
@@ -84,27 +143,27 @@ pub struct Query {
 #[derive(Debug, Facet)]
 pub struct Returns {
     #[facet(flatten)]
-    pub fields: IndexMap<String, ParamType>,
+    pub fields: IndexMap<Spanned<String>, ParamType>,
 }
 
 /// DISTINCT ON clause (PostgreSQL-specific) - a sequence of column names.
 #[derive(Debug, Facet)]
 #[facet(transparent)]
-pub struct DistinctOn(pub Vec<String>);
+pub struct DistinctOn(pub Vec<Spanned<String>>);
 
 /// ORDER BY clause.
 #[derive(Debug, Facet)]
 pub struct OrderBy {
     /// Column name -> direction ("asc" or "desc", None means asc)
     #[facet(flatten)]
-    pub columns: IndexMap<String, Option<String>>,
+    pub columns: IndexMap<Spanned<String>, Option<String>>,
 }
 
 /// WHERE clause - filter conditions.
 #[derive(Debug, Facet)]
 pub struct Where {
     #[facet(flatten)]
-    pub filters: IndexMap<String, FilterValue>,
+    pub filters: IndexMap<Spanned<String>, FilterValue>,
 }
 
 /// A filter value - tagged operators or bare scalars for where clauses.
@@ -163,7 +222,7 @@ pub enum FilterValue {
 #[derive(Debug, Facet)]
 pub struct Params {
     #[facet(flatten)]
-    pub params: IndexMap<String, ParamType>,
+    pub params: IndexMap<Spanned<String>, ParamType>,
 }
 
 /// Parameter type.
@@ -186,7 +245,7 @@ pub enum ParamType {
 #[derive(Debug, Facet)]
 pub struct Select {
     #[facet(flatten)]
-    pub fields: IndexMap<String, Option<FieldDef>>,
+    pub fields: IndexMap<Spanned<String>, Option<FieldDef>>,
 }
 
 /// A field definition - tagged values in select.
@@ -206,7 +265,7 @@ pub enum FieldDef {
 #[facet(rename_all = "kebab-case")]
 pub struct Relation {
     /// Optional explicit table name.
-    pub from: Option<String>,
+    pub from: Option<Spanned<String>>,
 
     /// Filter conditions.
     #[facet(rename = "where")]
@@ -216,7 +275,7 @@ pub struct Relation {
     pub order_by: Option<OrderBy>,
 
     /// Return only the first result.
-    pub first: Option<bool>,
+    pub first: Option<Spanned<bool>>,
 
     /// Fields to select from the relation.
     pub select: Option<Select>,
@@ -228,7 +287,7 @@ pub struct Insert {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub into: String,
+    pub into: Spanned<String>,
     /// Values to insert (column -> value expression).
     pub values: Values,
     /// Columns to return.
@@ -241,7 +300,7 @@ pub struct Upsert {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub into: String,
+    pub into: Spanned<String>,
     /// ON CONFLICT clause.
     #[facet(rename = "on-conflict")]
     pub on_conflict: OnConflict,
@@ -269,7 +328,7 @@ pub struct InsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
     /// Target table.
-    pub into: String,
+    pub into: Spanned<String>,
     /// Values to insert (column -> value expression).
     /// Params become UNNEST columns, other expressions are applied to each row.
     pub values: Values,
@@ -299,7 +358,7 @@ pub struct UpsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
     /// Target table.
-    pub into: String,
+    pub into: Spanned<String>,
     /// ON CONFLICT clause.
     #[facet(rename = "on-conflict")]
     pub on_conflict: OnConflict,
@@ -315,7 +374,7 @@ pub struct Update {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub table: String,
+    pub table: Spanned<String>,
     /// Values to set (column -> value expression).
     pub set: Values,
     /// Filter conditions.
@@ -331,7 +390,7 @@ pub struct Delete {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub from: String,
+    pub from: Spanned<String>,
     /// Filter conditions.
     #[facet(rename = "where")]
     pub where_clause: Option<Where>,
@@ -344,7 +403,7 @@ pub struct Delete {
 pub struct Values {
     /// Column name -> value expression. None means use param with same name ($column_name).
     #[facet(flatten)]
-    pub columns: IndexMap<String, Option<ValueExpr>>,
+    pub columns: IndexMap<Spanned<String>, Option<ValueExpr>>,
 }
 
 /// Payload of a value expression - can be scalar or sequence.
@@ -396,14 +455,14 @@ pub struct OnConflict {
 #[derive(Debug, Facet)]
 pub struct ConflictTarget {
     #[facet(flatten)]
-    pub columns: IndexMap<String, ()>,
+    pub columns: IndexMap<Spanned<String>, ()>,
 }
 
 /// Columns to update on conflict.
 #[derive(Debug, Facet)]
 pub struct ConflictUpdate {
     #[facet(flatten)]
-    pub columns: IndexMap<String, Option<UpdateValue>>,
+    pub columns: IndexMap<Spanned<String>, Option<UpdateValue>>,
 }
 
 /// Value for an update column - mirrors `ValueExpr`.
@@ -427,5 +486,5 @@ pub enum UpdateValue {
 #[derive(Debug, Facet)]
 pub struct Returning {
     #[facet(flatten)]
-    pub columns: IndexMap<String, ()>,
+    pub columns: IndexMap<Spanned<String>, ()>,
 }

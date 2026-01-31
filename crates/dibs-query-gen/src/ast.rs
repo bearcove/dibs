@@ -2,7 +2,7 @@
 //!
 //! These represent the semantic structure of a query after parsing from styx.
 
-use styx_parse::Span;
+use dibs_query_schema::Span;
 
 /// A file containing multiple queries and mutations.
 #[derive(Debug, Clone)]
