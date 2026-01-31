@@ -464,7 +464,7 @@ fn convert_select(select: &schema::Select) -> Vec<Field> {
             },
             Some(schema::FieldDef::Count(tables)) => Field::Count {
                 name: name.value.clone(),
-                table: tables.first().map(|s| s.clone()).unwrap_or_default(),
+                table: tables.first().cloned().unwrap_or_default(),
                 span: name.span,
             },
         })

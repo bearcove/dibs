@@ -7,28 +7,57 @@
 
 use facet::Facet;
 pub use facet_reflect::Span;
-pub use facet_styx::Documented;
 use indexmap::IndexMap;
-use std::ops::Deref;
+use std::{borrow::Borrow, hash::Hash, ops::Deref};
 
-/// A value with source span information.
+/// A value with source span and documentation.
 ///
-/// This struct wraps a value along with the source location where it was parsed.
-/// Used for LSP features like diagnostics, hover, and go-to-definition.
+/// This struct wraps a value along with:
+/// - Source location (for diagnostics, go-to-definition)
+/// - Doc comments (for hover info)
 #[derive(Debug, Clone, Facet)]
 #[facet(metadata_container)]
-pub struct Spanned<T> {
+pub struct Meta<T> {
     /// The wrapped value.
     pub value: T,
+
     /// The source span (offset and length), if available.
     #[facet(metadata = "span")]
     pub span: Option<Span>,
+
+    /// Documentation lines (each line is a separate string).
+    #[facet(metadata = "doc")]
+    pub doc: Option<Vec<String>>,
 }
 
-impl<T> Spanned<T> {
-    /// Create a new spanned value without span information.
+impl<T: Hash> Hash for Meta<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
+impl<T: PartialEq> PartialEq for Meta<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T: Eq> Eq for Meta<T> {}
+
+impl Borrow<str> for Meta<String> {
+    fn borrow(&self) -> &str {
+        &self.value
+    }
+}
+
+impl<T> Meta<T> {
+    /// Create a new spanned value without metadata.
     pub fn new(value: T) -> Self {
-        Self { value, span: None }
+        Self {
+            value,
+            span: None,
+            doc: None,
+        }
     }
 
     /// Create a new spanned value with span information.
@@ -36,47 +65,44 @@ impl<T> Spanned<T> {
         Self {
             value,
             span: Some(span),
+            doc: None,
         }
+    }
+
+    /// Get the documentation as a single joined string.
+    pub fn doc_string(&self) -> Option<String> {
+        self.doc.as_ref().map(|lines| lines.join("\n"))
     }
 }
 
-impl<T> Deref for Spanned<T> {
+impl<T> Deref for Meta<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.value
     }
 }
 
-impl<T> From<T> for Spanned<T> {
+impl<T> From<T> for Meta<T> {
     fn from(value: T) -> Self {
-        Self::new(value)
-    }
-}
-
-impl<T: PartialEq> PartialEq for Spanned<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
-    }
-}
-
-impl<T: Eq> Eq for Spanned<T> {}
-
-impl<T: std::hash::Hash> std::hash::Hash for Spanned<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.value.hash(state);
+        Self {
+            value,
+            span: None,
+            doc: None,
+        }
     }
 }
 
 /// A query file - top level is a map of declaration names to declarations.
-/// Uses `Documented<String>` as keys to capture doc comments from the styx file.
+/// Uses `Meta<String>` as keys to capture doc comments from the styx file.
 #[derive(Debug, Facet)]
 #[facet(transparent)]
-pub struct QueryFile(pub IndexMap<Documented<String>, Decl>);
+pub struct QueryFile(pub IndexMap<Meta<String>, Decl>);
 
 /// A declaration in a query file.
 #[derive(Debug, Facet)]
 #[facet(rename_all = "kebab-case")]
 #[repr(u8)]
+#[allow(clippy::large_enum_variant)]
 pub enum Decl {
     /// A SELECT query declaration.
     Query(Query),
@@ -105,14 +131,14 @@ pub struct Query {
     pub params: Option<Params>,
 
     /// Source table to query from (for structured queries).
-    pub from: Option<Spanned<String>>,
+    pub from: Option<Meta<String>>,
 
     /// Filter conditions.
     #[facet(rename = "where")]
     pub where_clause: Option<Where>,
 
     /// Return only the first result.
-    pub first: Option<Spanned<bool>>,
+    pub first: Option<Meta<bool>>,
 
     /// Use DISTINCT to return only unique rows.
     pub distinct: Option<bool>,
@@ -124,10 +150,10 @@ pub struct Query {
     pub order_by: Option<OrderBy>,
 
     /// Limit clause (number or param reference like $limit).
-    pub limit: Option<Spanned<String>>,
+    pub limit: Option<Meta<String>>,
 
     /// Offset clause (number or param reference like $offset).
-    pub offset: Option<Spanned<String>>,
+    pub offset: Option<Meta<String>>,
 
     /// Fields to select (for structured queries).
     pub select: Option<Select>,
@@ -143,27 +169,27 @@ pub struct Query {
 #[derive(Debug, Facet)]
 pub struct Returns {
     #[facet(flatten)]
-    pub fields: IndexMap<Spanned<String>, ParamType>,
+    pub fields: IndexMap<Meta<String>, ParamType>,
 }
 
 /// DISTINCT ON clause (PostgreSQL-specific) - a sequence of column names.
 #[derive(Debug, Facet)]
 #[facet(transparent)]
-pub struct DistinctOn(pub Vec<Spanned<String>>);
+pub struct DistinctOn(pub Vec<Meta<String>>);
 
 /// ORDER BY clause.
 #[derive(Debug, Facet)]
 pub struct OrderBy {
     /// Column name -> direction ("asc" or "desc", None means asc)
     #[facet(flatten)]
-    pub columns: IndexMap<Spanned<String>, Option<String>>,
+    pub columns: IndexMap<Meta<String>, Option<String>>,
 }
 
 /// WHERE clause - filter conditions.
 #[derive(Debug, Facet)]
 pub struct Where {
     #[facet(flatten)]
-    pub filters: IndexMap<Spanned<String>, FilterValue>,
+    pub filters: IndexMap<Meta<String>, FilterValue>,
 }
 
 /// A filter value - tagged operators or bare scalars for where clauses.
@@ -222,7 +248,7 @@ pub enum FilterValue {
 #[derive(Debug, Facet)]
 pub struct Params {
     #[facet(flatten)]
-    pub params: IndexMap<Spanned<String>, ParamType>,
+    pub params: IndexMap<Meta<String>, ParamType>,
 }
 
 /// Parameter type.
@@ -245,7 +271,7 @@ pub enum ParamType {
 #[derive(Debug, Facet)]
 pub struct Select {
     #[facet(flatten)]
-    pub fields: IndexMap<Spanned<String>, Option<FieldDef>>,
+    pub fields: IndexMap<Meta<String>, Option<FieldDef>>,
 }
 
 /// A field definition - tagged values in select.
@@ -265,7 +291,7 @@ pub enum FieldDef {
 #[facet(rename_all = "kebab-case")]
 pub struct Relation {
     /// Optional explicit table name.
-    pub from: Option<Spanned<String>>,
+    pub from: Option<Meta<String>>,
 
     /// Filter conditions.
     #[facet(rename = "where")]
@@ -275,7 +301,7 @@ pub struct Relation {
     pub order_by: Option<OrderBy>,
 
     /// Return only the first result.
-    pub first: Option<Spanned<bool>>,
+    pub first: Option<Meta<bool>>,
 
     /// Fields to select from the relation.
     pub select: Option<Select>,
@@ -287,7 +313,7 @@ pub struct Insert {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Spanned<String>,
+    pub into: Meta<String>,
     /// Values to insert (column -> value expression).
     pub values: Values,
     /// Columns to return.
@@ -300,7 +326,7 @@ pub struct Upsert {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Spanned<String>,
+    pub into: Meta<String>,
     /// ON CONFLICT clause.
     #[facet(rename = "on-conflict")]
     pub on_conflict: OnConflict,
@@ -328,7 +354,7 @@ pub struct InsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Spanned<String>,
+    pub into: Meta<String>,
     /// Values to insert (column -> value expression).
     /// Params become UNNEST columns, other expressions are applied to each row.
     pub values: Values,
@@ -358,7 +384,7 @@ pub struct UpsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Spanned<String>,
+    pub into: Meta<String>,
     /// ON CONFLICT clause.
     #[facet(rename = "on-conflict")]
     pub on_conflict: OnConflict,
@@ -374,7 +400,7 @@ pub struct Update {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub table: Spanned<String>,
+    pub table: Meta<String>,
     /// Values to set (column -> value expression).
     pub set: Values,
     /// Filter conditions.
@@ -390,7 +416,7 @@ pub struct Delete {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub from: Spanned<String>,
+    pub from: Meta<String>,
     /// Filter conditions.
     #[facet(rename = "where")]
     pub where_clause: Option<Where>,
@@ -403,7 +429,7 @@ pub struct Delete {
 pub struct Values {
     /// Column name -> value expression. None means use param with same name ($column_name).
     #[facet(flatten)]
-    pub columns: IndexMap<Spanned<String>, Option<ValueExpr>>,
+    pub columns: IndexMap<Meta<String>, Option<ValueExpr>>,
 }
 
 /// Payload of a value expression - can be scalar or sequence.
@@ -455,14 +481,14 @@ pub struct OnConflict {
 #[derive(Debug, Facet)]
 pub struct ConflictTarget {
     #[facet(flatten)]
-    pub columns: IndexMap<Spanned<String>, ()>,
+    pub columns: IndexMap<Meta<String>, ()>,
 }
 
 /// Columns to update on conflict.
 #[derive(Debug, Facet)]
 pub struct ConflictUpdate {
     #[facet(flatten)]
-    pub columns: IndexMap<Spanned<String>, Option<UpdateValue>>,
+    pub columns: IndexMap<Meta<String>, Option<UpdateValue>>,
 }
 
 /// Value for an update column - mirrors `ValueExpr`.
@@ -486,5 +512,54 @@ pub enum UpdateValue {
 #[derive(Debug, Facet)]
 pub struct Returning {
     #[facet(flatten)]
-    pub columns: IndexMap<Spanned<String>, ()>,
+    pub columns: IndexMap<Meta<String>, ()>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use facet_styx::RenderError;
+
+    /// Test that Spanned<String> works as a map key with facet-styx.
+    #[test]
+    fn spanned_string_as_map_key() {
+        #[derive(Debug, Facet)]
+        struct TestMap {
+            #[facet(flatten)]
+            items: IndexMap<Meta<String>, String>,
+        }
+
+        let source = r#"{foo bar, baz qux}"#;
+        let result: Result<TestMap, _> = facet_styx::from_str(source);
+
+        match result {
+            Ok(map) => {
+                assert_eq!(map.items.len(), 2);
+                let keys: Vec<_> = map.items.keys().map(|k| k.value.as_str()).collect();
+                assert!(keys.contains(&"foo"));
+                assert!(keys.contains(&"baz"));
+            }
+            Err(e) => {
+                panic!("Failed to parse: {}", e.render("<test>", source));
+            }
+        }
+    }
+
+    /// Test that Where clause parses correctly with Spanned keys.
+    #[test]
+    fn where_clause_with_spanned_keys() {
+        let source = r#"{deleted_at @null}"#;
+        let result: Result<Where, _> = facet_styx::from_str(source);
+
+        match result {
+            Ok(where_clause) => {
+                assert_eq!(where_clause.filters.len(), 1);
+                let key = where_clause.filters.keys().next().unwrap();
+                assert_eq!(key.value, "deleted_at");
+            }
+            Err(e) => {
+                panic!("Failed to parse: {}", e.render("<test>", source));
+            }
+        }
+    }
 }

@@ -34,7 +34,7 @@ AllProducts @query{
 
         match decl {
             Decl::Query(q) => {
-                assert_eq!(q.from.as_deref(), Some("product"));
+                assert_eq!(q.from.as_ref().map(|m| m.value.as_str()), Some("product"));
                 assert_eq!(q.select.as_ref().unwrap().fields.len(), 2);
             }
             _ => panic!("expected Query"),
@@ -206,7 +206,7 @@ SingleProduct @query{
             panic!("expected Query");
         };
 
-        assert_eq!(q.first, Some(true));
+        assert_eq!(q.first.as_ref().map(|m| m.value), Some(true));
     }
 
     #[test]
@@ -248,8 +248,8 @@ PagedProducts @query{
             panic!("expected Query");
         };
 
-        assert_eq!(q.limit, Some("10".to_string()));
-        assert_eq!(q.offset, Some("$page".to_string()));
+        assert_eq!(q.limit.as_ref().map(|m| m.value.as_str()), Some("10"));
+        assert_eq!(q.offset.as_ref().map(|m| m.value.as_str()), Some("$page"));
     }
 
     #[test]
@@ -283,7 +283,7 @@ ProductWithTranslation @query{
         let translation = select.fields.get("translation").unwrap().as_ref().unwrap();
         match translation {
             FieldDef::Rel(rel) => {
-                assert_eq!(rel.first, Some(true));
+                assert_eq!(rel.first.as_ref().map(|m| m.value), Some(true));
                 let select = rel.select.as_ref().unwrap();
                 assert_eq!(select.fields.len(), 2);
             }
