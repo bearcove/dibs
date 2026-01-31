@@ -1097,7 +1097,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1119,7 +1119,7 @@ checksum = "6738d2e996274e499bc7b0d693c858b7720b9cd2543a0643a3087e6cb0a4fa16"
 dependencies = [
  "cfg-if",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1189,7 +1189,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1426,7 +1426,7 @@ dependencies = [
 [[package]]
 name = "facet-styx"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "ariadne 0.6.0",
  "facet",
@@ -2303,7 +2303,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2339,7 +2339,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2712,7 +2712,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3768,7 +3768,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4256,7 +4256,7 @@ dependencies = [
 [[package]]
 name = "styx-cst"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "rowan",
  "styx-tokenizer",
@@ -4265,7 +4265,7 @@ dependencies = [
 [[package]]
 name = "styx-embed"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "blake3",
  "goblin",
@@ -4277,7 +4277,7 @@ dependencies = [
 [[package]]
 name = "styx-embed-macros"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "blake3",
  "lz4_flex",
@@ -4289,7 +4289,7 @@ dependencies = [
 [[package]]
 name = "styx-format"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "styx-cst",
  "styx-parse",
@@ -4299,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "dirs",
  "eyre",
@@ -4327,7 +4327,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-ext"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "facet",
  "roam",
@@ -4337,7 +4337,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-test-schema"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "facet",
 ]
@@ -4345,7 +4345,7 @@ dependencies = [
 [[package]]
 name = "styx-parse"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "facet",
  "styx-tokenizer",
@@ -4355,7 +4355,7 @@ dependencies = [
 [[package]]
 name = "styx-tokenizer"
 version = "1.0.0"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "facet",
  "tracing",
@@ -4364,7 +4364,7 @@ dependencies = [
 [[package]]
 name = "styx-tree"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#4f0b0bd5a09f1b9927b2b828de4c41fe81e67796"
+source = "git+https://github.com/bearcove/styx?branch=main#3615c20f79b19066be87bd0301ba6b07ac1a8b71"
 dependencies = [
  "ariadne 0.6.0",
  "facet",
@@ -4451,7 +4451,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5481,7 +5481,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
