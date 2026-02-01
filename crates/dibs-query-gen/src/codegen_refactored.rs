@@ -2,6 +2,45 @@
 //!
 //! This is a sketch/experiment for refactoring the assembly functions
 //! to use structured contexts instead of passing many individual parameters.
+//!
+//! # Strategy
+//!
+//! The current codegen.rs has 5+ large assembly functions (generate_vec_relation_assembly,
+//! generate_nested_vec_relation_assembly, etc.) that are:
+//! - Hard to read (lots of nested Blocks, many parameters)
+//! - Repetitive (same column extraction logic in multiple places)
+//! - Brittle (changes ripple across all functions)
+//!
+//! The refactoring approach:
+//!
+//! 1. **Structured Contexts**: Bundle related data into context structs
+//!    - QueryGenerationContext: info about the query, columns, plan
+//!    - RelationGenerationContext: info about a specific relation being generated
+//!    - DeduplicationKey: info about tracking seen ID combinations
+//!
+//! 2. **Schema Methods**: Add convenience methods to schema types
+//!    - Query::has_vec_relations(), has_nested_vec_relations()
+//!    - Select::columns(), relations(), counts(), first_column()
+//!    - Relation::is_first(), table_name()
+//!    - These make the code self-documenting and DRY
+//!
+//! 3. **Specialized Handlers**: Create abstractions for specific concerns
+//!    - RelationHandler: encapsulates extraction logic for one relation
+//!    - NestedDeduplicationBuilder: handles dedup tracking logic
+//!    - BlockBuilder: makes nested code construction less verbose (idea)
+//!
+//! 4. **Helper Functions**: Small, focused functions that do one thing
+//!    - generate_column_extraction(): add one column to a block
+//!    - generate_select_columns(): add all columns from a select
+//!    - These replace the massive nested loops in the original code
+//!
+//! # Benefits
+//!
+//! - Code becomes more readable (less nesting, clearer intent)
+//! - Easier to test individual pieces
+//! - Patterns are explicit (dedup, Option vs Vec, column extraction)
+//! - Less duplication (helpers are reused)
+//! - Schema types are more ergonomic to work with
 
 use crate::planner::PlannerSchema;
 use crate::schema::*;
@@ -359,6 +398,287 @@ pub fn generate_vec_relation_assembly_refactored(
 
     format_block_to_string(&block)
 }
+
+// ============================================================================
+// OBSERVATIONS & PATTERNS
+// ============================================================================
+//
+// From sketching the assembly functions, I'm seeing these patterns:
+//
+// 1. STRUCT ASSEMBLY: "Building a result struct from a row"
+//    - Extract columns from row (with type handling)
+//    - Extract relations (Option or Vec)
+//    - Extract aggregates (count)
+//    This could be a trait or builder that generates the code for one level.
+//
+// 2. RELATION EXTRACTION:
+//    - Simple columns: direct row.get()
+//    - Option relations: row.get().map(|val| StructName { ... })
+//    - Vec relations: empty vec[], then populated in a separate loop
+//    Could abstract this per relation type.
+//
+// 3. DEDUPLICATION:
+//    - For Vec relations with nested Vec children, track seen ID combinations
+//    - Prevents duplicate rows when inner join produces multiple results
+//    - Complexity scales with nesting depth
+//    This is where NestedDeduplicationBuilder could help.
+//
+// 4. ITERATION PATTERNS:
+//    - Outer loop: for row in rows.iter()
+//    - For Vec relations: extract and group by parent ID
+//    - For nested Vec: track seen combinations to deduplicate
+//    - Early exit when duplicate seen
+//
+// 5. PLAN USAGE:
+//    - We get column_order (alias -> index mapping) from the plan
+//    - We get result_mapping (info about relations) from the plan
+//    - Maybe we should extract more info from the plan upfront?
+//
+// ============================================================================
+// NESTED VEC RELATIONS - DEDUPLICATION PATTERN
+// ============================================================================
+
+/// Abstraction for handling a single relation during code generation.
+/// This encapsulates all the information needed to generate code for one relation.
+pub struct RelationHandler<'a> {
+    /// The relation context
+    pub ctx: &'a RelationGenerationContext<'a>,
+
+    /// The relation definition from schema
+    pub relation: &'a Relation,
+
+    /// The field name in the select clause
+    pub field_name: &'a str,
+
+    /// Type of handler to use
+    pub handler_type: RelationHandlerType,
+}
+
+pub enum RelationHandlerType {
+    /// Option<T> - single result, populate with map
+    Option,
+    /// Vec<T> - multiple results, populate with append
+    Vec,
+    /// Vec<T> with nested Vec - multiple results with deduplication
+    NestedVec,
+}
+
+impl<'a> RelationHandler<'a> {
+    /// Determine what type of handler we need based on the relation definition.
+    pub fn determine_type(relation: &'a Relation, select: &Select) -> RelationHandlerType {
+        if relation.is_first() {
+            RelationHandlerType::Option
+        } else if select.has_vec_relations() {
+            RelationHandlerType::NestedVec
+        } else {
+            RelationHandlerType::Vec
+        }
+    }
+
+    /// Generate the code for extracting this relation from a row.
+    pub fn generate_extraction(&self) -> String {
+        match self.handler_type {
+            RelationHandlerType::Option => self.generate_option_extraction(),
+            RelationHandlerType::Vec => self.generate_vec_extraction(),
+            RelationHandlerType::NestedVec => self.generate_nested_vec_extraction(),
+        }
+    }
+
+    fn generate_option_extraction(&self) -> String {
+        // Map-based extraction for Option relations
+        "// TODO: generate option extraction".to_string()
+    }
+
+    fn generate_vec_extraction(&self) -> String {
+        // Vec initialization for simple Vec relations
+        format!("{}: vec![],", self.field_name)
+    }
+
+    fn generate_nested_vec_extraction(&self) -> String {
+        // Vec initialization for nested Vec relations (will use dedup later)
+        format!("{}: vec![], // populated with dedup", self.field_name)
+    }
+}
+
+/// For nested Vec relations, we need to track which combinations of parent/child IDs
+/// we've already seen to avoid duplicates.
+pub struct DeduplicationKey<'a> {
+    /// Key columns at each level (parent_id, child_id, grandchild_id, etc)
+    pub columns: Vec<&'a str>,
+    /// Types of each column
+    pub types: Vec<String>,
+}
+
+impl<'a> DeduplicationKey<'a> {
+    /// Generate the HashSet declaration for tracking seen combinations.
+    pub fn generate_hashset_declaration(&self) -> String {
+        let type_list = self.types.join(", ");
+        format!("std::collections::HashSet<({})>", type_list)
+    }
+
+    /// Generate the HashSet insert check code.
+    pub fn generate_insert_check(&self, seen_set_name: &str, values: Vec<&str>) -> String {
+        let value_tuple = format!("({})", values.join(", "));
+        format!(
+            "if !{}.insert({}) {{ continue; }}",
+            seen_set_name, value_tuple
+        )
+    }
+}
+
+/// For nested Vec relations, we need to track dedup at multiple levels.
+/// This builder helps construct that tracking structure.
+pub struct NestedDeduplicationBuilder {
+    /// Maps relation name -> dedup key
+    dedup_keys: std::collections::HashMap<String, DeduplicationKey<'static>>,
+}
+
+impl NestedDeduplicationBuilder {
+    pub fn new() -> Self {
+        Self {
+            dedup_keys: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Analyze a select to determine what dedup keys we need.
+    pub fn analyze_select(&mut self, select: &Select, prefix: &str) {
+        for (name_meta, field_def) in select.relations() {
+            let rel_name = format!("{}_{}", prefix, name_meta.value);
+
+            // If this relation has nested Vec relations, we need to track it
+            if let Some(rel_select) = &select.fields.get(name_meta).and_then(|fd| match fd {
+                Some(FieldDef::Rel(rel)) => rel.select.as_ref(),
+                _ => None,
+            }) {
+                if rel_select.has_vec_relations() {
+                    // Need to set up dedup tracking for this relation
+                    if let Some(id_col) = rel_select.id_column() {
+                        // TODO: Store the dedup key
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// OPTION RELATION ASSEMBLY - SIMPLER CASE
+// ============================================================================
+
+/// For queries with only Option relations (no Vec relations),
+/// we can use simpler code that just does map/Option handling.
+pub fn generate_option_relation_assembly_refactored(
+    query_ctx: &QueryGenerationContext,
+    select: &Select,
+) -> String {
+    let mut block = Block::new("");
+
+    block.line("// Process rows, extracting Option relations");
+    let mut for_block = Block::new("for row in rows.iter()");
+
+    let mut result_block = Block::new(format!("let result = {}", query_ctx.struct_name));
+
+    for (name_meta, field_def) in select.fields.iter() {
+        let field_name = &name_meta.value;
+
+        match field_def {
+            None => {
+                // Simple column
+                result_block.line(format!(
+                    "{}: {},",
+                    field_name,
+                    format_row_get(field_name, query_ctx.column_order)
+                ));
+            }
+            Some(FieldDef::Rel(rel)) if rel.is_first() => {
+                // Option relation
+                if let Some(rel_select) = &rel.select {
+                    let first_col = rel_select.first_column().unwrap_or_default();
+                    let first_alias = format!("{}_{}", field_name, first_col);
+
+                    let rel_table = rel.table_name().unwrap_or(field_name);
+                    let nested_struct_name =
+                        format!("Nested{}", crate::codegen::to_pascal_case(field_name));
+
+                    let mut map_block = Block::new(format!(
+                        "{}: row.get::<_, Option<_>>({}).map(|{}_val| {}",
+                        field_name,
+                        format_col_selector(&first_alias, query_ctx.column_order),
+                        first_alias,
+                        nested_struct_name
+                    ));
+
+                    let rel_ctx = RelationGenerationContext {
+                        query: query_ctx,
+                        relation_table: rel_table,
+                        col_prefix: field_name,
+                        is_first: true,
+                        struct_name: &nested_struct_name,
+                    };
+
+                    generate_select_columns_in_map(
+                        &rel_ctx,
+                        &mut map_block,
+                        rel_select,
+                        &first_alias,
+                    );
+                    map_block.after("),");
+                    result_block.push_block(map_block);
+                }
+            }
+            Some(FieldDef::Count(_)) => {
+                result_block.line(format!(
+                    "{}: {},",
+                    field_name,
+                    format_row_get(field_name, query_ctx.column_order)
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    result_block.after(";");
+    for_block.push_block(result_block);
+
+    // Collect results
+    if query_ctx.is_first {
+        for_block.line("return Ok(Some(result));");
+    } else {
+        for_block.line("results.push(result);");
+    }
+
+    block.push_block(for_block);
+
+    if !query_ctx.is_first {
+        block.line("Ok(results)");
+    }
+
+    format_block_to_string(&block)
+}
+
+// ============================================================================
+// POTENTIAL ABSTRACTION: BLOCK BUILDER
+// ============================================================================
+//
+// Right now we write:
+//   let mut block = Block::new("for row in rows.iter()");
+//   block.line("...");
+//   block.push_block(inner_block);
+//   for_block.push_block(block);
+//
+// This is verbose. We could have a builder that:
+//   BlockBuilder::new("for row in rows.iter()")
+//     .line("let x = 1;")
+//     .line("let y = 2;")
+//     .nested(|nested| {
+//       nested
+//         .line("if x > y {")
+//         .line("  println!(\"x is bigger\");")
+//     })
+//     .build()
+//
+// This would make the code flow more readable and reduce nesting.
+//
 
 /// Format a Block to a String.
 fn format_block_to_string(block: &Block) -> String {
