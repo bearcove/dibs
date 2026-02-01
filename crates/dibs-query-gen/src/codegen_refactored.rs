@@ -246,10 +246,10 @@ pub fn generate_vec_relation_assembly_refactored(
             }
             Some(FieldDef::Rel(rel)) => {
                 // Relation: either Option or Vec
-                if rel.first.is_some() {
+                if rel.is_first() {
                     // Option relation - generate map closure
                     if let Some(rel_select) = &rel.select {
-                        let first_col = get_first_select_column(rel_select);
+                        let first_col = rel_select.first_column().unwrap_or_default();
                         let first_alias = format!("{}_{}", field_name, first_col);
 
                         let rel_table = rel.from.as_ref().map(|m| &m.value).unwrap_or(field_name);
@@ -305,11 +305,11 @@ pub fn generate_vec_relation_assembly_refactored(
     // Append to Vec relations
     for (name_meta, field_def) in &select.fields {
         if let Some(FieldDef::Rel(rel)) = field_def {
-            if rel.first.is_none() {
+            if !rel.is_first() {
                 // This is a Vec relation
                 let field_name = &name_meta.value;
                 if let Some(rel_select) = &rel.select {
-                    let first_col = get_first_select_column(rel_select);
+                    let first_col = rel_select.first_column().unwrap_or_default();
                     let first_alias = format!("{}_{}", field_name, first_col);
 
                     let rel_table = rel.from.as_ref().map(|m| &m.value).unwrap_or(field_name);
@@ -358,21 +358,6 @@ pub fn generate_vec_relation_assembly_refactored(
     }
 
     format_block_to_string(&block)
-}
-
-/// Get the first column name from a select (for use as first/key column).
-fn get_first_select_column(select: &Select) -> String {
-    select
-        .fields
-        .iter()
-        .find_map(|(name_meta, field_def)| {
-            if field_def.is_none() {
-                Some(name_meta.value.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default()
 }
 
 /// Format a Block to a String.
