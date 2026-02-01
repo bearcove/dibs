@@ -8,12 +8,13 @@ fn collect_param_refs_from_where(where_clause: &Where) -> Vec<String> {
     let mut refs = Vec::new();
     for (_col_name, filter) in &where_clause.filters {
         match filter {
-            FilterValue::Eq(s) => {
+            FilterValue::EqBare(s) => {
                 if let Some(param) = s.strip_prefix('$') {
                     refs.push(param.to_string());
                 }
             }
-            FilterValue::Ilike(args)
+            FilterValue::Eq(args)
+            | FilterValue::Ilike(args)
             | FilterValue::Like(args)
             | FilterValue::Gt(args)
             | FilterValue::Lt(args)

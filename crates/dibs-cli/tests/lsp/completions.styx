@@ -469,7 +469,7 @@ tests (
                 from product
                 where {deleted_at @null}
                 params {
-                    unused_param TEXT
+                    unused_param @string
                 }
                 select {id}
             }
@@ -486,7 +486,7 @@ tests (
             GoodQuery @query{
                 from product
                 params {
-                    h TEXT
+                    h @string
                 }
                 where {deleted_at @null, handle $h}
                 select {id}

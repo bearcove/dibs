@@ -29,7 +29,10 @@ pub fn lint_missing_deleted_at_filter(query: &Query, ctx: &mut LintContext<'_>) 
     if !filters_deleted_at {
         DiagnosticBuilder::warning("missing-deleted-at-filter")
             .at(from.span)
-            .msg("query on table with 'deleted_at' but no filter - consider 'deleted_at @null'")
+            .msg(format!(
+                "query on '{}' doesn't filter 'deleted_at' - consider adding 'deleted_at @null'",
+                from.as_str()
+            ))
             .emit(ctx.diagnostics);
     }
 }

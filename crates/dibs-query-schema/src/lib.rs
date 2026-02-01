@@ -324,10 +324,11 @@ pub enum FilterValue {
     Contains(Vec<Meta<String>>),
     /// Key exists operator (@key_exists($param)) -> `column ? $param`
     KeyExists(Vec<Meta<String>>),
+    /// Explicit equality (@eq($param) or @eq(value))
+    Eq(Vec<Meta<String>>),
     /// Equality - bare scalar fallback (e.g., `$handle` or `"value"`)
-    /// Note: Cannot use Meta<String> here because #[facet(other)] doesn't support metadata containers.
     #[facet(other)]
-    Eq(String),
+    EqBare(Meta<String>),
 }
 
 /// Query parameters.
@@ -649,7 +650,7 @@ mod tests {
         }
     }
 
-    /// Test that FilterValue::Eq works (plain String, not Meta).
+    /// Test that FilterValue::EqBare works (plain String, not Meta).
     #[test]
     fn filter_value_eq() {
         let source = r#"{id $id}"#;
@@ -661,8 +662,8 @@ mod tests {
                 let (key, value) = where_clause.filters.iter().next().unwrap();
                 assert_eq!(key.value, "id");
                 match value {
-                    FilterValue::Eq(s) => assert_eq!(s, "$id"),
-                    _ => panic!("Expected Eq variant, got {:?}", value),
+                    FilterValue::EqBare(s) => assert_eq!(s, "$id"),
+                    _ => panic!("Expected EqBare variant, got {:?}", value),
                 }
             }
             Err(e) => {

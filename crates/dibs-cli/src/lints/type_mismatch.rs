@@ -24,6 +24,25 @@ fn types_compatible(param_type: &str, sql_type: &str) -> bool {
     }
 }
 
+/// Infer the type of a literal value.
+/// Returns None if it's a param reference (starts with $) or unknown.
+fn infer_literal_type(value: &str) -> Option<&'static str> {
+    if value.starts_with('$') {
+        return None; // Param reference, not a literal
+    }
+    if value == "true" || value == "false" {
+        return Some("boolean");
+    }
+    if value.parse::<i64>().is_ok() {
+        return Some("int");
+    }
+    if value.parse::<f64>().is_ok() {
+        return Some("float");
+    }
+    // Everything else is a string (quoted strings arrive without quotes in EqBare)
+    Some("string")
+}
+
 fn param_type_name(param_type: &ParamType) -> String {
     match param_type {
         ParamType::String => "string".to_string(),
@@ -56,8 +75,9 @@ pub fn lint_param_types_in_where(
 
         // Extract param name from filter
         let param_name = match filter {
-            FilterValue::Eq(s) => s.strip_prefix('$'),
-            FilterValue::Ilike(args)
+            FilterValue::EqBare(s) => s.strip_prefix('$'),
+            FilterValue::Eq(args)
+            | FilterValue::Ilike(args)
             | FilterValue::Like(args)
             | FilterValue::Gt(args)
             | FilterValue::Lt(args)

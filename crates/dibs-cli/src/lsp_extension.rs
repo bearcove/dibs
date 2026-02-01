@@ -226,8 +226,8 @@ impl DibsExtension {
 
     /// Parse styx content into typed QueryFile.
     /// Returns None if parsing fails (syntax errors are handled by styx-lsp itself).
-    fn parse_query_file(content: &str) -> Option<QueryFile> {
-        facet_styx::from_str(content).ok()
+    fn parse_query_file(content: &str) -> Result<QueryFile, facet_styx::DeserializeError> {
+        facet_styx::from_str(content)
     }
 
     /// Get completions for table names.
@@ -249,15 +249,17 @@ impl DibsExtension {
     }
 
     /// Collect diagnostics from the content using typed schema.
-    async fn collect_diagnostics_typed(&self, content: &str, diagnostics: &mut Vec<Diagnostic>) {
+    async fn collect_diagnostics_typed(
+        &self,
+        content: &str,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Result<(), facet_styx::DeserializeError> {
         use crate::lints::{self, LintContext};
 
         let schema = self.schema().await;
 
         // Parse content to typed schema
-        let Some(query_file) = Self::parse_query_file(content) else {
-            return;
-        };
+        let query_file = Self::parse_query_file(content)?;
 
         let mut ctx = LintContext::new(&schema, diagnostics);
 
@@ -370,6 +372,8 @@ impl DibsExtension {
                 }
             }
         }
+
+        Ok(())
     }
 
     /// Collect inlay hints from a value tree.
@@ -923,8 +927,26 @@ impl StyxLspExtension for DibsExtension {
         let mut diagnostics = Vec::new();
 
         // Use typed schema for diagnostics
-        self.collect_diagnostics_typed(&params.content, &mut diagnostics)
-            .await;
+        if let Err(e) = self
+            .collect_diagnostics_typed(&params.content, &mut diagnostics)
+            .await
+        {
+            let span = e
+                .span()
+                .copied()
+                .unwrap_or(dibs_query_schema::Span { offset: 0, len: 0 });
+            diagnostics.push(Diagnostic {
+                span: styx_tree::Span {
+                    start: span.offset as u32,
+                    end: (span.offset + span.len) as u32,
+                },
+                severity: styx_lsp_ext::DiagnosticSeverity::Error,
+                message: e.to_string(),
+                source: Some("dibs".to_string()),
+                code: Some("parse-error".to_string()),
+                data: None,
+            });
+        }
 
         diagnostics
     }
