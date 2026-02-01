@@ -37,7 +37,6 @@ facet-tokio-postgres = { path = "crates/facet-tokio-postgres" }
 facet-styx = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-embed = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-tree = { git = "https://github.com/bearcove/styx", branch = "main", features = ["facet"] }
-styx-parse = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-lsp-ext = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-lsp = { git = "https://github.com/bearcove/styx", branch = "main" }
 

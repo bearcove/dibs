@@ -2,7 +2,7 @@
 //!
 //! These represent the semantic structure of a query after parsing from styx.
 
-use styx_parse::Span;
+use dibs_query_schema::Span;
 
 /// A file containing multiple queries and mutations.
 #[derive(Debug, Clone)]
@@ -24,7 +24,7 @@ pub struct Query {
     /// Doc comment from the styx file (/// comments).
     pub doc_comment: Option<String>,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
     /// Query parameters.
     pub params: Vec<Param>,
     /// Root table to query from.
@@ -59,7 +59,7 @@ pub struct Param {
     /// Parameter type.
     pub ty: ParamType,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Parameter types.
@@ -79,11 +79,11 @@ pub enum ParamType {
 #[derive(Debug, Clone)]
 pub enum Field {
     /// Simple column reference.
-    Column { name: String, span: Option<Span> },
+    Column { name: String, span: Span },
     /// Relation (nested query via FK).
     Relation {
         name: String,
-        span: Option<Span>,
+        span: Span,
         /// Explicit target table (if specified with `from`).
         from: Option<String>,
         /// WHERE filters for the relation.
@@ -99,7 +99,7 @@ pub enum Field {
     Count {
         name: String,
         table: String,
-        span: Option<Span>,
+        span: Span,
     },
 }
 
@@ -113,7 +113,7 @@ pub struct Filter {
     /// Value to compare against.
     pub value: Expr,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Filter operators.
@@ -175,7 +175,7 @@ pub struct OrderBy {
     /// Direction.
     pub direction: SortDir,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 /// Sort direction.
@@ -190,7 +190,7 @@ pub enum SortDir {
 pub struct ReturnField {
     pub name: String,
     pub ty: ParamType,
-    pub span: Option<Span>,
+    pub span: Span,
 }
 
 impl Query {
@@ -208,7 +208,7 @@ pub struct InsertMutation {
     /// Doc comment from the styx file (/// comments).
     pub doc_comment: Option<String>,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
     /// Parameters.
     pub params: Vec<Param>,
     /// Target table.
@@ -227,7 +227,7 @@ pub struct UpsertMutation {
     /// Doc comment from the styx file (/// comments).
     pub doc_comment: Option<String>,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
     /// Parameters.
     pub params: Vec<Param>,
     /// Target table.
@@ -248,7 +248,7 @@ pub struct InsertManyMutation {
     /// Doc comment from the styx file (/// comments).
     pub doc_comment: Option<String>,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
     /// Parameters - each becomes an array parameter for UNNEST.
     pub params: Vec<Param>,
     /// Target table.
@@ -268,7 +268,7 @@ pub struct UpsertManyMutation {
     /// Doc comment from the styx file (/// comments).
     pub doc_comment: Option<String>,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
     /// Parameters - each becomes an array parameter for UNNEST.
     pub params: Vec<Param>,
     /// Target table.
@@ -289,7 +289,7 @@ pub struct UpdateMutation {
     /// Doc comment from the styx file (/// comments).
     pub doc_comment: Option<String>,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
     /// Parameters.
     pub params: Vec<Param>,
     /// Target table.
@@ -310,7 +310,7 @@ pub struct DeleteMutation {
     /// Doc comment from the styx file (/// comments).
     pub doc_comment: Option<String>,
     /// Source span.
-    pub span: Option<Span>,
+    pub span: Span,
     /// Parameters.
     pub params: Vec<Param>,
     /// Target table.

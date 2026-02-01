@@ -34,7 +34,7 @@ AllProducts @query{
 
         match decl {
             Decl::Query(q) => {
-                assert_eq!(q.from.as_deref(), Some("product"));
+                assert_eq!(q.from.as_ref().map(|m| m.value.as_str()), Some("product"));
                 assert_eq!(q.select.as_ref().unwrap().fields.len(), 2);
             }
             _ => panic!("expected Query"),
@@ -137,10 +137,10 @@ ProductByHandle @query{
         let where_clause = q.where_clause.as_ref().expect("should have where");
         assert_eq!(where_clause.filters.len(), 1);
         match where_clause.filters.get("handle") {
-            Some(FilterValue::Eq(s)) => {
-                assert_eq!(s, "$handle");
+            Some(FilterValue::EqBare(Some(meta))) => {
+                assert_eq!(meta.as_str(), "$handle");
             }
-            other => panic!("expected Eq, got {:?}", other),
+            other => panic!("expected EqBare(Some), got {:?}", other),
         }
     }
 
@@ -206,7 +206,7 @@ SingleProduct @query{
             panic!("expected Query");
         };
 
-        assert_eq!(q.first, Some(true));
+        assert_eq!(q.first.as_ref().map(|m| m.value), Some(true));
     }
 
     #[test]
@@ -226,10 +226,19 @@ ProductsSorted @query{
         let order_by = q.order_by.as_ref().expect("should have order_by");
         assert_eq!(order_by.columns.len(), 2);
         assert_eq!(
-            order_by.columns.get("created_at"),
-            Some(&Some("desc".to_string()))
+            order_by
+                .columns
+                .get("created_at")
+                .and_then(|o| o.value_as_deref()),
+            Some("desc")
         );
-        assert_eq!(order_by.columns.get("name"), Some(&None)); // no direction = asc
+        assert!(
+            order_by
+                .columns
+                .get("name")
+                .map(|o| o.is_none())
+                .unwrap_or(false)
+        ); // no direction = asc
     }
 
     #[test]
@@ -248,8 +257,8 @@ PagedProducts @query{
             panic!("expected Query");
         };
 
-        assert_eq!(q.limit, Some("10".to_string()));
-        assert_eq!(q.offset, Some("$page".to_string()));
+        assert_eq!(q.limit.as_ref().map(|m| m.value.as_str()), Some("10"));
+        assert_eq!(q.offset.as_ref().map(|m| m.value.as_str()), Some("$page"));
     }
 
     #[test]
@@ -283,7 +292,7 @@ ProductWithTranslation @query{
         let translation = select.fields.get("translation").unwrap().as_ref().unwrap();
         match translation {
             FieldDef::Rel(rel) => {
-                assert_eq!(rel.first, Some(true));
+                assert_eq!(rel.first.as_ref().map(|m| m.value), Some(true));
                 let select = rel.select.as_ref().unwrap();
                 assert_eq!(select.fields.len(), 2);
             }
