@@ -64,6 +64,7 @@ impl DiagnosticBuilder {
         }
     }
 
+    #[allow(dead_code)]
     pub fn hint(code: &'static str) -> Self {
         Self {
             span: None,

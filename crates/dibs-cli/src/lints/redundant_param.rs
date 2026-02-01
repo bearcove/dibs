@@ -12,7 +12,7 @@ pub fn lint_redundant_params_in_values(values: &Values, ctx: &mut LintContext<'_
             && let Some(param_name) = s.as_str().strip_prefix('$')
             && param_name == col_name.as_str()
         {
-            DiagnosticBuilder::hint("redundant-param")
+            DiagnosticBuilder::warning("redundant-param")
                 .at(s.span)
                 .msg(format!(
                     "'{} ${}' can be shortened to just '{}' (implicit @param)",
@@ -37,7 +37,7 @@ pub fn lint_redundant_params_in_conflict_update(
             && let Some(param_name) = s.as_str().strip_prefix('$')
             && param_name == col_name.as_str()
         {
-            DiagnosticBuilder::hint("redundant-param")
+            DiagnosticBuilder::warning("redundant-param")
                 .at(s.span)
                 .msg(format!(
                     "'{} ${}' can be shortened to just '{}' (implicit @param)",
@@ -56,7 +56,7 @@ pub fn lint_redundant_params_in_where(where_clause: &Where, ctx: &mut LintContex
             && let Some(param_name) = meta.as_str().strip_prefix('$')
             && param_name == col_name.as_str()
         {
-            DiagnosticBuilder::hint("redundant-param")
+            DiagnosticBuilder::warning("redundant-param")
                 .at(col_name.span)
                 .msg(format!(
                     "'{} ${}' can be shortened to just '{}' (implicit @param)",
