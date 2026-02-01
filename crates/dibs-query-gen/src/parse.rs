@@ -4,9 +4,18 @@
 
 use crate::ast::*;
 use crate::schema;
-use dibs_query_schema::{OptionMetaCopyExt, OptionMetaDerefExt};
+use dibs_query_schema::{OptionMetaCopyExt, OptionMetaDerefExt, Span};
 use facet_format::DeserializeError;
 use thiserror::Error;
+
+/// Unwrap a span that should always be present.
+///
+/// Spans are always present when parsing styx documents because we're always
+/// *in* the document. This is a workaround for facet-styx requiring Option<Span>
+/// in metadata containers - see https://github.com/facet-rs/facet/issues/1993
+fn unwrap_span(span: Option<Span>) -> Span {
+    span.expect("span should always be present when parsing styx")
+}
 
 /// Errors that can occur when parsing a query file.
 ///
@@ -197,7 +206,7 @@ fn convert_query(
                 .map(|(name, ty)| ReturnField {
                     name: name.value.clone(),
                     ty: convert_param_type(ty),
-                    span: name.span,
+                    span: unwrap_span(name.span),
                 })
                 .collect()
         } else {
@@ -207,7 +216,7 @@ fn convert_query(
         return Ok(Query {
             name: name.to_string(),
             doc_comment,
-            span: None,
+            span: unwrap_span(sql.span),
             params: convert_params(&q.params),
             from: String::new(),
             filters: Vec::new(),
@@ -238,7 +247,7 @@ fn convert_query(
     Ok(Query {
         name: name.to_string(),
         doc_comment,
-        span: from_spanned.span,
+        span: unwrap_span(from_spanned.span),
         params: convert_params(&q.params),
         from: from_spanned.value,
         filters: convert_filters(&q.where_clause),
@@ -269,7 +278,7 @@ fn convert_params(params: &Option<schema::Params>) -> Vec<Param> {
         .map(|(name, ty)| Param {
             name: name.value.clone(),
             ty: convert_param_type(ty),
-            span: name.span,
+            span: unwrap_span(name.span),
         })
         .collect()
 }
@@ -309,7 +318,7 @@ fn convert_filters(where_clause: &Option<schema::Where>) -> Vec<Filter> {
                 column: column.value.clone(),
                 op,
                 value: expr,
-                span: column.span,
+                span: unwrap_span(column.span),
             }
         })
         .collect()
@@ -439,7 +448,7 @@ fn convert_order_by(order_by: &Option<schema::OrderBy>) -> Vec<OrderBy> {
                 Some("desc") | Some("DESC") => SortDir::Desc,
                 _ => SortDir::Asc,
             },
-            span: column.span,
+            span: unwrap_span(column.span),
         })
         .collect()
 }
@@ -452,11 +461,11 @@ fn convert_select(select: &schema::Select) -> Vec<Field> {
         .map(|(name, field_def)| match field_def {
             None => Field::Column {
                 name: name.value.clone(),
-                span: name.span,
+                span: unwrap_span(name.span),
             },
             Some(schema::FieldDef::Rel(rel)) => Field::Relation {
                 name: name.value.clone(),
-                span: name.span,
+                span: unwrap_span(name.span),
                 from: rel.from.value_as_deref().map(|s| s.to_string()),
                 filters: convert_filters(&rel.where_clause),
                 order_by: convert_order_by(&rel.order_by),
@@ -470,7 +479,7 @@ fn convert_select(select: &schema::Select) -> Vec<Field> {
                     .value_as_deref()
                     .unwrap_or_default()
                     .to_string(),
-                span: name.span,
+                span: unwrap_span(name.span),
             },
         })
         .collect()
@@ -481,7 +490,7 @@ fn convert_insert(name: &str, i: &schema::Insert, doc_comment: Option<String>) -
     InsertMutation {
         name: name.to_string(),
         doc_comment,
-        span: i.into.span,
+        span: unwrap_span(i.into.span),
         params: convert_params(&i.params),
         table: i.into.value.clone(),
         values: convert_values(&i.values),
@@ -534,7 +543,7 @@ fn convert_upsert(name: &str, u: &schema::Upsert, doc_comment: Option<String>) -
     UpsertMutation {
         name: name.to_string(),
         doc_comment,
-        span: u.into.span,
+        span: unwrap_span(u.into.span),
         params: convert_params(&u.params),
         table: u.into.value.clone(),
         conflict_columns: u
@@ -558,7 +567,7 @@ fn convert_insert_many(
     InsertManyMutation {
         name: name.to_string(),
         doc_comment,
-        span: i.into.span,
+        span: unwrap_span(i.into.span),
         params: convert_params(&i.params),
         table: i.into.value.clone(),
         values: convert_values(&i.values),
@@ -614,7 +623,7 @@ fn convert_upsert_many(
     UpsertManyMutation {
         name: name.to_string(),
         doc_comment,
-        span: u.into.span,
+        span: unwrap_span(u.into.span),
         params: convert_params(&u.params),
         table: u.into.value.clone(),
         conflict_columns: u
@@ -634,7 +643,7 @@ fn convert_update(name: &str, u: &schema::Update, doc_comment: Option<String>) -
     UpdateMutation {
         name: name.to_string(),
         doc_comment,
-        span: u.table.span,
+        span: unwrap_span(u.table.span),
         params: convert_params(&u.params),
         table: u.table.value.clone(),
         values: convert_values(&u.set),
@@ -648,7 +657,7 @@ fn convert_delete(name: &str, d: &schema::Delete, doc_comment: Option<String>) -
     DeleteMutation {
         name: name.to_string(),
         doc_comment,
-        span: d.from.span,
+        span: unwrap_span(d.from.span),
         params: convert_params(&d.params),
         table: d.from.value.clone(),
         filters: convert_filters(&d.where_clause),

@@ -2,5 +2,8 @@
 
 enabled true
 captain true
-// filter "not package(my-app-queries) and not package(dibs-query-gen) and not binary(postgres_integration) and not (test(solver::proptests))"
-filter "not binary(postgres_integration) and not (test(solver::proptests))"
+
+workspace {
+    // filter "not package(my-app-queries) and not package(dibs-query-gen) and not binary(postgres_integration) and not (test(solver::proptests))"
+    filter "not binary(postgres_integration) and not (test(solver::proptests))"
+}

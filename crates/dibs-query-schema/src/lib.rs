@@ -25,9 +25,9 @@ pub struct Meta<T> {
     #[facet(metadata = "tag")]
     pub tag: Option<String>,
 
-    /// The source span (offset and length), if available.
+    /// The source span (offset and length).
     #[facet(metadata = "span")]
-    pub span: Option<Span>,
+    pub span: Span,
 
     /// Documentation lines (each line is a separate string).
     #[facet(metadata = "doc")]
@@ -67,21 +67,11 @@ impl PartialEq<str> for Meta<String> {
 }
 
 impl<T> Meta<T> {
-    /// Create a new spanned value without metadata.
-    pub fn new(value: T) -> Self {
-        Self {
-            value,
-            span: None,
-            doc: None,
-            tag: None,
-        }
-    }
-
     /// Create a new spanned value with span information.
     pub fn with_span(value: T, span: Span) -> Self {
         Self {
             value,
-            span: Some(span),
+            span,
             doc: None,
             tag: None,
         }
@@ -128,7 +118,7 @@ impl<T> OptionMetaExt<T> for Option<Meta<T>> {
     }
 
     fn meta_span(&self) -> Option<Span> {
-        self.as_ref().and_then(|m| m.span)
+        self.as_ref().map(|m| m.span)
     }
 }
 
@@ -184,17 +174,6 @@ impl<T> Deref for Meta<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.value
-    }
-}
-
-impl<T> From<T> for Meta<T> {
-    fn from(value: T) -> Self {
-        Self {
-            value,
-            span: None,
-            doc: None,
-            tag: None,
-        }
     }
 }
 
