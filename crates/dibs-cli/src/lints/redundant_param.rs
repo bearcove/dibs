@@ -52,7 +52,7 @@ pub fn lint_redundant_params_in_conflict_update(
 
 pub fn lint_redundant_params_in_where(where_clause: &Where, ctx: &mut LintContext<'_>) {
     for (col_name, filter) in &where_clause.filters {
-        if let FilterValue::EqBare(meta) = filter
+        if let FilterValue::EqBare(Some(meta)) = filter
             && let Some(param_name) = meta.as_str().strip_prefix('$')
             && param_name == col_name.as_str()
         {

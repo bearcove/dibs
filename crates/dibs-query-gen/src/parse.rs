@@ -304,7 +304,7 @@ fn convert_filters(where_clause: &Option<schema::Where>) -> Vec<Filter> {
         .filters
         .iter()
         .map(|(column, value)| {
-            let (op, expr) = convert_filter_value(value);
+            let (op, expr) = convert_filter_value(value, &column.value);
             Filter {
                 column: column.value.clone(),
                 op,
@@ -316,11 +316,17 @@ fn convert_filters(where_clause: &Option<schema::Where>) -> Vec<Filter> {
 }
 
 /// Convert schema FilterValue to (FilterOp, Expr).
-fn convert_filter_value(value: &schema::FilterValue) -> (FilterOp, Expr) {
+fn convert_filter_value(value: &schema::FilterValue, column_name: &str) -> (FilterOp, Expr) {
     match value {
         schema::FilterValue::Null => (FilterOp::IsNull, Expr::Null),
         schema::FilterValue::NotNull => (FilterOp::IsNotNull, Expr::Null),
-        schema::FilterValue::EqBare(meta) => (FilterOp::Eq, parse_expr_string(meta.as_str())),
+        schema::FilterValue::EqBare(meta_opt) => {
+            let expr = match meta_opt {
+                Some(meta) => parse_expr_string(meta.as_str()),
+                None => Expr::Param(column_name.to_string()),
+            };
+            (FilterOp::Eq, expr)
+        }
         schema::FilterValue::Eq(args) => {
             let expr = args
                 .first()

@@ -328,7 +328,7 @@ pub enum FilterValue {
     Eq(Vec<Meta<String>>),
     /// Equality - bare scalar fallback (e.g., `$handle` or `"value"`)
     #[facet(other)]
-    EqBare(Meta<String>),
+    EqBare(Option<Meta<String>>),
 }
 
 /// Query parameters.
@@ -667,11 +667,41 @@ mod tests {
                 let (key, value) = where_clause.filters.iter().next().unwrap();
                 assert_eq!(key.value, "id");
                 match value {
-                    FilterValue::EqBare(meta) => {
+                    FilterValue::EqBare(Some(meta)) => {
                         assert_eq!(meta.as_str(), "$id");
                         // Verify span is captured (offset 4, len 3 for "$id")
                         assert_eq!(meta.span.offset, 4);
                         assert_eq!(meta.span.len, 3);
+                    }
+                    _ => panic!("Expected EqBare variant, got {:?}", value),
+                }
+            }
+            Err(e) => {
+                panic!("Failed to parse: {}", e.render("<test>", source));
+            }
+        }
+    }
+
+    /// Test that FilterValue::EqBare works with shorthand (no value).
+    #[test]
+    fn filter_value_eq_shorthand() {
+        let source = r#"{id}"#;
+        let result: Result<Where, _> = facet_styx::from_str(source);
+
+        match result {
+            Ok(where_clause) => {
+                assert_eq!(where_clause.filters.len(), 1);
+                let (key, value) = where_clause.filters.iter().next().unwrap();
+                assert_eq!(key.value, "id");
+                match value {
+                    FilterValue::EqBare(None) => {
+                        // Success - shorthand syntax where {id} means {id $id}
+                    }
+                    FilterValue::EqBare(Some(meta)) => {
+                        panic!(
+                            "Expected EqBare(None) for shorthand, got EqBare(Some({}))",
+                            meta.as_str()
+                        );
                     }
                     _ => panic!("Expected EqBare variant, got {:?}", value),
                 }

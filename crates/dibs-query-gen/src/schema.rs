@@ -137,10 +137,10 @@ ProductByHandle @query{
         let where_clause = q.where_clause.as_ref().expect("should have where");
         assert_eq!(where_clause.filters.len(), 1);
         match where_clause.filters.get("handle") {
-            Some(FilterValue::EqBare(meta)) => {
+            Some(FilterValue::EqBare(Some(meta))) => {
                 assert_eq!(meta.as_str(), "$handle");
             }
-            other => panic!("expected EqBare, got {:?}", other),
+            other => panic!("expected EqBare(Some), got {:?}", other),
         }
     }
 

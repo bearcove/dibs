@@ -74,7 +74,7 @@ pub fn lint_literal_types_in_where(
         };
 
         // Check for literal type mismatch (EqBare with non-param value)
-        if let FilterValue::EqBare(meta) = filter {
+        if let FilterValue::EqBare(Some(meta)) = filter {
             let value = meta.as_str();
             if !value.starts_with('$') {
                 // It's a literal, check type compatibility
@@ -108,7 +108,8 @@ pub fn lint_param_types_in_where(
 
         // Extract param name from filter
         let param_name = match filter {
-            FilterValue::EqBare(meta) => meta.as_str().strip_prefix('$'),
+            FilterValue::EqBare(Some(meta)) => meta.as_str().strip_prefix('$'),
+            FilterValue::EqBare(None) => Some(col_name.as_str()),
             FilterValue::Eq(args)
             | FilterValue::Ilike(args)
             | FilterValue::Like(args)

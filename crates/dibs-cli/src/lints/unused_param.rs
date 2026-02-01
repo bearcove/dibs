@@ -6,12 +6,16 @@ use dibs_query_schema::*;
 /// Collect param refs from a Where clause.
 fn collect_param_refs_from_where(where_clause: &Where) -> Vec<String> {
     let mut refs = Vec::new();
-    for (_col_name, filter) in &where_clause.filters {
+    for (col_name, filter) in &where_clause.filters {
         match filter {
-            FilterValue::EqBare(meta) => {
+            FilterValue::EqBare(Some(meta)) => {
                 if let Some(param) = meta.as_str().strip_prefix('$') {
                     refs.push(param.to_string());
                 }
+            }
+            FilterValue::EqBare(None) => {
+                // Shorthand: {column} means {column $column}
+                refs.push(col_name.as_str().to_string());
             }
             FilterValue::Eq(args)
             | FilterValue::Ilike(args)
