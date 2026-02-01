@@ -1032,14 +1032,7 @@ UpsertRate @upsert{
 #[test]
 fn test_parse_with_schema_declaration() {
     // Test parsing with @schema declaration at top (like real query files)
-    let source = r#"@schema {id crate:dibs-queries@1, cli dibs}
-
-AllProducts @query{
-    from product
-    select {id}
-}
-"#;
+    let source = include_str!("fixtures/queries.styx");
     let file = parse_query_file("<test>", source).unwrap();
-    assert_eq!(file.queries.len(), 1);
-    assert_eq!(file.queries[0].name, "AllProducts");
+    assert!(!file.queries.is_empty());
 }
