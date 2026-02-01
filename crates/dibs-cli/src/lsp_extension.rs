@@ -274,6 +274,7 @@ impl DibsExtension {
                     if let Some(from) = &query.from {
                         if let Some(table) = ctx.find_table(from.as_str()) {
                             if let Some(select) = &query.select {
+                                lints::lint_empty_select(select, &mut ctx);
                                 lints::lint_unknown_columns_select(select, table, &mut ctx);
                                 lints::lint_relations_in_select(
                                     select,

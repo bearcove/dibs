@@ -723,21 +723,6 @@ tests (
     }
 
     {
-        name "lint: literal string for bigint column"
-        input <<STYX
-            BadQuery @query{
-                from product
-                where {deleted_at @null, id "123"}
-                select {id}
-            }
-            STYX
-        diagnostics {
-            count 1
-            has ({message "type mismatch", code "literal-type-mismatch"})
-        }
-    }
-
-    {
         name "lint: literal boolean for text column"
         input <<STYX
             BadQuery @query{

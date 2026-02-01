@@ -3,6 +3,7 @@
 //! Each lint is in its own module for maintainability. Lints are applied
 //! during diagnostics collection.
 
+mod empty_select;
 mod mutation_without_where;
 mod pagination;
 mod redundant_param;
@@ -17,6 +18,7 @@ use dibs_proto::SchemaInfo;
 use dibs_query_schema::*;
 use styx_lsp_ext::{Diagnostic, DiagnosticSeverity};
 
+pub use empty_select::*;
 pub use mutation_without_where::*;
 pub use pagination::*;
 pub use redundant_param::*;

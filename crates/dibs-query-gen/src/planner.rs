@@ -7,7 +7,6 @@
 //! - Result assembly mapping
 
 use crate::ast::{Expr, Field, Filter, FilterOp, OrderBy, Query, SortDir};
-use dibs_query_schema::Span;
 use std::collections::HashMap;
 
 /// Schema information needed for query planning.
@@ -766,6 +765,7 @@ fn format_join_filter(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dibs_query_schema::Span;
 
     fn test_schema() -> PlannerSchema {
         let mut schema = PlannerSchema::default();

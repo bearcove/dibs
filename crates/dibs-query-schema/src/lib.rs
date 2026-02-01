@@ -356,7 +356,12 @@ pub enum ParamType {
 
 /// SELECT clause.
 #[derive(Debug, Facet)]
+#[facet(metadata_container)]
 pub struct Select {
+    /// Source span of the select block.
+    #[facet(metadata = "span")]
+    pub span: Span,
+
     #[facet(flatten)]
     pub fields: IndexMap<Meta<String>, Option<FieldDef>>,
 }
