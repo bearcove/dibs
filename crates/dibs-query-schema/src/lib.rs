@@ -104,7 +104,7 @@ impl<T: Copy> Meta<T> {
     }
 }
 
-/// Extension trait for Option<Meta<T>> to make access more ergonomic.
+/// Extension trait for `Option<Meta<T>>` to make access more ergonomic.
 pub trait OptionMetaExt<T> {
     /// Get the inner value by reference if present.
     fn inner(&self) -> Option<&T>;
@@ -122,7 +122,7 @@ impl<T> OptionMetaExt<T> for Option<Meta<T>> {
     }
 }
 
-/// Extension trait for Option<Meta<T>> where T is Copy (like bool).
+/// Extension trait for `Option<Meta<T>>` where T is Copy (like bool).
 pub trait OptionMetaCopyExt<T: Copy> {
     /// Get the inner value if present.
     fn value(&self) -> Option<T>;
@@ -134,7 +134,7 @@ impl<T: Copy> OptionMetaCopyExt<T> for Option<Meta<T>> {
     }
 }
 
-/// Extension trait for Option<Meta<T>> to get references to the inner value.
+/// Extension trait for `Option<Meta<T>>` to get references to the inner value.
 pub trait OptionMetaDerefExt<T> {
     /// Get the inner value by reference if present.
     fn value_as_ref(&self) -> Option<&T>;
