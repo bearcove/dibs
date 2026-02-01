@@ -41,6 +41,17 @@
 //! - Patterns are explicit (dedup, Option vs Vec, column extraction)
 //! - Less duplication (helpers are reused)
 //! - Schema types are more ergonomic to work with
+//!
+//! # Error Handling Philosophy
+//!
+//! NO SILENT FALLBACKS. If something goes wrong:
+//! - Missing plan data → panic with clear message
+//! - Schema mismatch → panic with clear message
+//! - Missing column type → panic with clear message
+//!
+//! Silent fallbacks (like `unwrap_or_else(|| "id".to_string())`) hide bugs.
+//! We want errors to be loud and obvious during development, not mysterious
+//! wrong behavior at runtime.
 
 use crate::planner::PlannerSchema;
 use crate::schema::*;
@@ -89,11 +100,17 @@ pub struct RelationGenerationContext<'a> {
 
 impl<'a> QueryGenerationContext<'a> {
     /// Get the type of a column in the root table.
+    /// Panics if column type cannot be determined - this is a schema mismatch error.
     fn root_column_type(&self, col_name: &str) -> String {
         self.codegen
             .schema
             .column_type(self.root_table, col_name)
-            .unwrap_or_else(|| "i64".to_string())
+            .unwrap_or_else(|| {
+                panic!(
+                    "schema mismatch: column '{}' not found in table '{}'",
+                    col_name, self.root_table
+                )
+            })
     }
 
     /// Look up a column's index by alias.
@@ -104,12 +121,18 @@ impl<'a> QueryGenerationContext<'a> {
 
 impl<'a> RelationGenerationContext<'a> {
     /// Get the type of a column in this relation's table.
+    /// Panics if column type cannot be determined - this is a schema mismatch error.
     fn column_type(&self, col_name: &str) -> String {
         self.query
             .codegen
             .schema
             .column_type(self.relation_table, col_name)
-            .unwrap_or_else(|| "String".to_string())
+            .unwrap_or_else(|| {
+                panic!(
+                    "schema mismatch: column '{}' not found in relation table '{}'",
+                    col_name, self.relation_table
+                )
+            })
     }
 
     /// Build the alias for a column in this relation.
@@ -232,7 +255,7 @@ pub fn generate_vec_relation_assembly_refactored(
 ) -> String {
     let mut block = Block::new("");
 
-    // Find the parent key column from the plan
+    // Find the parent key column from the plan - this MUST be present or the plan is wrong
     let parent_key_column = query_ctx
         .plan
         .result_mapping
@@ -240,7 +263,7 @@ pub fn generate_vec_relation_assembly_refactored(
         .values()
         .find_map(|r| r.parent_key_column.as_ref())
         .cloned()
-        .unwrap_or_else(|| "id".to_string());
+        .expect("plan must have parent_key_column for Vec relation assembly");
 
     let parent_key_type = query_ctx.root_column_type(&parent_key_column);
 
