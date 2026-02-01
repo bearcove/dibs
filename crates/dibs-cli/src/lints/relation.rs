@@ -29,11 +29,13 @@ fn has_fk_relationship(table_a: &str, table_b: &str, schema: &SchemaInfo) -> boo
 
 pub fn lint_relation(rel: &Relation, parent_table: Option<&str>, ctx: &mut LintContext<'_>) {
     // first without order-by
-    if rel.first.value().unwrap_or(false) && rel.order_by.is_none() {
-        DiagnosticBuilder::warning("rel-first-without-order-by")
-            .at(rel.first.meta_span())
-            .msg("'first' in @rel without 'order-by' returns arbitrary row")
-            .emit(ctx.diagnostics);
+    if let Some(first) = &rel.first {
+        if first.value && rel.order_by.is_none() {
+            DiagnosticBuilder::warning("rel-first-without-order-by")
+                .at(first.span)
+                .msg("'first' in @rel without 'order-by' returns arbitrary row")
+                .emit(ctx.diagnostics);
+        }
     }
 
     // FK relationship check

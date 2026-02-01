@@ -71,8 +71,8 @@ impl DiagnosticBuilder {
         }
     }
 
-    pub fn at(mut self, span: Option<Span>) -> Self {
-        self.span = span.map(to_styx_span);
+    pub fn at(mut self, span: Span) -> Self {
+        self.span = Some(to_styx_span(span));
         self
     }
 
