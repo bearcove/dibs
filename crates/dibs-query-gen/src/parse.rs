@@ -4,6 +4,7 @@
 
 use crate::ast::*;
 use crate::schema;
+use dibs_query_schema::{OptionMetaCopyExt, OptionMetaDerefExt};
 use facet_format::DeserializeError;
 use thiserror::Error;
 
@@ -217,7 +218,7 @@ fn convert_query(
             distinct: false,
             distinct_on: Vec::new(),
             select: Vec::new(),
-            raw_sql: Some(sql.clone()),
+            raw_sql: Some(sql.value.clone()),
             returns,
         });
     }
@@ -244,8 +245,8 @@ fn convert_query(
         order_by: convert_order_by(&q.order_by),
         limit: q.limit.as_ref().map(|s| parse_expr_string(&s.value)),
         offset: q.offset.as_ref().map(|s| parse_expr_string(&s.value)),
-        first: q.first.as_ref().map(|s| s.value).unwrap_or(false),
-        distinct: q.distinct.unwrap_or(false),
+        first: q.first.value().unwrap_or(false),
+        distinct: q.distinct.value().unwrap_or(false),
         distinct_on: q
             .distinct_on
             .as_ref()
@@ -434,7 +435,7 @@ fn convert_order_by(order_by: &Option<schema::OrderBy>) -> Vec<OrderBy> {
         .iter()
         .map(|(column, direction)| OrderBy {
             column: column.value.clone(),
-            direction: match direction.as_deref() {
+            direction: match direction.value_as_deref() {
                 Some("desc") | Some("DESC") => SortDir::Desc,
                 _ => SortDir::Asc,
             },
@@ -456,15 +457,19 @@ fn convert_select(select: &schema::Select) -> Vec<Field> {
             Some(schema::FieldDef::Rel(rel)) => Field::Relation {
                 name: name.value.clone(),
                 span: name.span,
-                from: rel.from.as_ref().map(|s| s.value.clone()),
+                from: rel.from.value_as_deref().map(|s| s.to_string()),
                 filters: convert_filters(&rel.where_clause),
                 order_by: convert_order_by(&rel.order_by),
-                first: rel.first.as_ref().map(|s| s.value).unwrap_or(false),
+                first: rel.first.value().unwrap_or(false),
                 select: rel.select.as_ref().map(convert_select).unwrap_or_default(),
             },
             Some(schema::FieldDef::Count(tables)) => Field::Count {
                 name: name.value.clone(),
-                table: tables.first().cloned().unwrap_or_default(),
+                table: tables
+                    .first()
+                    .value_as_deref()
+                    .unwrap_or_default()
+                    .to_string(),
                 span: name.span,
             },
         })

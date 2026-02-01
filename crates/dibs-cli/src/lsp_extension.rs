@@ -9,6 +9,10 @@
 use crate::config;
 use crate::service::{self, ServiceConnection};
 use dibs_proto::{SchemaInfo, TableInfo};
+use dibs_query_schema::{
+    Decl, FieldDef, FilterValue, Meta, OptionMetaCopyExt, OptionMetaDerefExt, OptionMetaExt,
+    Params, Query, QueryFile, Relation, Select, Span as QuerySpan, Values, Where,
+};
 use roam_session::HandshakeConfig;
 use roam_stream::CobsFramed;
 use std::path::Path;
@@ -276,6 +280,12 @@ impl DibsExtension {
             .as_ref()
             .map(|s| s.schema.clone())
             .unwrap_or_else(|| SchemaInfo { tables: vec![] })
+    }
+
+    /// Parse styx content into typed QueryFile.
+    /// Returns None if parsing fails (syntax errors are handled by styx-lsp itself).
+    fn parse_query_file(content: &str) -> Option<QueryFile> {
+        facet_styx::from_str(content).ok()
     }
 
     /// Find entries where `column $column` can be shortened to just `column`.

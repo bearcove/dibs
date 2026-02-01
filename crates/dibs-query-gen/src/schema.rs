@@ -226,10 +226,19 @@ ProductsSorted @query{
         let order_by = q.order_by.as_ref().expect("should have order_by");
         assert_eq!(order_by.columns.len(), 2);
         assert_eq!(
-            order_by.columns.get("created_at"),
-            Some(&Some("desc".to_string()))
+            order_by
+                .columns
+                .get("created_at")
+                .and_then(|o| o.value_as_deref()),
+            Some("desc")
         );
-        assert_eq!(order_by.columns.get("name"), Some(&None)); // no direction = asc
+        assert!(
+            order_by
+                .columns
+                .get("name")
+                .map(|o| o.is_none())
+                .unwrap_or(false)
+        ); // no direction = asc
     }
 
     #[test]

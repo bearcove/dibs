@@ -54,6 +54,18 @@ impl Borrow<str> for Meta<String> {
     }
 }
 
+impl PartialEq<&str> for Meta<String> {
+    fn eq(&self, other: &&str) -> bool {
+        self.value == *other
+    }
+}
+
+impl PartialEq<str> for Meta<String> {
+    fn eq(&self, other: &str) -> bool {
+        self.value == other
+    }
+}
+
 impl<T> Meta<T> {
     /// Create a new spanned value without metadata.
     pub fn new(value: T) -> Self {
@@ -78,6 +90,93 @@ impl<T> Meta<T> {
     /// Get the documentation as a single joined string.
     pub fn doc_string(&self) -> Option<String> {
         self.doc.as_ref().map(|lines| lines.join("\n"))
+    }
+}
+
+impl Meta<String> {
+    /// Get the value as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+impl<'a> Meta<std::borrow::Cow<'a, str>> {
+    /// Get the value as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+impl<T: Copy> Meta<T> {
+    /// Get the inner value (for Copy types like bool).
+    pub fn get(&self) -> T {
+        self.value
+    }
+}
+
+/// Extension trait for Option<Meta<T>> to make access more ergonomic.
+pub trait OptionMetaExt<T> {
+    /// Get the inner value by reference if present.
+    fn inner(&self) -> Option<&T>;
+    /// Get the span if the Meta is present.
+    fn meta_span(&self) -> Option<Span>;
+}
+
+impl<T> OptionMetaExt<T> for Option<Meta<T>> {
+    fn inner(&self) -> Option<&T> {
+        self.as_ref().map(|m| &m.value)
+    }
+
+    fn meta_span(&self) -> Option<Span> {
+        self.as_ref().and_then(|m| m.span)
+    }
+}
+
+/// Extension trait for Option<Meta<T>> where T is Copy (like bool).
+pub trait OptionMetaCopyExt<T: Copy> {
+    /// Get the inner value if present.
+    fn value(&self) -> Option<T>;
+}
+
+impl<T: Copy> OptionMetaCopyExt<T> for Option<Meta<T>> {
+    fn value(&self) -> Option<T> {
+        self.as_ref().map(|m| m.value)
+    }
+}
+
+/// Extension trait for Option<Meta<T>> to get references to the inner value.
+pub trait OptionMetaDerefExt<T> {
+    /// Get the inner value by reference if present.
+    fn value_as_ref(&self) -> Option<&T>;
+    /// Get the inner value as its Deref target if present.
+    fn value_as_deref(&self) -> Option<&<T as Deref>::Target>
+    where
+        T: Deref;
+}
+
+impl<T> OptionMetaDerefExt<T> for Option<Meta<T>> {
+    fn value_as_ref(&self) -> Option<&T> {
+        self.as_ref().map(|m| &m.value)
+    }
+
+    fn value_as_deref(&self) -> Option<&<T as Deref>::Target>
+    where
+        T: Deref,
+    {
+        self.as_ref().map(|m| m.value.deref())
+    }
+}
+
+impl<T> OptionMetaDerefExt<T> for Option<&Meta<T>> {
+    fn value_as_ref(&self) -> Option<&T> {
+        self.map(|m| &m.value)
+    }
+
+    fn value_as_deref(&self) -> Option<&<T as Deref>::Target>
+    where
+        T: Deref,
+    {
+        self.map(|m| m.value.deref())
     }
 }
 
@@ -148,7 +247,7 @@ pub struct Query {
     pub first: Option<Meta<bool>>,
 
     /// Use DISTINCT to return only unique rows.
-    pub distinct: Option<bool>,
+    pub distinct: Option<Meta<bool>>,
 
     /// DISTINCT ON clause (PostgreSQL-specific) - return first row of each group.
     pub distinct_on: Option<DistinctOn>,
@@ -166,7 +265,7 @@ pub struct Query {
     pub select: Option<Select>,
 
     /// Raw SQL query string (for raw SQL queries).
-    pub sql: Option<String>,
+    pub sql: Option<Meta<String>>,
 
     /// Return type specification (for raw SQL queries).
     pub returns: Option<Returns>,
@@ -189,7 +288,7 @@ pub struct DistinctOn(pub Vec<Meta<String>>);
 pub struct OrderBy {
     /// Column name -> direction ("asc" or "desc", None means asc)
     #[facet(flatten)]
-    pub columns: IndexMap<Meta<String>, Option<String>>,
+    pub columns: IndexMap<Meta<String>, Option<Meta<String>>>,
 }
 
 /// WHERE clause - filter conditions.
@@ -223,30 +322,31 @@ pub enum FilterValue {
     #[facet(rename = "not-null")]
     NotNull,
     /// ILIKE pattern matching (@ilike($param) or @ilike("pattern"))
-    Ilike(Vec<String>),
+    Ilike(Vec<Meta<String>>),
     /// LIKE pattern matching (@like($param) or @like("pattern"))
-    Like(Vec<String>),
+    Like(Vec<Meta<String>>),
     /// Greater than (@gt($param) or @gt(value))
-    Gt(Vec<String>),
+    Gt(Vec<Meta<String>>),
     /// Less than (@lt($param) or @lt(value))
-    Lt(Vec<String>),
+    Lt(Vec<Meta<String>>),
     /// Greater than or equal (@gte($param) or @gte(value))
-    Gte(Vec<String>),
+    Gte(Vec<Meta<String>>),
     /// Less than or equal (@lte($param) or @lte(value))
-    Lte(Vec<String>),
+    Lte(Vec<Meta<String>>),
     /// Not equal (@ne($param) or @ne(value))
-    Ne(Vec<String>),
+    Ne(Vec<Meta<String>>),
     /// IN array check (@in($param)) - param should be an array type
-    In(Vec<String>),
+    In(Vec<Meta<String>>),
     /// JSONB get object operator (@json_get($param)) -> `column -> $param`
-    JsonGet(Vec<String>),
+    JsonGet(Vec<Meta<String>>),
     /// JSONB get text operator (@json_get_text($param)) -> `column ->> $param`
-    JsonGetText(Vec<String>),
+    JsonGetText(Vec<Meta<String>>),
     /// Contains operator (@contains($param)) -> `column @> $param`
-    Contains(Vec<String>),
+    Contains(Vec<Meta<String>>),
     /// Key exists operator (@key_exists($param)) -> `column ? $param`
-    KeyExists(Vec<String>),
+    KeyExists(Vec<Meta<String>>),
     /// Equality - bare scalar fallback (e.g., `$handle` or `"value"`)
+    /// Note: Cannot use Meta<String> here because #[facet(other)] doesn't support metadata containers.
     #[facet(other)]
     Eq(String),
 }
@@ -290,7 +390,7 @@ pub enum FieldDef {
     /// A relation field (`@rel{...}`).
     Rel(Relation),
     /// A count aggregation (`@count(table_name)`).
-    Count(Vec<String>),
+    Count(Vec<Meta<String>>),
 }
 
 /// A relation definition (nested query on related table).
@@ -445,7 +545,7 @@ pub struct Values {
 #[repr(u8)]
 pub enum Payload {
     /// Scalar payload (for bare values like $name)
-    Scalar(String),
+    Scalar(Meta<String>),
     /// Sequence payload (for functions with args like @coalesce($a $b))
     Seq(Vec<ValueExpr>),
 }
@@ -563,6 +663,28 @@ mod tests {
                 assert_eq!(where_clause.filters.len(), 1);
                 let key = where_clause.filters.keys().next().unwrap();
                 assert_eq!(key.value, "deleted_at");
+            }
+            Err(e) => {
+                panic!("Failed to parse: {}", e.render("<test>", source));
+            }
+        }
+    }
+
+    /// Test that FilterValue::Eq works (plain String, not Meta).
+    #[test]
+    fn filter_value_eq() {
+        let source = r#"{id $id}"#;
+        let result: Result<Where, _> = facet_styx::from_str(source);
+
+        match result {
+            Ok(where_clause) => {
+                assert_eq!(where_clause.filters.len(), 1);
+                let (key, value) = where_clause.filters.iter().next().unwrap();
+                assert_eq!(key.value, "id");
+                match value {
+                    FilterValue::Eq(s) => assert_eq!(s, "$id"),
+                    _ => panic!("Expected Eq variant, got {:?}", value),
+                }
             }
             Err(e) => {
                 panic!("Failed to parse: {}", e.render("<test>", source));
