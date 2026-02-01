@@ -53,22 +53,23 @@
 //! We want errors to be loud and obvious during development, not mysterious
 //! wrong behavior at runtime.
 
-use crate::planner::PlannerSchema;
+use crate::codegen::CodegenContext;
+use crate::planner::QueryPlan;
 use crate::schema::*;
-use crate::sql::GeneratedSql;
 use codegen::Block;
 use std::collections::HashMap;
+use std::fmt;
 
 /// Top-level context for generating code for a query.
 pub struct QueryGenerationContext<'a> {
     /// Code generation context with schema info.
-    pub codegen: &'a crate::codegen::CodegenContext<'a>,
+    pub codegen: &'a CodegenContext<'a>,
 
     /// Maps column aliases to their indices in the result row.
     pub column_order: &'a HashMap<String, usize>,
 
     /// The query plan with JOIN and result mapping info.
-    pub plan: &'a crate::planner::QueryPlan,
+    pub plan: &'a QueryPlan,
 
     /// The root table being queried.
     pub root_table: &'a str,
@@ -78,6 +79,9 @@ pub struct QueryGenerationContext<'a> {
 
     /// The name of the result struct being built.
     pub struct_name: &'a str,
+
+    /// The original source code - used for error reporting with Ariadne.
+    pub source: &'a str,
 }
 
 /// Context for generating code for a specific relation.
@@ -100,16 +104,35 @@ pub struct RelationGenerationContext<'a> {
 
 impl<'a> QueryGenerationContext<'a> {
     /// Get the type of a column in the root table.
-    /// Panics if column type cannot be determined - this is a schema mismatch error.
-    fn root_column_type(&self, col_name: &str) -> String {
+    /// If we have Meta<String> with span info, we can point to the exact location.
+    /// Otherwise returns Option and caller must provide context for the error.
+    fn root_column_type(&self, col_name: &str) -> Option<String> {
+        self.codegen.schema.column_type(self.root_table, col_name)
+    }
+
+    /// Get the type of a column with error reporting.
+    /// Takes the Meta wrapper so we have span for error reporting.
+    ///
+    /// # Pattern
+    /// We provide two variants:
+    /// 1. `root_column_type(&str)` -> `Option<String>`
+    ///    For callers that handle errors locally or don't have span info
+    /// 2. `root_column_type_with_span(&Meta<String>)` -> `Result<String, QueryGenError>`
+    ///    For callers that want proper error reporting pointing to source location
+    fn root_column_type_with_span(
+        &self,
+        col_name_meta: &Meta<String>,
+    ) -> Result<String, QueryGenError> {
         self.codegen
             .schema
-            .column_type(self.root_table, col_name)
-            .unwrap_or_else(|| {
-                panic!(
-                    "schema mismatch: column '{}' not found in table '{}'",
-                    col_name, self.root_table
-                )
+            .column_type(self.root_table, &col_name_meta.value)
+            .ok_or_else(|| QueryGenError {
+                span: col_name_meta.span,
+                source: self.source.to_string(),
+                kind: ErrorKind::ColumnNotFound {
+                    table: self.root_table.to_string(),
+                    column: col_name_meta.value.clone(),
+                },
             })
     }
 
@@ -137,7 +160,7 @@ impl<'a> RelationGenerationContext<'a> {
 
     /// Build the alias for a column in this relation.
     fn column_alias(&self, col_name: &str) -> String {
-        format!("{}_{}", self.col_prefix, col_name)
+        format!("{}_{col_name}", self.col_prefix)
     }
 
     /// Look up a column's index by its alias.
@@ -421,6 +444,103 @@ pub fn generate_vec_relation_assembly_refactored(
 
     format_block_to_string(&block)
 }
+
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+/// Shared error type for planner and codegen.
+/// Both work with the same schema and span information, so they can share errors.
+/// Most errors would be caught at planning time, but we need proper error reporting
+/// for codegen-time issues (schema mismatches, unexpected state, etc).
+#[derive(Debug, Clone)]
+pub struct QueryGenError {
+    /// Location in the source .styx file
+    pub span: Span,
+    /// The original source code (for rendering diagnostics)
+    pub source: String,
+    /// Error classification and details
+    pub kind: ErrorKind,
+}
+
+/// Error classification for query generation.
+/// Can be extended by both planner and codegen as needed.
+#[derive(Debug, Clone)]
+pub enum ErrorKind {
+    // Schema-related errors
+    ColumnNotFound {
+        table: String,
+        column: String,
+    },
+    TableNotFound {
+        table: String,
+    },
+    SchemaMismatch {
+        table: String,
+        column: String,
+        reason: String,
+    },
+
+    // Planning errors
+    RelationNotFound {
+        relation: String,
+    },
+    InvalidJoinPath {
+        from_table: String,
+        to_table: String,
+        reason: String,
+    },
+
+    // Codegen errors
+    PlanMissing {
+        reason: String,
+    },
+    DeduplicationFailed {
+        reason: String,
+    },
+}
+
+impl fmt::Display for QueryGenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.kind)
+    }
+}
+
+impl std::error::Error for QueryGenError {}
+
+// ============================================================================
+// ERROR SITES IN CURRENT CODE (TO BE FIXED)
+// ============================================================================
+//
+// These are locations in the existing code where we silently fail, panic,
+// or use fallbacks instead of proper error reporting:
+//
+// codegen.rs:
+//   Line ~536: query.from is used without checking if it's None
+//             → Should return error with query span
+//   Line ~575: parent_prefix used but can be empty
+//             → Should validate or return error
+//   Line ~734: get_id_column(select) used but returns Option, unwrapped with None handling
+//             → Should return error if not found for dedup
+//   Line ~1163: get_id_column returns None silently
+//             → Should return error if dedup is needed
+//   Line ~1360: get_first_column returns empty string as fallback
+//             → Should return error if column is required
+//
+// sql.rs:
+//   Line ~25-130: generate_simple_sql doesn't validate query.from
+//             → Should return Result<GeneratedSql, QueryGenError>
+//   Line ~285-380: format_filter uses FilterValue but doesn't validate params
+//             → Should return error if param not found
+//   Line ~1985: Various column lookups that fail silently
+//
+// planner.rs:
+//   Line ~145-450: plan_query uses query fields without validation
+//             → Should return Result with proper errors
+//   Line ~622-765: filter formatting assumes columns exist
+//             → Should return error if column not found
+//
+// ============================================================================
 
 // ============================================================================
 // OBSERVATIONS & PATTERNS
