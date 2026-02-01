@@ -607,6 +607,166 @@ pub struct Returning {
     pub columns: IndexMap<Meta<String>, ()>,
 }
 
+// ============================================================================
+// CONVENIENCE METHODS FOR SCHEMA TYPES
+// ============================================================================
+
+impl Query {
+    /// Check if this query returns only the first result.
+    pub fn is_first(&self) -> bool {
+        self.first.is_some()
+    }
+
+    /// Check if this query has any relations in its select clause.
+    pub fn has_relations(&self) -> bool {
+        self.select
+            .as_ref()
+            .map(|select| select.has_relations())
+            .unwrap_or(false)
+    }
+
+    /// Check if this query has any Vec (has-many) relations.
+    pub fn has_vec_relations(&self) -> bool {
+        self.select
+            .as_ref()
+            .map(|select| select.has_vec_relations())
+            .unwrap_or(false)
+    }
+
+    /// Check if this query has nested Vec relations (Vec containing Vec).
+    pub fn has_nested_vec_relations(&self) -> bool {
+        self.select
+            .as_ref()
+            .map(|select| select.has_nested_vec_relations())
+            .unwrap_or(false)
+    }
+}
+
+impl Select {
+    /// Get the first simple column (None field_def) in this select.
+    pub fn first_column(&self) -> Option<String> {
+        self.fields.iter().find_map(|(name_meta, field_def)| {
+            if field_def.is_none() {
+                Some(name_meta.value.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get the "id" column if it exists as a simple column.
+    pub fn id_column(&self) -> Option<String> {
+        self.fields.iter().find_map(|(name_meta, field_def)| {
+            if field_def.is_none() && name_meta.value == "id" {
+                Some(name_meta.value.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Check if this select has any relations.
+    pub fn has_relations(&self) -> bool {
+        self.fields
+            .values()
+            .any(|field_def| matches!(field_def, Some(FieldDef::Rel(_))))
+    }
+
+    /// Check if this select has any Vec (has-many) relations.
+    pub fn has_vec_relations(&self) -> bool {
+        self.fields.values().any(|field_def| {
+            if let Some(FieldDef::Rel(rel)) = field_def {
+                rel.first.is_none()
+            } else {
+                false
+            }
+        })
+    }
+
+    /// Check if this select has nested Vec relations.
+    pub fn has_nested_vec_relations(&self) -> bool {
+        for field_def in self.fields.values() {
+            if let Some(FieldDef::Rel(rel)) = field_def {
+                if rel.first.is_none() {
+                    // This is a Vec relation
+                    if let Some(rel_select) = &rel.select {
+                        if rel_select.has_vec_relations() || rel_select.has_nested_vec_relations() {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Iterate over simple columns (fields with None FieldDef).
+    pub fn columns(&self) -> impl Iterator<Item = (&Meta<String>, &Option<FieldDef>)> {
+        self.fields
+            .iter()
+            .filter(|(_, field_def)| field_def.is_none())
+    }
+
+    /// Iterate over relations (fields with Some(FieldDef::Rel(_))).
+    pub fn relations(&self) -> impl Iterator<Item = (&Meta<String>, &Relation)> {
+        self.fields.iter().filter_map(|(name, field_def)| {
+            if let Some(FieldDef::Rel(rel)) = field_def {
+                Some((name, rel))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over count aggregations (fields with Some(FieldDef::Count(_))).
+    pub fn counts(&self) -> impl Iterator<Item = (&Meta<String>, &Vec<Meta<String>>)> {
+        self.fields.iter().filter_map(|(name, field_def)| {
+            if let Some(FieldDef::Count(tables)) = field_def {
+                Some((name, tables))
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl Relation {
+    /// Get the table name for this relation.
+    /// Returns the explicit `from` table if set, otherwise returns None
+    /// (caller should use the relation field name as fallback).
+    pub fn table_name(&self) -> Option<&str> {
+        self.from.as_ref().map(|m| m.value.as_str())
+    }
+
+    /// Check if this relation is a single result (first).
+    pub fn is_first(&self) -> bool {
+        self.first.is_some()
+    }
+
+    /// Check if this relation has any nested relations.
+    pub fn has_relations(&self) -> bool {
+        self.select
+            .as_ref()
+            .map(|select| select.has_relations())
+            .unwrap_or(false)
+    }
+
+    /// Check if this relation has any Vec (has-many) nested relations.
+    pub fn has_vec_relations(&self) -> bool {
+        self.select
+            .as_ref()
+            .map(|select| select.has_vec_relations())
+            .unwrap_or(false)
+    }
+}
+
+impl Params {
+    /// Iterate over parameters by name and type.
+    pub fn iter(&self) -> impl Iterator<Item = (&Meta<String>, &ParamType)> {
+        self.params.iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
