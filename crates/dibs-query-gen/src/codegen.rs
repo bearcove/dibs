@@ -5,19 +5,230 @@ use crate::schema::*;
 use crate::sql::{GeneratedSql, generate_simple_sql, generate_sql_with_joins};
 use codegen::{Block, Function, Scope, Struct};
 use std::collections::HashMap;
+use std::fmt;
 
-/// Helper to generate a row.get() call using column index if available, with a comment.
-fn row_get(column_name: &str, column_order: &HashMap<String, usize>) -> String {
+// ============================================================================
+// Error Handling Types
+// ============================================================================
+
+/// Error during code generation.
+/// Carries span information for proper error reporting.
+#[derive(Debug, Clone)]
+pub struct QueryGenError {
+    /// Location in the source .styx file
+    pub span: Span,
+    /// The original source code (for rendering diagnostics)
+    pub source: String,
+    /// Error classification and details
+    pub kind: ErrorKind,
+}
+
+/// Error classification for query generation.
+#[derive(Debug, Clone)]
+pub enum ErrorKind {
+    ColumnNotFound {
+        table: String,
+        column: String,
+    },
+    TableNotFound {
+        table: String,
+    },
+    SchemaMismatch {
+        table: String,
+        column: String,
+        reason: String,
+    },
+    PlanMissing {
+        reason: String,
+    },
+}
+
+impl fmt::Display for QueryGenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.kind)
+    }
+}
+
+impl std::error::Error for QueryGenError {}
+
+// ============================================================================
+// Code Generation Contexts
+// ============================================================================
+
+/// Top-level context for generating code for a query.
+struct QueryGenerationContext<'a> {
+    /// Code generation context with schema info.
+    codegen: &'a CodegenContext<'a>,
+    /// Maps column aliases to their indices in the result row.
+    column_order: &'a HashMap<String, usize>,
+    /// The query plan with JOIN and result mapping info.
+    plan: &'a crate::planner::QueryPlan,
+    /// The root table being queried.
+    root_table: &'a str,
+    /// Whether this query returns only the first result.
+    is_first: bool,
+    /// The name of the result struct being built.
+    struct_name: &'a str,
+    /// The original source code - used for error reporting.
+    source: &'a str,
+}
+
+impl<'a> QueryGenerationContext<'a> {
+    /// Get the type of a column in the root table.
+    fn root_column_type(&self, col_name: &str) -> Option<String> {
+        self.codegen.schema.column_type(self.root_table, col_name)
+    }
+
+    /// Get the type of a column with error reporting.
+    /// Takes the Meta wrapper so we have span for error reporting.
+    fn root_column_type_with_span(
+        &self,
+        col_name_meta: &Meta<String>,
+    ) -> Result<String, QueryGenError> {
+        self.codegen
+            .schema
+            .column_type(self.root_table, &col_name_meta.value)
+            .ok_or_else(|| QueryGenError {
+                span: col_name_meta.span,
+                source: self.source.to_string(),
+                kind: ErrorKind::ColumnNotFound {
+                    table: self.root_table.to_string(),
+                    column: col_name_meta.value.clone(),
+                },
+            })
+    }
+
+    /// Look up a column's index by alias.
+    fn column_index(&self, alias: &str) -> Option<usize> {
+        self.column_order.get(alias).copied()
+    }
+}
+
+/// Context for generating code for a specific relation.
+struct RelationGenerationContext<'a> {
+    /// Parent query context (has schema, column_order, plan, etc).
+    query: &'a QueryGenerationContext<'a>,
+    /// The table this relation queries from.
+    relation_table: &'a str,
+    /// Column prefix for aliases (e.g., "users" for relation named "users").
+    col_prefix: &'a str,
+    /// Whether this relation is Option (first) or Vec.
+    is_first: bool,
+    /// The name of the struct for this relation.
+    struct_name: &'a str,
+}
+
+impl<'a> RelationGenerationContext<'a> {
+    /// Get the type of a column in this relation's table.
+    /// Panics if column type cannot be determined - this is a schema mismatch error.
+    fn column_type(&self, col_name: &str) -> String {
+        self.query
+            .codegen
+            .schema
+            .column_type(self.relation_table, col_name)
+            .unwrap_or_else(|| {
+                panic!(
+                    "schema mismatch: column '{}' not found in relation table '{}'",
+                    col_name, self.relation_table
+                )
+            })
+    }
+
+    /// Build the alias for a column in this relation.
+    fn column_alias(&self, col_name: &str) -> String {
+        format!("{}_{}", self.col_prefix, col_name)
+    }
+
+    /// Look up a column's index by its alias.
+    fn column_index(&self, col_name: &str) -> Option<usize> {
+        self.query.column_index(&self.column_alias(col_name))
+    }
+
+    /// Generate code to extract a column value from a row and add it to a block.
+    fn generate_column_extraction(&self, block: &mut Block, col_name: &str, first_alias: &str) {
+        let alias = self.column_alias(col_name);
+        let rust_ty = self.column_type(col_name);
+
+        let value_expr = if rust_ty.starts_with("Option<") {
+            // Already optional, just get it
+            format_row_get(&alias, self.query.column_order)
+        } else if alias == first_alias {
+            // This is the first/key column, we already extracted it
+            format!("{first_alias}_val")
+        } else {
+            // Non-optional, need to unwrap
+            format!(
+                "row.get::<_, Option<_>>({}).unwrap()",
+                format_col_selector(&alias, self.query.column_order)
+            )
+        };
+
+        block.line(format!("{col_name}: {value_expr},"));
+    }
+
+    /// Generate code to extract a column from the first relation (inside map closure).
+    fn generate_column_extraction_in_map(
+        &self,
+        block: &mut Block,
+        col_name: &str,
+        first_alias: &str,
+    ) {
+        let alias = self.column_alias(col_name);
+        let rust_ty = self.column_type(col_name);
+
+        let value_expr = if rust_ty.starts_with("Option<") {
+            format!("row.get(\"{alias}\")")
+        } else if alias == first_alias {
+            format!("{first_alias}_val")
+        } else {
+            format!("row.get::<_, Option<_>>(\"{alias}\").unwrap()")
+        };
+
+        block.line(format!("{col_name}: {value_expr},"));
+    }
+
+    /// Generate code to add all column fields from a select to a block.
+    fn generate_select_columns(&self, block: &mut Block, select: &Select, first_alias: &str) {
+        for (name_meta, field_def) in &select.fields {
+            // Only process simple columns (None means simple column)
+            if field_def.is_none() {
+                let col_name = &name_meta.value;
+                self.generate_column_extraction(block, col_name, first_alias);
+            }
+        }
+    }
+
+    /// Generate code to add all column fields from a select to a block (for map closure).
+    fn generate_select_columns_in_map(
+        &self,
+        block: &mut Block,
+        select: &Select,
+        first_alias: &str,
+    ) {
+        for (name_meta, field_def) in &select.fields {
+            if field_def.is_none() {
+                let col_name = &name_meta.value;
+                self.generate_column_extraction_in_map(block, col_name, first_alias);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Standalone Helper Functions for Row Access
+// ============================================================================
+
+/// Helper to generate row.get() call using column index if available, with a comment.
+fn format_row_get(column_name: &str, column_order: &HashMap<String, usize>) -> String {
     if let Some(&idx) = column_order.get(column_name) {
         format!("row.get({}) /* {} */", idx, column_name)
     } else {
-        // Fallback to name-based access (shouldn't happen if column_order is complete)
         format!("row.get(\"{}\")", column_name)
     }
 }
 
 /// Helper to get just the column selector (index or quoted string) for use in row.get::<T>(...)
-fn col_selector(column_name: &str, column_order: &HashMap<String, usize>) -> String {
+fn format_col_selector(column_name: &str, column_order: &HashMap<String, usize>) -> String {
     if let Some(&idx) = column_order.get(column_name) {
         format!("{} /* {} */", idx, column_name)
     } else {
@@ -102,11 +313,6 @@ pub fn generate_rust_code_with_planner(
     schema: &SchemaInfo,
     planner_schema: Option<&PlannerSchema>,
 ) -> GeneratedCode {
-    let ctx = CodegenContext {
-        schema,
-        planner_schema,
-    };
-
     let mut scope = Scope::new();
 
     // Add file header as raw code
@@ -116,6 +322,12 @@ pub fn generate_rust_code_with_planner(
     // Imports
     scope.import("dibs_runtime::prelude", "*");
     scope.import("dibs_runtime", "tokio_postgres");
+
+    let ctx = CodegenContext {
+        schema,
+        planner_schema,
+        scope: Scope::new(),
+    };
 
     // Iterate through declarations and generate code for each type
     for (name_meta, decl) in &file.0 {
@@ -438,6 +650,13 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
 
     // Check if we have Vec relations - if so, use HashMap-based grouping
     if let Some(select) = &query.select {
+        let root_table = query
+            .from
+            .as_ref()
+            .map(|m| m.value.as_str())
+            .unwrap_or("unknown");
+        let is_first = query.is_first();
+
         if has_vec_relations(query) {
             if has_nested_vec_relations(select) {
                 block.line(generate_nested_vec_relation_assembly(
@@ -446,6 +665,8 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
                     struct_name,
                     plan,
                     &generated.column_order,
+                    root_table,
+                    is_first,
                 ));
             } else {
                 block.line(generate_vec_relation_assembly(
@@ -454,6 +675,8 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
                     struct_name,
                     plan,
                     &generated.column_order,
+                    root_table,
+                    is_first,
                 ));
             }
         } else {
@@ -462,6 +685,7 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
                 select,
                 struct_name,
                 &generated.column_order,
+                root_table,
             ));
         }
     }
@@ -500,7 +724,7 @@ fn generate_from_row_body(query: &Query, generated: &GeneratedSql) -> Block {
     }
 
     // Result processing
-    if query.first {
+    if query.first.is_some() {
         let mut match_block = Block::new("match rows.into_iter().next()");
         match_block.line("Some(row) => Ok(Some(from_row(&row)?)),");
         match_block.line("None => Ok(None),");
@@ -514,11 +738,13 @@ fn generate_from_row_body(query: &Query, generated: &GeneratedSql) -> Block {
 
 /// Generate assembly code for queries with Vec (has-many) relations.
 fn generate_vec_relation_assembly(
-    ctx: &CodegenContext,
+    codegen_ctx: &CodegenContext,
     select: &Select,
     struct_name: &str,
     plan: &crate::planner::QueryPlan,
     column_order: &HashMap<String, usize>,
+    root_table: &str,
+    is_first: bool,
 ) -> String {
     let mut block = Block::new("");
 
@@ -531,87 +757,55 @@ fn generate_vec_relation_assembly(
         .cloned()
         .unwrap_or_else(|| "id".to_string());
 
-    let parent_key_type = ctx
+    let parent_key_type = codegen_ctx
         .schema
-        .column_type(&query.from, &parent_key_column)
+        .column_type(root_table, &parent_key_column)
         .unwrap_or_else(|| "i64".to_string());
 
     block.line("// Group rows by parent ID for has-many relations");
     block.line(format!(
-        "let mut grouped: std::collections::HashMap<{}, {}> = std::collections::HashMap::new();",
-        parent_key_type, struct_name
+        "let mut grouped: std::collections::HashMap<{parent_key_type}, {struct_name}> = std::collections::HashMap::new();",
     ));
     block.line("");
 
     // For loop over rows
     let mut for_block = Block::new("for row in rows.iter()");
     for_block.line(format!(
-        "let parent_id: {} = {};",
-        parent_key_type,
-        row_get(&parent_key_column, column_order)
+        "let parent_id: {parent_key_type} = {};",
+        format_row_get(&parent_key_column, column_order)
     ));
     for_block.line("");
 
     // Entry insertion with or_insert_with
     let mut entry_block = Block::new(format!(
-        "let entry = grouped.entry(parent_id.clone()).or_insert_with(|| {}",
-        struct_name
+        "let entry = grouped.entry(parent_id.clone()).or_insert_with(|| {struct_name}"
     ));
 
-    for field in &query.select {
-        match field {
-            Field::Column { name, .. } => {
-                entry_block.line(format!("{}: {},", name, row_get(name, column_order)));
+    // Iterate over fields in the select clause
+    for (field_name_meta, field_def) in &select.fields {
+        let field_name = &field_name_meta.value;
+        match field_def {
+            None => {
+                // Simple column
+                entry_block.line(format!(
+                    "{field_name}: {},",
+                    format_row_get(field_name, column_order)
+                ));
             }
-            Field::Relation {
-                name,
-                first,
-                from,
-                select,
-                ..
-            } => {
-                if *first {
-                    let rel_table = from.as_deref().unwrap_or(name);
-                    let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
-                    let first_col = get_first_column(select);
-                    let first_alias = format!("{}_{}", name, first_col);
-
-                    // Build the Option relation inline
-                    let mut map_block = Block::new(format!(
-                        "{}: row.get::<_, Option<_>>({}).map(|{}_val| {}",
-                        name,
-                        col_selector(&first_alias, column_order),
-                        first_alias,
-                        nested_name
-                    ));
-                    for f in select {
-                        if let Field::Column { name: col_name, .. } = f {
-                            let alias = format!("{}_{}", name, col_name);
-                            let rust_ty = ctx
-                                .schema
-                                .column_type(rel_table, col_name)
-                                .unwrap_or_else(|| "String".to_string());
-                            let value_expr = if rust_ty.starts_with("Option<") {
-                                row_get(&alias, column_order)
-                            } else if alias == first_alias {
-                                format!("{}_val", first_alias)
-                            } else {
-                                format!(
-                                    "row.get::<_, Option<_>>({}).unwrap()",
-                                    col_selector(&alias, column_order)
-                                )
-                            };
-                            map_block.line(format!("{}: {},", col_name, value_expr));
-                        }
-                    }
-                    map_block.after("),");
-                    entry_block.push_block(map_block);
+            Some(FieldDef::Rel(rel)) => {
+                if rel.is_first() {
+                    // Option relation - will be populated below with map
+                    entry_block.line(format!("{field_name}: None,"));
                 } else {
-                    entry_block.line(format!("{}: vec![],", name));
+                    // Vec relation - initialize empty
+                    entry_block.line(format!("{field_name}: vec![],"));
                 }
             }
-            Field::Count { name, .. } => {
-                entry_block.line(format!("{}: {},", name, row_get(name, column_order)));
+            Some(FieldDef::Count(_)) => {
+                entry_block.line(format!(
+                    "{field_name}: {},",
+                    format_row_get(field_name, column_order)
+                ));
             }
         }
     }
@@ -619,59 +813,103 @@ fn generate_vec_relation_assembly(
     for_block.push_block(entry_block);
     for_block.line("");
 
-    // Append to Vec relations
-    for field in &query.select {
-        if let Field::Relation {
-            name,
-            first: false,
-            select,
-            from,
-            ..
-        } = field
-        {
-            let rel_table = from.as_deref().unwrap_or(name);
-            let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
-            let first_col = get_first_column(select);
-            let first_alias = format!("{}_{}", name, first_col);
+    // Now populate Option relations and Vec relations
+    for (field_name_meta, field_def) in &select.fields {
+        let field_name = &field_name_meta.value;
 
-            for_block.line(format!(
-                "// Append {} if present (LEFT JOIN may have NULL)",
-                name
-            ));
+        if let Some(FieldDef::Rel(rel)) = field_def {
+            let rel_table = rel.table_name().unwrap_or(field_name);
+            if let Some(rel_select) = &rel.select {
+                let first_col = rel_select.first_column().unwrap_or_default();
+                let first_alias = format!("{field_name}_{first_col}");
 
-            let mut if_block = Block::new(format!(
-                "if let Some({}_val) = row.get::<_, Option<_>>(\"{}\")",
-                first_alias, first_alias
-            ));
+                if rel.is_first() {
+                    // Option relation - populate with map
+                    let nested_struct_name = format!(
+                        "{}Nested{}",
+                        to_pascal_case(&struct_name.replace("Result", "")),
+                        to_pascal_case(field_name)
+                    );
 
-            let mut push_block = Block::new(format!("entry.{}.push({}", name, nested_name));
-            for f in select {
-                if let Field::Column { name: col_name, .. } = f {
-                    let alias = format!("{}_{}", name, col_name);
-                    let rust_ty = ctx
-                        .schema
-                        .column_type(rel_table, col_name)
-                        .unwrap_or_else(|| "String".to_string());
-                    let value_expr = if rust_ty.starts_with("Option<") {
-                        format!("row.get(\"{}\")", alias)
-                    } else if alias == first_alias {
-                        format!("{}_val", first_alias)
-                    } else {
-                        format!("row.get::<_, Option<_>>(\"{}\").unwrap()", alias)
+                    let mut map_block = Block::new(format!(
+                        "entry.{field_name} = row.get::<_, Option<_>>({}).map(|{first_alias}_val| {nested_struct_name}",
+                        format_col_selector(&first_alias, column_order)
+                    ));
+
+                    let rel_ctx = RelationGenerationContext {
+                        query: &QueryGenerationContext {
+                            codegen: codegen_ctx,
+                            column_order,
+                            plan,
+                            root_table,
+                            is_first,
+                            struct_name: &nested_struct_name,
+                            source: "",
+                        },
+                        relation_table: rel_table,
+                        col_prefix: field_name,
+                        is_first: true,
+                        struct_name: &nested_struct_name,
                     };
-                    push_block.line(format!("{}: {},", col_name, value_expr));
+
+                    rel_ctx.generate_select_columns_in_map(
+                        &mut map_block,
+                        rel_select,
+                        &first_alias,
+                    );
+
+                    map_block.after(");");
+                    for_block.push_block(map_block);
+                } else {
+                    // Vec relation - append if present
+                    for_block.line(format!(
+                        "// Append {field_name} if present (LEFT JOIN may have NULL)"
+                    ));
+
+                    let nested_struct_name = format!(
+                        "{}Nested{}",
+                        to_pascal_case(&struct_name.replace("Result", "")),
+                        to_pascal_case(field_name)
+                    );
+
+                    let mut if_block = Block::new(format!(
+                        "if let Some({first_alias}_val) = row.get::<_, Option<_>>({})",
+                        format_col_selector(&first_alias, column_order)
+                    ));
+
+                    let mut push_block =
+                        Block::new(format!("entry.{field_name}.push({nested_struct_name}"));
+
+                    let rel_ctx = RelationGenerationContext {
+                        query: &QueryGenerationContext {
+                            codegen: codegen_ctx,
+                            column_order,
+                            plan,
+                            root_table,
+                            is_first,
+                            struct_name: &nested_struct_name,
+                            source: "",
+                        },
+                        relation_table: rel_table,
+                        col_prefix: field_name,
+                        is_first: false,
+                        struct_name: &nested_struct_name,
+                    };
+
+                    rel_ctx.generate_select_columns(&mut push_block, rel_select, &first_alias);
+
+                    push_block.after(");");
+                    if_block.push_block(push_block);
+                    for_block.push_block(if_block);
                 }
             }
-            push_block.after(");");
-            if_block.push_block(push_block);
-            for_block.push_block(if_block);
         }
     }
 
     block.push_block(for_block);
     block.line("");
 
-    if query.first {
+    if is_first {
         block.line("Ok(grouped.into_values().next())");
     } else {
         block.line("Ok(grouped.into_values().collect())");
@@ -685,12 +923,13 @@ fn generate_vec_relation_assembly(
 /// This handles cases like `product → variants (Vec) → prices (Vec)` where
 /// we need multi-level grouping with nested HashMaps.
 fn generate_nested_vec_relation_assembly(
-    ctx: &CodegenContext,
-    parent_prefix: &str,
-    query: &Query,
+    codegen_ctx: &CodegenContext,
+    select: &Select,
     struct_name: &str,
     plan: &crate::planner::QueryPlan,
     column_order: &HashMap<String, usize>,
+    root_table: &str,
+    is_first: bool,
 ) -> String {
     let mut block = Block::new("");
 
@@ -703,9 +942,9 @@ fn generate_nested_vec_relation_assembly(
         .cloned()
         .unwrap_or_else(|| "id".to_string());
 
-    let parent_key_type = ctx
+    let parent_key_type = codegen_ctx
         .schema
-        .column_type(&query.from, &parent_key_column)
+        .column_type(root_table, &parent_key_column)
         .unwrap_or_else(|| "i64".to_string());
 
     // We'll track:
@@ -714,53 +953,49 @@ fn generate_nested_vec_relation_assembly(
 
     block.line("// Group rows by parent ID for has-many relations with nested children");
     block.line(format!(
-        "let mut grouped: std::collections::HashMap<{}, {}> = std::collections::HashMap::new();",
-        parent_key_type, struct_name
+        "let mut grouped: std::collections::HashMap<{parent_key_type}, {struct_name}> = std::collections::HashMap::new();",
     ));
 
     // For each Vec relation with nested Vec children, we need to track seen IDs
     // to avoid duplicates when the inner relation produces multiple rows
-    for field in &query.select {
-        if let Field::Relation {
-            name,
-            first: false,
-            select,
-            from,
-            ..
-        } = field
-        {
-            let rel_table = from.as_deref().unwrap_or(name);
-            // Get the ID column of this relation for deduplication
-            if let Some(id_col) = get_id_column(select) {
-                let id_type = ctx
-                    .schema
-                    .column_type(rel_table, &id_col)
-                    .unwrap_or_else(|| "i64".to_string());
-                block.line(format!(
-                    "let mut seen_{}: std::collections::HashSet<({}, {})> = std::collections::HashSet::new();",
-                    name, parent_key_type, id_type
-                ));
+    for (field_name_meta, field_def) in &select.fields {
+        if let Some(FieldDef::Rel(rel)) = field_def {
+            let field_name = &field_name_meta.value;
+            if !rel.is_first() {
+                // This is a Vec relation
+                if let Some(rel_select) = &rel.select {
+                    let rel_table = rel.table_name().unwrap_or(field_name);
+                    // Get the ID column of this relation for deduplication
+                    if let Some(id_col) = rel_select.id_column() {
+                        let id_type = codegen_ctx
+                            .schema
+                            .column_type(rel_table, &id_col)
+                            .unwrap_or_else(|| "i64".to_string());
+                        block.line(format!(
+                            "let mut seen_{field_name}: std::collections::HashSet<({parent_key_type}, {id_type})> = std::collections::HashSet::new();",
+                        ));
 
-                // For nested Vec relations, track their seen IDs too
-                for inner_field in select {
-                    if let Field::Relation {
-                        name: inner_name,
-                        first: false,
-                        select: inner_select,
-                        from: inner_from,
-                        ..
-                    } = inner_field
-                    {
-                        let inner_table = inner_from.as_deref().unwrap_or(inner_name);
-                        if let Some(inner_id_col) = get_id_column(inner_select) {
-                            let inner_id_type = ctx
-                                .schema
-                                .column_type(inner_table, &inner_id_col)
-                                .unwrap_or_else(|| "i64".to_string());
-                            block.line(format!(
-                                "let mut seen_{}_{}: std::collections::HashSet<({}, {}, {})> = std::collections::HashSet::new();",
-                                name, inner_name, parent_key_type, id_type, inner_id_type
-                            ));
+                        // For nested Vec relations, track their seen IDs too
+                        for (inner_field_name_meta, inner_field_def) in &rel_select.fields {
+                            if let Some(FieldDef::Rel(inner_rel)) = inner_field_def {
+                                let inner_field_name = &inner_field_name_meta.value;
+                                if !inner_rel.is_first() {
+                                    // This is a nested Vec relation
+                                    if let Some(inner_rel_select) = &inner_rel.select {
+                                        let inner_table =
+                                            inner_rel.table_name().unwrap_or(inner_field_name);
+                                        if let Some(inner_id_col) = inner_rel_select.id_column() {
+                                            let inner_id_type = codegen_ctx
+                                                .schema
+                                                .column_type(inner_table, &inner_id_col)
+                                                .unwrap_or_else(|| "i64".to_string());
+                                            block.line(format!(
+                                                "let mut seen_{field_name}_{inner_field_name}: std::collections::HashSet<({parent_key_type}, {id_type}, {inner_id_type})> = std::collections::HashSet::new();",
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -773,32 +1008,38 @@ fn generate_nested_vec_relation_assembly(
     // For loop over rows
     let mut for_block = Block::new("for row in rows.iter()");
     for_block.line(format!(
-        "let parent_id: {} = {};",
-        parent_key_type,
-        row_get(&parent_key_column, column_order)
+        "let parent_id: {parent_key_type} = {};",
+        format_row_get(&parent_key_column, column_order)
     ));
     for_block.line("");
 
     // Initialize the parent entry
     let mut entry_block = Block::new(format!(
-        "let entry = grouped.entry(parent_id.clone()).or_insert_with(|| {}",
-        struct_name
+        "let entry = grouped.entry(parent_id.clone()).or_insert_with(|| {struct_name}"
     ));
 
-    for field in &query.select {
-        match field {
-            Field::Column { name, .. } => {
-                entry_block.line(format!("{}: {},", name, row_get(name, column_order)));
+    for (field_name_meta, field_def) in &select.fields {
+        let field_name = &field_name_meta.value;
+        match field_def {
+            None => {
+                // Simple column
+                entry_block.line(format!(
+                    "{field_name}: {},",
+                    format_row_get(field_name, column_order)
+                ));
             }
-            Field::Relation { name, first, .. } => {
-                if *first {
-                    entry_block.line(format!("{}: None, // populated below", name));
+            Some(FieldDef::Rel(rel)) => {
+                if rel.is_first() {
+                    entry_block.line(format!("{field_name}: None, // populated below"));
                 } else {
-                    entry_block.line(format!("{}: vec![],", name));
+                    entry_block.line(format!("{field_name}: vec![],"));
                 }
             }
-            Field::Count { name, .. } => {
-                entry_block.line(format!("{}: row.get(\"{}\"),", name, name));
+            Some(FieldDef::Count(_)) => {
+                entry_block.line(format!(
+                    "{field_name}: {},",
+                    format_row_get(field_name, column_order)
+                ));
             }
         }
     }
@@ -806,133 +1047,125 @@ fn generate_nested_vec_relation_assembly(
     for_block.push_block(entry_block);
     for_block.line("");
 
-    // Handle each relation
-    for field in &query.select {
-        match field {
-            Field::Relation {
-                name,
-                first: true,
-                select,
-                from,
-                ..
-            } => {
-                // Option relation - populate if entry.field is None
-                let rel_table = from.as_deref().unwrap_or(name);
-                let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
-                let first_col = get_first_column(select);
-                let first_alias = format!("{}_{}", name, first_col);
+    // Handle each relation (Option and Vec)
+    for (field_name_meta, field_def) in &select.fields {
+        let field_name = &field_name_meta.value;
 
-                for_block.line(format!("// Populate {} (Option) if not yet set", name));
+        if let Some(FieldDef::Rel(rel)) = field_def {
+            let rel_table = rel.table_name().unwrap_or(field_name);
+            if let Some(rel_select) = &rel.select {
+                let first_col = rel_select.first_column().unwrap_or_default();
+                let first_alias = format!("{field_name}_{first_col}");
 
-                let mut if_none_block = Block::new(format!("if entry.{}.is_none()", name));
-                let mut map_block = Block::new(format!(
-                    "entry.{} = row.get::<_, Option<_>>({}).map(|{}_val| {}",
-                    name,
-                    col_selector(&first_alias, column_order),
-                    first_alias,
-                    nested_name
-                ));
-
-                for f in select {
-                    if let Field::Column { name: col_name, .. } = f {
-                        let alias = format!("{}_{}", name, col_name);
-                        let rust_ty = ctx
-                            .schema
-                            .column_type(rel_table, col_name)
-                            .unwrap_or_else(|| "String".to_string());
-                        let value_expr = if rust_ty.starts_with("Option<") {
-                            row_get(&alias, column_order)
-                        } else if alias == first_alias {
-                            format!("{}_val", first_alias)
-                        } else {
-                            format!(
-                                "row.get::<_, Option<_>>({}).unwrap()",
-                                col_selector(&alias, column_order)
-                            )
-                        };
-                        map_block.line(format!("{}: {},", col_name, value_expr));
-                    }
-                }
-                map_block.after(");");
-                if_none_block.push_block(map_block);
-                for_block.push_block(if_none_block);
-                for_block.line("");
-            }
-            Field::Relation {
-                name,
-                first: false,
-                select,
-                from,
-                ..
-            } => {
-                let rel_table = from.as_deref().unwrap_or(name);
-                let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
-                let first_col = get_first_column(select);
-                let first_alias = format!("{}_{}", name, first_col);
-
-                // Check if this relation has nested Vec relations
-                let has_nested_vec = select
-                    .iter()
-                    .any(|f| matches!(f, Field::Relation { first: false, .. }));
-
-                if has_nested_vec {
-                    generate_nested_vec_with_dedup(
-                        ctx,
-                        &mut for_block,
-                        name,
-                        rel_table,
-                        &nested_name,
-                        select,
-                        column_order,
+                if rel.is_first() {
+                    // Option relation - populate if entry.field is None
+                    let nested_struct_name = format!(
+                        "{}Nested{}",
+                        to_pascal_case(&struct_name.replace("Result", "")),
+                        to_pascal_case(field_name)
                     );
-                } else {
-                    // Simple Vec relation without nested Vec children
-                    for_block.line(format!(
-                        "// Append {} if present (LEFT JOIN may have NULL)",
-                        name
+
+                    for_block.line(format!("// Populate {field_name} (Option) if not yet set"));
+
+                    let mut if_none_block = Block::new(format!("if entry.{field_name}.is_none()"));
+                    let mut map_block = Block::new(format!(
+                        "entry.{field_name} = row.get::<_, Option<_>>({}).map(|{first_alias}_val| {nested_struct_name}",
+                        format_col_selector(&first_alias, column_order)
                     ));
 
-                    let mut if_some_block = Block::new(format!(
-                        "if let Some({}_val) = row.get::<_, Option<_>>({})",
-                        first_alias,
-                        col_selector(&first_alias, column_order)
-                    ));
+                    let rel_ctx = RelationGenerationContext {
+                        query: &QueryGenerationContext {
+                            codegen: codegen_ctx,
+                            column_order,
+                            plan,
+                            root_table,
+                            is_first,
+                            struct_name: &nested_struct_name,
+                            source: "",
+                        },
+                        relation_table: rel_table,
+                        col_prefix: field_name,
+                        is_first: true,
+                        struct_name: &nested_struct_name,
+                    };
 
-                    let mut push_block = Block::new(format!("entry.{}.push({}", name, nested_name));
-                    for f in select {
-                        if let Field::Column { name: col_name, .. } = f {
-                            let alias = format!("{}_{}", name, col_name);
-                            let rust_ty = ctx
-                                .schema
-                                .column_type(rel_table, col_name)
-                                .unwrap_or_else(|| "String".to_string());
-                            let value_expr = if rust_ty.starts_with("Option<") {
-                                row_get(&alias, column_order)
-                            } else if alias == first_alias {
-                                format!("{}_val", first_alias)
-                            } else {
-                                format!(
-                                    "row.get::<_, Option<_>>({}).unwrap()",
-                                    col_selector(&alias, column_order)
-                                )
-                            };
-                            push_block.line(format!("{}: {},", col_name, value_expr));
-                        }
-                    }
-                    push_block.after(");");
-                    if_some_block.push_block(push_block);
-                    for_block.push_block(if_some_block);
+                    rel_ctx.generate_select_columns_in_map(
+                        &mut map_block,
+                        rel_select,
+                        &first_alias,
+                    );
+
+                    map_block.after(");");
+                    if_none_block.push_block(map_block);
+                    for_block.push_block(if_none_block);
                     for_block.line("");
+                } else {
+                    // Vec relation - check if it has nested Vec children
+                    let has_nested_vec = rel_select.has_vec_relations();
+
+                    let nested_struct_name = format!(
+                        "{}Nested{}",
+                        to_pascal_case(&struct_name.replace("Result", "")),
+                        to_pascal_case(field_name)
+                    );
+
+                    if has_nested_vec {
+                        // Vec relation with nested Vec children - needs deduplication
+                        generate_nested_vec_with_dedup(
+                            codegen_ctx,
+                            &mut for_block,
+                            field_name,
+                            rel_table,
+                            &nested_struct_name,
+                            rel_select,
+                            column_order,
+                        );
+                    } else {
+                        // Simple Vec relation without nested Vec children
+                        for_block.line(format!(
+                            "// Append {field_name} if present (LEFT JOIN may have NULL)"
+                        ));
+
+                        let mut if_some_block = Block::new(format!(
+                            "if let Some({first_alias}_val) = row.get::<_, Option<_>>({})",
+                            format_col_selector(&first_alias, column_order)
+                        ));
+
+                        let mut push_block =
+                            Block::new(format!("entry.{field_name}.push({nested_struct_name}"));
+
+                        let rel_ctx = RelationGenerationContext {
+                            query: &QueryGenerationContext {
+                                codegen: codegen_ctx,
+                                column_order,
+                                plan,
+                                root_table,
+                                is_first,
+                                struct_name: &nested_struct_name,
+                                source: "",
+                            },
+                            relation_table: rel_table,
+                            col_prefix: field_name,
+                            is_first: false,
+                            struct_name: &nested_struct_name,
+                        };
+
+                        rel_ctx.generate_select_columns(&mut push_block, rel_select, &first_alias);
+
+                        push_block.after(");");
+                        if_some_block.push_block(push_block);
+                        for_block.push_block(if_some_block);
+                        for_block.line("");
+                    }
                 }
             }
-            _ => {}
         }
     }
 
     block.push_block(for_block);
     block.line("");
 
-    if query.first {
+    if is_first {
         block.line("Ok(grouped.into_values().next())");
     } else {
         block.line("Ok(grouped.into_values().collect())");
@@ -943,85 +1176,70 @@ fn generate_nested_vec_relation_assembly(
 
 /// Helper to generate nested Vec relation with deduplication logic.
 fn generate_nested_vec_with_dedup(
-    ctx: &CodegenContext,
+    codegen_ctx: &CodegenContext,
     for_block: &mut Block,
-    name: &str,
+    field_name: &str,
     rel_table: &str,
-    nested_name: &str,
-    select: &[Field],
+    nested_struct_name: &str,
+    select: &Select,
     column_order: &HashMap<String, usize>,
 ) {
-    let first_col = get_first_column(select);
-    let id_col = get_id_column(select).unwrap_or_else(|| first_col.clone());
-    let id_alias = format!("{}_{}", name, id_col);
-    let id_type = ctx
+    let first_col = select.first_column().unwrap_or_default();
+    let id_col = select.id_column().unwrap_or_else(|| first_col.clone());
+    let id_alias = format!("{field_name}_{id_col}");
+    let id_type = codegen_ctx
         .schema
         .column_type(rel_table, &id_col)
         .unwrap_or_else(|| "i64".to_string());
 
     for_block.line(format!(
-        "// Append {} if present (with deduplication for nested relations)",
-        name
+        "// Append {field_name} if present (with deduplication for nested relations)"
     ));
 
     let mut if_some_block = Block::new(format!(
-        "if let Some({}_id) = row.get::<_, Option<{}>>({}) ",
-        name,
-        id_type,
-        col_selector(&id_alias, column_order)
+        "if let Some({id_alias}_val) = row.get::<_, Option<{id_type}>>({}) ",
+        format_col_selector(&id_alias, column_order)
     ));
 
     if_some_block.line(format!(
-        "let key = (parent_id.clone(), {}_id.clone());",
-        name
+        "let key = (parent_id.clone(), {id_alias}_val.clone());"
     ));
 
-    let mut if_insert_block = Block::new(format!("if seen_{}.insert(key)", name));
-    if_insert_block.line(format!("// First time seeing this {}", name));
+    let mut if_insert_block = Block::new(format!("if seen_{field_name}.insert(key)"));
+    if_insert_block.line(format!("// First time seeing this {field_name}"));
 
-    // Build the nested struct
-    let mut push_block = Block::new(format!("entry.{}.push({}", name, nested_name));
-    for f in select {
-        match f {
-            Field::Column { name: col_name, .. } => {
-                let alias = format!("{}_{}", name, col_name);
-                let rust_ty = ctx
-                    .schema
-                    .column_type(rel_table, col_name)
-                    .unwrap_or_else(|| "String".to_string());
-                let value_expr = if rust_ty.starts_with("Option<") {
-                    row_get(&alias, column_order)
-                } else {
-                    format!(
-                        "row.get::<_, Option<_>>({}).unwrap()",
-                        col_selector(&alias, column_order)
-                    )
-                };
-                push_block.line(format!("{}: {},", col_name, value_expr));
+    // Build the nested struct with all fields
+    let mut push_block = Block::new(format!("entry.{field_name}.push({nested_struct_name}"));
+
+    for (inner_field_name_meta, inner_field_def) in &select.fields {
+        let inner_field_name = &inner_field_name_meta.value;
+
+        match inner_field_def {
+            None => {
+                // Simple column
+                let alias = format!("{field_name}_{inner_field_name}");
+                push_block.line(format!(
+                    "{inner_field_name}: {},",
+                    format_row_get(&alias, column_order)
+                ));
             }
-            Field::Relation {
-                name: inner_name,
-                first: inner_first,
-                ..
-            } => {
-                if *inner_first {
-                    push_block.line(format!("{}: None, // populated below", inner_name));
+            Some(FieldDef::Rel(inner_rel)) => {
+                if inner_rel.is_first() {
+                    push_block.line(format!("{inner_field_name}: None, // populated below"));
                 } else {
-                    push_block.line(format!("{}: vec![],", inner_name));
+                    push_block.line(format!("{inner_field_name}: vec![],"));
                 }
             }
-            Field::Count {
-                name: count_name, ..
-            } => {
-                let alias = format!("{}_{}", name, count_name);
+            Some(FieldDef::Count(_)) => {
+                let alias = format!("{field_name}_{inner_field_name}");
                 push_block.line(format!(
-                    "{}: {},",
-                    count_name,
-                    row_get(&alias, column_order)
+                    "{inner_field_name}: {},",
+                    format_row_get(&alias, column_order)
                 ));
             }
         }
     }
+
     push_block.after(");");
     if_insert_block.push_block(push_block);
     if_some_block.push_block(if_insert_block);
@@ -1029,126 +1247,120 @@ fn generate_nested_vec_with_dedup(
 
     // Now handle nested relations - find the parent we just created or already exists
     if_some_block.line(format!(
-        "// Find the {} entry to append nested children",
-        name
+        "// Find the {field_name} entry to append nested children"
     ));
 
     let mut if_find_block = Block::new(format!(
-        "if let Some({}_entry) = entry.{}.iter_mut().find(|e| e.{} == {}_id)",
-        name, name, id_col, name
+        "if let Some({field_name}_entry) = entry.{field_name}.iter_mut().find(|e| e.{id_col} == {id_alias}_val)"
     ));
 
     // Handle nested relations
-    for inner_field in select {
-        if let Field::Relation {
-            name: inner_name,
-            first: inner_first,
-            select: inner_select,
-            from: inner_from,
-            ..
-        } = inner_field
-        {
-            let inner_table = inner_from.as_deref().unwrap_or(inner_name);
-            let inner_nested_name = format!("{}{}", nested_name, to_pascal_case(inner_name));
-            let inner_first_col = get_first_column(inner_select);
-            let inner_first_alias = format!("{}_{}_{}", name, inner_name, inner_first_col);
+    for (inner_field_name_meta, inner_field_def) in &select.fields {
+        if let Some(FieldDef::Rel(inner_rel)) = inner_field_def {
+            let inner_field_name = &inner_field_name_meta.value;
+            if let Some(inner_select) = &inner_rel.select {
+                let inner_table = inner_rel.table_name().unwrap_or(inner_field_name);
+                let inner_nested_name = format!(
+                    "{}Nested{}",
+                    nested_struct_name,
+                    to_pascal_case(inner_field_name)
+                );
+                let inner_first_col = inner_select.first_column().unwrap_or_default();
+                let inner_first_alias =
+                    format!("{field_name}_{inner_field_name}_{inner_first_col}");
 
-            if *inner_first {
-                // Option nested relation
-                let mut if_inner_none =
-                    Block::new(format!("if {}_entry.{}.is_none()", name, inner_name));
+                if inner_rel.is_first() {
+                    // Option nested relation
+                    let mut if_inner_none = Block::new(format!(
+                        "if {field_name}_entry.{inner_field_name}.is_none()"
+                    ));
 
-                let mut inner_map_block = Block::new(format!(
-                    "{}_entry.{} = row.get::<_, Option<_>>({}).map(|_val| {}",
-                    name,
-                    inner_name,
-                    col_selector(&inner_first_alias, column_order),
-                    inner_nested_name
-                ));
+                    let mut inner_map_block = Block::new(format!(
+                        "{field_name}_entry.{inner_field_name} = row.get::<_, Option<_>>({}).map(|_val| {inner_nested_name}",
+                        format_col_selector(&inner_first_alias, column_order)
+                    ));
 
-                for inner_f in inner_select {
-                    if let Field::Column {
-                        name: inner_col_name,
-                        ..
-                    } = inner_f
-                    {
-                        let alias = format!("{}_{}_{}", name, inner_name, inner_col_name);
-                        let rust_ty = ctx
-                            .schema
-                            .column_type(inner_table, inner_col_name)
-                            .unwrap_or_else(|| "String".to_string());
-                        let value_expr = if rust_ty.starts_with("Option<") {
-                            row_get(&alias, column_order)
-                        } else if alias == inner_first_alias {
-                            "_val".to_string()
-                        } else {
-                            format!(
-                                "row.get::<_, Option<_>>({}).unwrap()",
-                                col_selector(&alias, column_order)
-                            )
-                        };
-                        inner_map_block.line(format!("{}: {},", inner_col_name, value_expr));
+                    // Extract columns for the inner relation
+                    for (inner_col_meta, inner_field_def) in &inner_select.fields {
+                        if inner_field_def.is_none() {
+                            let inner_col_name = &inner_col_meta.value;
+                            let alias = format!("{field_name}_{inner_field_name}_{inner_col_name}");
+                            let rust_ty = codegen_ctx
+                                .schema
+                                .column_type(inner_table, inner_col_name)
+                                .unwrap_or_else(|| "String".to_string());
+
+                            let value_expr = if rust_ty.starts_with("Option<") {
+                                format!("row.get(\"{alias}\")")
+                            } else if alias == inner_first_alias {
+                                "_val".to_string()
+                            } else {
+                                format!("row.get::<_, Option<_>>(\"{alias}\").unwrap()")
+                            };
+
+                            inner_map_block.line(format!("{inner_col_name}: {value_expr},"));
+                        }
                     }
-                }
-                inner_map_block.after(");");
-                if_inner_none.push_block(inner_map_block);
-                if_find_block.push_block(if_inner_none);
-            } else {
-                // Vec nested relation - need deduplication
-                let inner_id_col =
-                    get_id_column(inner_select).unwrap_or_else(|| inner_first_col.clone());
-                let inner_id_alias = format!("{}_{}_{}", name, inner_name, inner_id_col);
-                let inner_id_type = ctx
-                    .schema
-                    .column_type(inner_table, &inner_id_col)
-                    .unwrap_or_else(|| "i64".to_string());
 
-                let mut if_inner_some = Block::new(format!(
-                    "if let Some({}_id) = row.get::<_, Option<{}>>({}) ",
-                    inner_name,
-                    inner_id_type,
-                    col_selector(&inner_id_alias, column_order)
-                ));
+                    inner_map_block.after(");");
+                    if_inner_none.push_block(inner_map_block);
+                    if_find_block.push_block(if_inner_none);
+                } else {
+                    // Vec nested relation - need deduplication
+                    let inner_id_col = inner_select
+                        .id_column()
+                        .unwrap_or_else(|| inner_first_col.clone());
+                    let inner_id_alias = format!("{field_name}_{inner_field_name}_{inner_id_col}");
+                    let inner_id_type = codegen_ctx
+                        .schema
+                        .column_type(inner_table, &inner_id_col)
+                        .unwrap_or_else(|| "i64".to_string());
 
-                if_inner_some.line(format!(
-                    "let inner_key = (parent_id.clone(), {}_id.clone(), {}_id.clone());",
-                    name, inner_name
-                ));
+                    let mut if_inner_some = Block::new(format!(
+                        "if let Some({inner_id_alias}_val) = row.get::<_, Option<{inner_id_type}>>({}) ",
+                        format_col_selector(&inner_id_alias, column_order)
+                    ));
 
-                let mut if_inner_insert =
-                    Block::new(format!("if seen_{}_{}.insert(inner_key)", name, inner_name));
+                    if_inner_some.line(format!(
+                        "let inner_key = (parent_id.clone(), {id_alias}_val.clone(), {inner_id_alias}_val.clone());"
+                    ));
 
-                let mut inner_push_block = Block::new(format!(
-                    "{}_entry.{}.push({}",
-                    name, inner_name, inner_nested_name
-                ));
+                    let mut if_inner_insert = Block::new(format!(
+                        "if seen_{field_name}_{inner_field_name}.insert(inner_key)"
+                    ));
 
-                for inner_f in inner_select {
-                    if let Field::Column {
-                        name: inner_col_name,
-                        ..
-                    } = inner_f
-                    {
-                        let alias = format!("{}_{}_{}", name, inner_name, inner_col_name);
-                        let rust_ty = ctx
-                            .schema
-                            .column_type(inner_table, inner_col_name)
-                            .unwrap_or_else(|| "String".to_string());
-                        let value_expr = if rust_ty.starts_with("Option<") {
-                            row_get(&alias, column_order)
-                        } else {
-                            format!(
-                                "row.get::<_, Option<_>>({}).unwrap()",
-                                col_selector(&alias, column_order)
-                            )
-                        };
-                        inner_push_block.line(format!("{}: {},", inner_col_name, value_expr));
+                    let mut inner_push_block = Block::new(format!(
+                        "{field_name}_entry.{inner_field_name}.push({inner_nested_name}"
+                    ));
+
+                    // Extract columns for the inner relation (Vec case)
+                    for (inner_col_meta, inner_field_def) in &inner_select.fields {
+                        if inner_field_def.is_none() {
+                            let inner_col_name = &inner_col_meta.value;
+                            let alias = format!("{field_name}_{inner_field_name}_{inner_col_name}");
+                            let rust_ty = codegen_ctx
+                                .schema
+                                .column_type(inner_table, inner_col_name)
+                                .unwrap_or_else(|| "String".to_string());
+
+                            let value_expr = if rust_ty.starts_with("Option<") {
+                                format_row_get(&alias, column_order)
+                            } else {
+                                format!(
+                                    "row.get::<_, Option<_>>({}).unwrap()",
+                                    format_col_selector(&alias, column_order)
+                                )
+                            };
+
+                            inner_push_block.line(format!("{inner_col_name}: {value_expr},"));
+                        }
                     }
+
+                    inner_push_block.after(");");
+                    if_inner_insert.push_block(inner_push_block);
+                    if_inner_some.push_block(if_inner_insert);
+                    if_find_block.push_block(if_inner_some);
                 }
-                inner_push_block.after(");");
-                if_inner_insert.push_block(inner_push_block);
-                if_inner_some.push_block(if_inner_insert);
-                if_find_block.push_block(if_inner_some);
             }
         }
     }
@@ -1170,143 +1382,104 @@ fn get_id_column(select: &Select) -> Option<String> {
 
 /// Generate assembly code for queries with only Option relations.
 fn generate_option_relation_assembly(
-    ctx: &CodegenContext,
+    codegen_ctx: &CodegenContext,
     select: &Select,
     struct_name: &str,
     column_order: &HashMap<String, usize>,
+    root_table: &str,
 ) -> String {
     let mut block = Block::new("");
 
     block.line("// Assemble flat rows into nested structs");
 
     let mut map_block =
-        Block::new("let results: Result<Vec<_>, QueryError> = rows.iter().map(|row|");
+        Block::new("let results: Result<Vec<_>, QueryError> = rows.iter().map(|row| {");
 
-    // Extract base table columns and COUNT fields
-    for field in &query.select {
-        match field {
-            Field::Column { name, .. } => {
-                let rust_ty = ctx
-                    .schema
-                    .column_type(&query.from, name)
-                    .unwrap_or_else(|| "String".to_string());
-                map_block.line(format!(
-                    "let {}: {} = {};",
-                    name,
-                    rust_ty,
-                    row_get(name, column_order)
+    // Build the result struct initialization
+    let mut result_block = Block::new(format!("Ok({struct_name}"));
+
+    // Iterate over all fields and extract/assemble them
+    for (field_name_meta, field_def) in &select.fields {
+        let field_name = &field_name_meta.value;
+
+        match field_def {
+            None => {
+                // Simple column
+                result_block.line(format!(
+                    "{field_name}: {},",
+                    format_row_get(field_name, column_order)
                 ));
             }
-            Field::Count { name, .. } => {
-                map_block.line(format!(
-                    "let {}: i64 = {};",
-                    name,
-                    row_get(name, column_order)
-                ));
-            }
-            _ => {}
-        }
-    }
+            Some(FieldDef::Rel(rel)) => {
+                if rel.is_first() {
+                    // Option relation - map it inline
+                    if let Some(rel_select) = &rel.select {
+                        let rel_table = rel.table_name().unwrap_or(field_name);
+                        let first_col = rel_select.first_column().unwrap_or_default();
+                        let first_alias = format!("{field_name}_{first_col}");
+                        let nested_struct_name = format!(
+                            "{}Nested{}",
+                            to_pascal_case(&struct_name.replace("Result", "")),
+                            to_pascal_case(field_name)
+                        );
 
-    // Extract relation columns and build nested structs
-    for field in &query.select {
-        if let Field::Relation {
-            name,
-            first,
-            select,
-            from,
-            ..
-        } = field
-        {
-            let rel_table = from.as_deref().unwrap_or(name);
-            let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
+                        let mut map_block_inner = Block::new(format!(
+                            "{field_name}: row.get::<_, Option<_>>({}).map(|{first_alias}_val| {nested_struct_name}",
+                            format_col_selector(&first_alias, column_order)
+                        ));
 
-            for f in select {
-                if let Field::Column { name: col_name, .. } = f {
-                    let rust_ty = ctx
-                        .schema
-                        .column_type(rel_table, col_name)
-                        .unwrap_or_else(|| "String".to_string());
-                    let alias = format!("{}_{}", name, col_name);
-                    let wrapped_ty = if rust_ty.starts_with("Option<") {
-                        rust_ty.clone()
-                    } else {
-                        format!("Option<{}>", rust_ty)
-                    };
-                    map_block.line(format!(
-                        "let {}: {} = {};",
-                        alias,
-                        wrapped_ty,
-                        row_get(&alias, column_order)
-                    ));
-                }
-            }
+                        // Extract columns for this relation
+                        for (inner_col_meta, inner_field_def) in &rel_select.fields {
+                            if inner_field_def.is_none() {
+                                let inner_col_name = &inner_col_meta.value;
+                                let alias = format!("{field_name}_{inner_col_name}");
+                                let rust_ty = codegen_ctx
+                                    .schema
+                                    .column_type(rel_table, inner_col_name)
+                                    .unwrap_or_else(|| "String".to_string());
 
-            if *first {
-                let first_col = get_first_column(select);
-                let first_alias = format!("{}_{}", name, first_col);
+                                let value_expr = if rust_ty.starts_with("Option<") {
+                                    format!("row.get(\"{alias}\")")
+                                } else if alias == first_alias {
+                                    format!("{first_alias}_val")
+                                } else {
+                                    format!("row.get::<_, Option<_>>(\"{alias}\").unwrap()")
+                                };
 
-                let first_col_type = ctx
-                    .schema
-                    .column_type(rel_table, &first_col)
-                    .unwrap_or_else(|| "String".to_string());
-                let first_col_is_optional = first_col_type.starts_with("Option<");
-
-                let mut rel_block = Block::new(format!(
-                    "let {} = {}.map(|{}_val| {}",
-                    name, first_alias, first_alias, nested_name
-                ));
-
-                for f in select {
-                    if let Field::Column { name: col_name, .. } = f {
-                        let alias = format!("{}_{}", name, col_name);
-                        let rust_ty = ctx
-                            .schema
-                            .column_type(rel_table, col_name)
-                            .unwrap_or_else(|| "String".to_string());
-                        let value_expr = if alias == first_alias {
-                            if first_col_is_optional {
-                                format!("Some({}_val)", first_alias)
-                            } else {
-                                format!("{}_val", first_alias)
+                                map_block_inner.line(format!("{inner_col_name}: {value_expr},"));
                             }
-                        } else if rust_ty.starts_with("Option<") {
-                            alias.clone()
-                        } else {
-                            format!("{}.unwrap()", alias)
-                        };
-                        rel_block.line(format!("{}: {},", col_name, value_expr));
+                        }
+
+                        map_block_inner.after("),");
+                        result_block.push_block(map_block_inner);
                     }
+                } else {
+                    // Vec relation - should not happen in option_relation_assembly
+                    // But if it does, initialize as empty vec
+                    result_block.line(format!("{field_name}: vec![],"));
                 }
-                rel_block.after(");");
-                map_block.push_block(rel_block);
+            }
+            Some(FieldDef::Count(_)) => {
+                result_block.line(format!(
+                    "{field_name}: {},",
+                    format_row_get(field_name, column_order)
+                ));
             }
         }
     }
 
-    // Build the result struct
-    let mut result_block = Block::new(format!("Ok({}", struct_name));
-    for field in &query.select {
-        match field {
-            Field::Column { name, .. }
-            | Field::Relation { name, .. }
-            | Field::Count { name, .. } => {
-                result_block.line(format!("{},", name));
-            }
-        }
-    }
     result_block.after(")");
     map_block.push_block(result_block);
-
-    map_block.after(").collect();");
+    map_block.after("}).collect();");
     block.push_block(map_block);
     block.line("");
 
-    if query.first {
-        block.line("Ok(results?.into_iter().next())");
-    } else {
-        block.line("results");
-    }
+    // Check if first.is_some() to determine return type
+    block.line("if results.is_empty() || results.as_ref().ok().map_or(false, |r| r.is_empty()) {");
+    block.line("Ok(None)");
+    block.line("} else {");
+    block.line("Ok(results?.into_iter().next())");
+    block.line("}");
 
     block_to_string(&block)
 }
@@ -1325,23 +1498,23 @@ fn generate_raw_query_body(query: &Query, raw_sql: &str) -> Block {
     block.line("");
 
     // Query execution
-    if query.params.is_empty() {
-        block.line("let rows = client.query(SQL, &[]).await?;");
+    if let Some(params) = &query.params {
+        let param_names: Vec<&str> = params.iter().map(|(meta, _)| meta.value.as_str()).collect();
+        if !param_names.is_empty() {
+            let params_str = param_names.join(", ");
+            block.line(format!(
+                "let rows = client.query(SQL, &[{}]).await?;",
+                params_str
+            ));
+        } else {
+            block.line("let rows = client.query(SQL, &[]).await?;");
+        }
     } else {
-        let params_str = query
-            .params
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        block.line(format!(
-            "let rows = client.query(SQL, &[{}]).await?;",
-            params_str
-        ));
+        block.line("let rows = client.query(SQL, &[]).await?;");
     }
 
     // Result processing
-    if query.first {
+    if query.first.is_some() {
         let mut match_block = Block::new("match rows.into_iter().next()");
         match_block.line("Some(row) => Ok(Some(from_row(&row)?)),");
         match_block.line("None => Ok(None),");
@@ -1376,7 +1549,13 @@ fn param_type_to_rust(ty: &ParamType) -> String {
         ParamType::Decimal => "Decimal".to_string(),
         ParamType::Timestamp => "Timestamp".to_string(),
         ParamType::Bytes => "Vec<u8>".to_string(),
-        ParamType::Optional(inner) => format!("Option<{}>", param_type_to_rust(inner)),
+        ParamType::Optional(inner_vec) => {
+            if let Some(inner) = inner_vec.first() {
+                format!("Option<{}>", param_type_to_rust(inner))
+            } else {
+                "Option<String>".to_string()
+            }
+        }
     }
 }
 
@@ -1762,7 +1941,7 @@ fn generate_delete_code(
     } else {
         let struct_name = format!("{}Result", name);
         if let Some(returning) = &delete.returning {
-            generate_mutation_result_struct(_ctx, &struct_name, &delete.table, returning, scope);
+            generate_mutation_result_struct(_ctx, &struct_name, &delete.from, returning, scope);
         }
         format!("Result<Option<{}>, QueryError>", struct_name)
     };
@@ -1797,8 +1976,8 @@ fn generate_delete_code(
 fn generate_mutation_result_struct(
     ctx: &CodegenContext,
     struct_name: &str,
-    table: &str,
-    returning: &[String],
+    table: &Meta<String>,
+    returning: &Returning,
     scope: &mut Scope,
 ) {
     let mut st = Struct::new(struct_name);
@@ -1808,12 +1987,14 @@ fn generate_mutation_result_struct(
     st.derive("Facet");
     st.attr("facet(crate = dibs_runtime::facet)");
 
-    for col in returning {
+    let table_name = &table.value;
+    for (col_name_meta, _) in &returning.columns {
+        let col_name = &col_name_meta.value;
         let rust_ty = ctx
             .schema
-            .column_type(table, col)
+            .column_type(table_name, col_name)
             .unwrap_or_else(|| "String".to_string());
-        st.field(format!("pub {}", col), &rust_ty);
+        st.field(format!("pub {col_name}"), &rust_ty);
     }
 
     scope.push_struct(st);
