@@ -106,15 +106,15 @@ pub fn lint_unused_params_query(query: &Query, ctx: &mut LintContext<'_>) {
     if let Some(where_clause) = &query.where_clause {
         used.extend(collect_param_refs_from_where(where_clause));
     }
-    if let Some(limit) = &query.limit {
-        if let Some(param) = limit.as_str().strip_prefix('$') {
-            used.push(param.to_string());
-        }
+    if let Some(limit) = &query.limit
+        && let Some(param) = limit.as_str().strip_prefix('$')
+    {
+        used.push(param.to_string());
     }
-    if let Some(offset) = &query.offset {
-        if let Some(param) = offset.as_str().strip_prefix('$') {
-            used.push(param.to_string());
-        }
+    if let Some(offset) = &query.offset
+        && let Some(param) = offset.as_str().strip_prefix('$')
+    {
+        used.push(param.to_string());
     }
 
     for (param_name, _param_type) in &params.params {

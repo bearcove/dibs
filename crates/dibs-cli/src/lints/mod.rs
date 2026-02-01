@@ -32,8 +32,8 @@ pub use unused_param::*;
 /// Convert dibs_query_schema::Span to styx_tree::Span.
 pub fn to_styx_span(span: Span) -> styx_tree::Span {
     styx_tree::Span {
-        start: span.offset as u32,
-        end: (span.offset + span.len) as u32,
+        start: span.offset,
+        end: (span.offset + span.len),
     }
 }
 

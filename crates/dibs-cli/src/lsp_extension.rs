@@ -271,33 +271,29 @@ impl DibsExtension {
                     lints::lint_unused_params_query(query, &mut ctx);
                     lints::lint_missing_deleted_at_filter(query, &mut ctx);
 
-                    if let Some(from) = &query.from {
-                        if let Some(table) = ctx.find_table(from.as_str()) {
-                            if let Some(select) = &query.select {
-                                lints::lint_empty_select(select, &mut ctx);
-                                lints::lint_unknown_columns_select(select, table, &mut ctx);
-                                lints::lint_relations_in_select(
-                                    select,
-                                    Some(from.as_str()),
+                    if let Some(from) = &query.from
+                        && let Some(table) = ctx.find_table(from.as_str())
+                    {
+                        if let Some(select) = &query.select {
+                            lints::lint_empty_select(select, &mut ctx);
+                            lints::lint_unknown_columns_select(select, table, &mut ctx);
+                            lints::lint_relations_in_select(select, Some(from.as_str()), &mut ctx);
+                        }
+                        if let Some(where_clause) = &query.where_clause {
+                            lints::lint_unknown_columns_where(where_clause, table, &mut ctx);
+                            lints::lint_redundant_params_in_where(where_clause, &mut ctx);
+                            lints::lint_literal_types_in_where(where_clause, table, &mut ctx);
+                            if let Some(params) = &query.params {
+                                lints::lint_param_types_in_where(
+                                    where_clause,
+                                    table,
+                                    params,
                                     &mut ctx,
                                 );
                             }
-                            if let Some(where_clause) = &query.where_clause {
-                                lints::lint_unknown_columns_where(where_clause, table, &mut ctx);
-                                lints::lint_redundant_params_in_where(where_clause, &mut ctx);
-                                lints::lint_literal_types_in_where(where_clause, table, &mut ctx);
-                                if let Some(params) = &query.params {
-                                    lints::lint_param_types_in_where(
-                                        where_clause,
-                                        table,
-                                        params,
-                                        &mut ctx,
-                                    );
-                                }
-                            }
-                            if let Some(order_by) = &query.order_by {
-                                lints::lint_unknown_columns_order_by(order_by, table, &mut ctx);
-                            }
+                        }
+                        if let Some(order_by) = &query.order_by {
+                            lints::lint_unknown_columns_order_by(order_by, table, &mut ctx);
                         }
                     }
                 }
@@ -365,11 +361,11 @@ impl DibsExtension {
                     lints::lint_hard_delete_on_soft_delete_table(delete, &mut ctx);
                     lints::lint_unused_params_delete(delete, &mut ctx);
 
-                    if let Some(table) = ctx.find_table(delete.from.as_str()) {
-                        if let Some(where_clause) = &delete.where_clause {
-                            lints::lint_unknown_columns_where(where_clause, table, &mut ctx);
-                            lints::lint_redundant_params_in_where(where_clause, &mut ctx);
-                        }
+                    if let Some(table) = ctx.find_table(delete.from.as_str())
+                        && let Some(where_clause) = &delete.where_clause
+                    {
+                        lints::lint_unknown_columns_where(where_clause, table, &mut ctx);
+                        lints::lint_redundant_params_in_where(where_clause, &mut ctx);
                     }
                 }
             }
@@ -513,17 +509,17 @@ impl DibsExtension {
                     }
 
                     // Find the column in the table
-                    if let Some(col) = table.columns.iter().find(|c| c.name == col_name) {
-                        if let Some(span) = &entry.key.span {
-                            let position = self.offset_to_position(document_uri, span.end).await;
-                            hints.push(InlayHint {
-                                position,
-                                label: format!(": {}", col.sql_type),
-                                kind: Some(InlayHintKind::Type),
-                                padding_left: false,
-                                padding_right: false,
-                            });
-                        }
+                    if let Some(col) = table.columns.iter().find(|c| c.name == col_name)
+                        && let Some(span) = &entry.key.span
+                    {
+                        let position = self.offset_to_position(document_uri, span.end).await;
+                        hints.push(InlayHint {
+                            position,
+                            label: format!(": {}", col.sql_type),
+                            kind: Some(InlayHintKind::Type),
+                            padding_left: false,
+                            padding_right: false,
+                        });
                     }
                 }
             }
@@ -939,8 +935,8 @@ impl StyxLspExtension for DibsExtension {
                 .unwrap_or(dibs_query_schema::Span { offset: 0, len: 0 });
             diagnostics.push(Diagnostic {
                 span: styx_tree::Span {
-                    start: span.offset as u32,
-                    end: (span.offset + span.len) as u32,
+                    start: span.offset,
+                    end: (span.offset + span.len),
                 },
                 severity: styx_lsp_ext::DiagnosticSeverity::Error,
                 message: e.to_string(),

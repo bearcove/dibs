@@ -9,23 +9,18 @@ pub fn lint_redundant_params_in_values(values: &Values, ctx: &mut LintContext<'_
             tag: None,
             content: Some(Payload::Scalar(s)),
         }) = value_expr
+            && let Some(param_name) = s.as_str().strip_prefix('$')
+            && param_name == col_name.as_str()
         {
-            if let Some(param_name) = s.as_str().strip_prefix('$') {
-                if param_name == col_name.as_str() {
-                    DiagnosticBuilder::hint("redundant-param")
-                        .at(s.span)
-                        .msg(format!(
-                            "'{} ${}' can be shortened to just '{}' (implicit @param)",
-                            col_name.as_str(),
-                            param_name,
-                            col_name.as_str()
-                        ))
-                        .emit_with_data(
-                            ctx.diagnostics,
-                            styx_tree::Value::scalar(col_name.as_str()),
-                        );
-                }
-            }
+            DiagnosticBuilder::hint("redundant-param")
+                .at(s.span)
+                .msg(format!(
+                    "'{} ${}' can be shortened to just '{}' (implicit @param)",
+                    col_name.as_str(),
+                    param_name,
+                    col_name.as_str()
+                ))
+                .emit_with_data(ctx.diagnostics, styx_tree::Value::scalar(col_name.as_str()));
         }
     }
 }
@@ -39,46 +34,37 @@ pub fn lint_redundant_params_in_conflict_update(
             tag: None,
             content: Some(Payload::Scalar(s)),
         }) = update_value
+            && let Some(param_name) = s.as_str().strip_prefix('$')
+            && param_name == col_name.as_str()
         {
-            if let Some(param_name) = s.as_str().strip_prefix('$') {
-                if param_name == col_name.as_str() {
-                    DiagnosticBuilder::hint("redundant-param")
-                        .at(s.span)
-                        .msg(format!(
-                            "'{} ${}' can be shortened to just '{}' (implicit @param)",
-                            col_name.as_str(),
-                            param_name,
-                            col_name.as_str()
-                        ))
-                        .emit_with_data(
-                            ctx.diagnostics,
-                            styx_tree::Value::scalar(col_name.as_str()),
-                        );
-                }
-            }
+            DiagnosticBuilder::hint("redundant-param")
+                .at(s.span)
+                .msg(format!(
+                    "'{} ${}' can be shortened to just '{}' (implicit @param)",
+                    col_name.as_str(),
+                    param_name,
+                    col_name.as_str()
+                ))
+                .emit_with_data(ctx.diagnostics, styx_tree::Value::scalar(col_name.as_str()));
         }
     }
 }
 
 pub fn lint_redundant_params_in_where(where_clause: &Where, ctx: &mut LintContext<'_>) {
     for (col_name, filter) in &where_clause.filters {
-        if let FilterValue::EqBare(meta) = filter {
-            if let Some(param_name) = meta.as_str().strip_prefix('$') {
-                if param_name == col_name.as_str() {
-                    DiagnosticBuilder::hint("redundant-param")
-                        .at(col_name.span)
-                        .msg(format!(
-                            "'{} ${}' can be shortened to just '{}' (implicit @param)",
-                            col_name.as_str(),
-                            param_name,
-                            col_name.as_str()
-                        ))
-                        .emit_with_data(
-                            ctx.diagnostics,
-                            styx_tree::Value::scalar(col_name.as_str()),
-                        );
-                }
-            }
+        if let FilterValue::EqBare(meta) = filter
+            && let Some(param_name) = meta.as_str().strip_prefix('$')
+            && param_name == col_name.as_str()
+        {
+            DiagnosticBuilder::hint("redundant-param")
+                .at(col_name.span)
+                .msg(format!(
+                    "'{} ${}' can be shortened to just '{}' (implicit @param)",
+                    col_name.as_str(),
+                    param_name,
+                    col_name.as_str()
+                ))
+                .emit_with_data(ctx.diagnostics, styx_tree::Value::scalar(col_name.as_str()));
         }
     }
 }

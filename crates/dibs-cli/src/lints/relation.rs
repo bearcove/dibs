@@ -29,27 +29,28 @@ fn has_fk_relationship(table_a: &str, table_b: &str, schema: &SchemaInfo) -> boo
 
 pub fn lint_relation(rel: &Relation, parent_table: Option<&str>, ctx: &mut LintContext<'_>) {
     // first without order-by
-    if let Some(first) = &rel.first {
-        if first.value && rel.order_by.is_none() {
-            DiagnosticBuilder::warning("rel-first-without-order-by")
-                .at(first.span)
-                .msg("'first' in @rel without 'order-by' returns arbitrary row")
-                .emit(ctx.diagnostics);
-        }
+    if let Some(first) = &rel.first
+        && first.value
+        && rel.order_by.is_none()
+    {
+        DiagnosticBuilder::warning("rel-first-without-order-by")
+            .at(first.span)
+            .msg("'first' in @rel without 'order-by' returns arbitrary row")
+            .emit(ctx.diagnostics);
     }
 
     // FK relationship check
-    if let (Some(parent), Some(from)) = (parent_table, rel.from.as_ref()) {
-        if !has_fk_relationship(parent, from.as_str(), ctx.schema) {
-            DiagnosticBuilder::error("no-fk-relationship")
-                .at(from.span)
-                .msg(format!(
-                    "no FK relationship between '{}' and '{}'",
-                    parent,
-                    from.as_str()
-                ))
-                .emit(ctx.diagnostics);
-        }
+    if let (Some(parent), Some(from)) = (parent_table, rel.from.as_ref())
+        && !has_fk_relationship(parent, from.as_str(), ctx.schema)
+    {
+        DiagnosticBuilder::error("no-fk-relationship")
+            .at(from.span)
+            .msg(format!(
+                "no FK relationship between '{}' and '{}'",
+                parent,
+                from.as_str()
+            ))
+            .emit(ctx.diagnostics);
     }
 }
 

@@ -78,16 +78,16 @@ pub fn lint_literal_types_in_where(
             let value = meta.as_str();
             if !value.starts_with('$') {
                 // It's a literal, check type compatibility
-                if let Some(literal_type) = infer_literal_type(value) {
-                    if !types_compatible(literal_type, &column.sql_type) {
-                        DiagnosticBuilder::error("literal-type-mismatch")
-                            .at(meta.span)
-                            .msg(format!(
-                                "type mismatch: literal '{}' is {} but column '{}' is {}",
-                                value, literal_type, column.name, column.sql_type
-                            ))
-                            .emit(ctx.diagnostics);
-                    }
+                if let Some(literal_type) = infer_literal_type(value)
+                    && !types_compatible(literal_type, &column.sql_type)
+                {
+                    DiagnosticBuilder::error("literal-type-mismatch")
+                        .at(meta.span)
+                        .msg(format!(
+                            "type mismatch: literal '{}' is {} but column '{}' is {}",
+                            value, literal_type, column.name, column.sql_type
+                        ))
+                        .emit(ctx.diagnostics);
                 }
             }
         }
@@ -120,20 +120,19 @@ pub fn lint_param_types_in_where(
             _ => None,
         };
 
-        if let Some(param_name) = param_name {
-            if let Some((param_meta, param_type)) =
+        if let Some(param_name) = param_name
+            && let Some((param_meta, param_type)) =
                 params.params.iter().find(|(k, _)| k.as_str() == param_name)
-            {
-                let type_name = param_type_name(param_type);
-                if !types_compatible(&type_name, &column.sql_type) {
-                    DiagnosticBuilder::error("param-type-mismatch")
-                        .at(param_meta.span)
-                        .msg(format!(
-                            "type mismatch: param '{}' is @{} but column '{}' is {}",
-                            param_name, type_name, column.name, column.sql_type
-                        ))
-                        .emit(ctx.diagnostics);
-                }
+        {
+            let type_name = param_type_name(param_type);
+            if !types_compatible(&type_name, &column.sql_type) {
+                DiagnosticBuilder::error("param-type-mismatch")
+                    .at(param_meta.span)
+                    .msg(format!(
+                        "type mismatch: param '{}' is @{} but column '{}' is {}",
+                        param_name, type_name, column.name, column.sql_type
+                    ))
+                    .emit(ctx.diagnostics);
             }
         }
     }
