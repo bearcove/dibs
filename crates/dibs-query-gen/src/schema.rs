@@ -9,7 +9,7 @@ mod tests {
     use super::*;
     use facet_styx::RenderError;
     use facet_testhelpers::test;
-    use tracing::{debug, trace};
+    use tracing::debug;
 
     #[test]
     fn test_parse_minimal_query() {
