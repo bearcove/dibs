@@ -320,7 +320,7 @@ fn convert_filter_value(value: &schema::FilterValue) -> (FilterOp, Expr) {
     match value {
         schema::FilterValue::Null => (FilterOp::IsNull, Expr::Null),
         schema::FilterValue::NotNull => (FilterOp::IsNotNull, Expr::Null),
-        schema::FilterValue::EqBare(s) => (FilterOp::Eq, parse_expr_string(s)),
+        schema::FilterValue::EqBare(meta) => (FilterOp::Eq, parse_expr_string(meta.as_str())),
         schema::FilterValue::Eq(args) => {
             let expr = args
                 .first()

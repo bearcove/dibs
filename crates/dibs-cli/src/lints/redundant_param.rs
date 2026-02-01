@@ -62,8 +62,8 @@ pub fn lint_redundant_params_in_conflict_update(
 
 pub fn lint_redundant_params_in_where(where_clause: &Where, ctx: &mut LintContext<'_>) {
     for (col_name, filter) in &where_clause.filters {
-        if let FilterValue::EqBare(s) = filter {
-            if let Some(param_name) = s.strip_prefix('$') {
+        if let FilterValue::EqBare(meta) = filter {
+            if let Some(param_name) = meta.as_str().strip_prefix('$') {
                 if param_name == col_name.as_str() {
                     DiagnosticBuilder::hint("redundant-param")
                         .at(col_name.span)

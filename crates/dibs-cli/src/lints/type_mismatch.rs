@@ -62,6 +62,39 @@ fn param_type_name(param_type: &ParamType) -> String {
     }
 }
 
+/// Check for literal type mismatches in where clause (no params needed).
+pub fn lint_literal_types_in_where(
+    where_clause: &Where,
+    table: &TableInfo,
+    ctx: &mut LintContext<'_>,
+) {
+    for (col_name, filter) in &where_clause.filters {
+        let Some(column) = table.columns.iter().find(|c| c.name == col_name.as_str()) else {
+            continue;
+        };
+
+        // Check for literal type mismatch (EqBare with non-param value)
+        if let FilterValue::EqBare(meta) = filter {
+            let value = meta.as_str();
+            if !value.starts_with('$') {
+                // It's a literal, check type compatibility
+                if let Some(literal_type) = infer_literal_type(value) {
+                    if !types_compatible(literal_type, &column.sql_type) {
+                        DiagnosticBuilder::error("literal-type-mismatch")
+                            .at(meta.span)
+                            .msg(format!(
+                                "type mismatch: literal '{}' is {} but column '{}' is {}",
+                                value, literal_type, column.name, column.sql_type
+                            ))
+                            .emit(ctx.diagnostics);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Check for param type mismatches in where clause.
 pub fn lint_param_types_in_where(
     where_clause: &Where,
     table: &TableInfo,
@@ -75,7 +108,7 @@ pub fn lint_param_types_in_where(
 
         // Extract param name from filter
         let param_name = match filter {
-            FilterValue::EqBare(s) => s.strip_prefix('$'),
+            FilterValue::EqBare(meta) => meta.as_str().strip_prefix('$'),
             FilterValue::Eq(args)
             | FilterValue::Ilike(args)
             | FilterValue::Like(args)

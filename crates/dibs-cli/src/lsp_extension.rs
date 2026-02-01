@@ -284,6 +284,7 @@ impl DibsExtension {
                             if let Some(where_clause) = &query.where_clause {
                                 lints::lint_unknown_columns_where(where_clause, table, &mut ctx);
                                 lints::lint_redundant_params_in_where(where_clause, &mut ctx);
+                                lints::lint_literal_types_in_where(where_clause, table, &mut ctx);
                                 if let Some(params) = &query.params {
                                     lints::lint_param_types_in_where(
                                         where_clause,

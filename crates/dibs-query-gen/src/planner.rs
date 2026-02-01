@@ -7,6 +7,7 @@
 //! - Result assembly mapping
 
 use crate::ast::{Expr, Field, Filter, FilterOp, OrderBy, Query, SortDir};
+use dibs_query_schema::Span;
 use std::collections::HashMap;
 
 /// Schema information needed for query planning.
@@ -829,7 +830,7 @@ mod tests {
         let query = Query {
             name: "GetProduct".to_string(),
             doc_comment: None,
-            span: None,
+            span: Span::default(),
             params: vec![],
             from: "product".to_string(),
             filters: vec![],
@@ -842,11 +843,11 @@ mod tests {
             select: vec![
                 Field::Column {
                     name: "id".to_string(),
-                    span: None,
+                    span: Span::default(),
                 },
                 Field::Column {
                     name: "handle".to_string(),
-                    span: None,
+                    span: Span::default(),
                 },
             ],
             raw_sql: None,
@@ -868,7 +869,7 @@ mod tests {
         let query = Query {
             name: "GetProductWithTranslations".to_string(),
             doc_comment: None,
-            span: None,
+            span: Span::default(),
             params: vec![],
             from: "product".to_string(),
             filters: vec![],
@@ -881,11 +882,11 @@ mod tests {
             select: vec![
                 Field::Column {
                     name: "id".to_string(),
-                    span: None,
+                    span: Span::default(),
                 },
                 Field::Relation {
                     name: "translation".to_string(),
-                    span: None,
+                    span: Span::default(),
                     from: Some("product_translation".to_string()),
                     filters: vec![],
                     order_by: vec![],
@@ -893,11 +894,11 @@ mod tests {
                     select: vec![
                         Field::Column {
                             name: "title".to_string(),
-                            span: None,
+                            span: Span::default(),
                         },
                         Field::Column {
                             name: "description".to_string(),
-                            span: None,
+                            span: Span::default(),
                         },
                     ],
                 },
@@ -954,7 +955,7 @@ mod tests {
         let query = Query {
             name: "GetProductWithVariantsAndPrices".to_string(),
             doc_comment: None,
-            span: None,
+            span: Span::default(),
             params: vec![],
             from: "product".to_string(),
             filters: vec![],
@@ -967,11 +968,11 @@ mod tests {
             select: vec![
                 Field::Column {
                     name: "id".to_string(),
-                    span: None,
+                    span: Span::default(),
                 },
                 Field::Relation {
                     name: "variants".to_string(),
-                    span: None,
+                    span: Span::default(),
                     from: Some("product_variant".to_string()),
                     filters: vec![],
                     order_by: vec![],
@@ -979,15 +980,15 @@ mod tests {
                     select: vec![
                         Field::Column {
                             name: "id".to_string(),
-                            span: None,
+                            span: Span::default(),
                         },
                         Field::Column {
                             name: "sku".to_string(),
-                            span: None,
+                            span: Span::default(),
                         },
                         Field::Relation {
                             name: "prices".to_string(),
-                            span: None,
+                            span: Span::default(),
                             from: Some("variant_price".to_string()),
                             filters: vec![],
                             order_by: vec![],
@@ -995,11 +996,11 @@ mod tests {
                             select: vec![
                                 Field::Column {
                                     name: "currency_code".to_string(),
-                                    span: None,
+                                    span: Span::default(),
                                 },
                                 Field::Column {
                                     name: "amount".to_string(),
-                                    span: None,
+                                    span: Span::default(),
                                 },
                             ],
                         },

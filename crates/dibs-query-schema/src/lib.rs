@@ -650,7 +650,7 @@ mod tests {
         }
     }
 
-    /// Test that FilterValue::EqBare works (plain String, not Meta).
+    /// Test that FilterValue::EqBare works with Meta<String>.
     #[test]
     fn filter_value_eq() {
         let source = r#"{id $id}"#;
@@ -662,7 +662,12 @@ mod tests {
                 let (key, value) = where_clause.filters.iter().next().unwrap();
                 assert_eq!(key.value, "id");
                 match value {
-                    FilterValue::EqBare(s) => assert_eq!(s, "$id"),
+                    FilterValue::EqBare(meta) => {
+                        assert_eq!(meta.as_str(), "$id");
+                        // Verify span is captured (offset 4, len 3 for "$id")
+                        assert_eq!(meta.span.offset, 4);
+                        assert_eq!(meta.span.len, 3);
+                    }
                     _ => panic!("Expected EqBare variant, got {:?}", value),
                 }
             }
