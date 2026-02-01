@@ -1,7 +1,7 @@
-//! SQL generation from query AST.
+//! SQL generation from query schema types.
 
-use crate::ast::*;
 use crate::planner::{PlannerSchema, QueryPlan, QueryPlanner};
+use crate::schema::*;
 use dibs_sql::{
     BinOp as SqlBinOp, ConflictAction, DeleteStmt, Expr as SqlExpr, InsertStmt, OnConflict,
     UpdateAssignment, UpdateStmt, render,

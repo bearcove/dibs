@@ -6,7 +6,7 @@
 //! - Column aliasing to avoid collisions
 //! - Result assembly mapping
 
-use crate::ast::{Expr, Field, Filter, FilterOp, OrderBy, Query, SortDir};
+use crate::schema::{FieldDef, FilterValue, Query, Relation, Where};
 use std::collections::HashMap;
 
 /// Schema information needed for query planning.

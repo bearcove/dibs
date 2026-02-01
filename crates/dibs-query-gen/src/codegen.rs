@@ -1,7 +1,7 @@
-//! Rust code generation from query AST using the `codegen` crate.
+//! Rust code generation from query schema types using the `codegen` crate.
 
-use crate::ast::*;
 use crate::planner::PlannerSchema;
+use crate::schema::*;
 use crate::sql::{GeneratedSql, generate_simple_sql, generate_sql_with_joins};
 use codegen::{Block, Function, Scope, Struct};
 use std::collections::HashMap;
@@ -80,6 +80,7 @@ impl SchemaInfo {
 struct CodegenContext<'a> {
     schema: &'a SchemaInfo,
     planner_schema: Option<&'a PlannerSchema>,
+    scope: Scope,
 }
 
 /// Generate Rust code for a query file.
@@ -116,32 +117,31 @@ pub fn generate_rust_code_with_planner(
     scope.import("dibs_runtime::prelude", "*");
     scope.import("dibs_runtime", "tokio_postgres");
 
-    for query in &file.queries {
-        generate_query_code(&ctx, query, &mut scope);
-    }
-
-    for insert in &file.inserts {
-        generate_insert_code(&ctx, insert, &mut scope);
-    }
-
-    for insert_many in &file.insert_manys {
-        generate_insert_many_code(&ctx, insert_many, &mut scope);
-    }
-
-    for upsert in &file.upserts {
-        generate_upsert_code(&ctx, upsert, &mut scope);
-    }
-
-    for upsert_many in &file.upsert_manys {
-        generate_upsert_many_code(&ctx, upsert_many, &mut scope);
-    }
-
-    for update in &file.updates {
-        generate_update_code(&ctx, update, &mut scope);
-    }
-
-    for delete in &file.deletes {
-        generate_delete_code(&ctx, delete, &mut scope);
+    // Iterate through declarations and generate code for each type
+    for (name_meta, decl) in &file.0 {
+        match decl {
+            Decl::Query(query) => {
+                generate_query_code(&ctx, name_meta, query, &mut scope);
+            }
+            Decl::Insert(insert) => {
+                generate_insert_code(&ctx, name_meta, insert, &mut scope);
+            }
+            Decl::InsertMany(insert_many) => {
+                generate_insert_many_code(&ctx, name_meta, insert_many, &mut scope);
+            }
+            Decl::Upsert(upsert) => {
+                generate_upsert_code(&ctx, name_meta, upsert, &mut scope);
+            }
+            Decl::UpsertMany(upsert_many) => {
+                generate_upsert_many_code(&ctx, name_meta, upsert_many, &mut scope);
+            }
+            Decl::Update(update) => {
+                generate_update_code(&ctx, name_meta, update, &mut scope);
+            }
+            Decl::Delete(delete) => {
+                generate_delete_code(&ctx, name_meta, delete, &mut scope);
+            }
+        }
     }
 
     GeneratedCode {
@@ -149,22 +149,33 @@ pub fn generate_rust_code_with_planner(
     }
 }
 
-fn generate_query_code(ctx: &CodegenContext, query: &Query, scope: &mut Scope) {
-    let struct_name = format!("{}Result", query.name);
+fn generate_query_code(
+    ctx: &CodegenContext,
+    name_meta: &Meta<String>,
+    query: &Query,
+    scope: &mut Scope,
+) {
+    let name = &name_meta.value;
+    let struct_name = format!("{}Result", name);
 
     // Generate result struct(s)
-    generate_result_struct(ctx, query, &struct_name, &query.from, &query.select, scope);
+    if let Some(from) = &query.from {
+        if let Some(select) = &query.select {
+            generate_result_struct(ctx, query, name_meta, &struct_name, from, select, scope);
+        }
+    }
 
     // Generate query function
-    generate_query_function(ctx, query, &struct_name, scope);
+    generate_query_function(ctx, name_meta, query, &struct_name, scope);
 }
 
 fn generate_result_struct(
     ctx: &CodegenContext,
     query: &Query,
+    name_meta: &Meta<String>,
     struct_name: &str,
-    table: &str,
-    fields: &[Field],
+    table: &Meta<String>,
+    select: &Select,
     scope: &mut Scope,
 ) {
     let mut st = Struct::new(struct_name);
@@ -174,37 +185,32 @@ fn generate_result_struct(
     st.derive("Facet");
     st.attr("facet(crate = dibs_runtime::facet)");
 
-    if query.is_raw() {
-        // Raw SQL - use returns declaration
-        for ret in &query.returns {
-            let rust_ty = param_type_to_rust(&ret.ty);
-            st.field(format!("pub {}", ret.name), &rust_ty);
-        }
-    } else {
-        // Regular query - use select fields
-        // Use query name as prefix for namespacing nested structs
-        let parent_prefix = &query.name;
-        for field in fields {
-            match field {
-                Field::Column { name, .. } => {
-                    let rust_ty = ctx
-                        .schema
-                        .column_type(table, name)
-                        .unwrap_or_else(|| "String".to_string());
-                    st.field(format!("pub {}", name), &rust_ty);
-                }
-                Field::Relation { name, first, .. } => {
-                    let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
-                    let ty = if *first {
-                        format!("Option<{}>", nested_name)
-                    } else {
-                        format!("Vec<{}>", nested_name)
-                    };
-                    st.field(format!("pub {}", name), &ty);
-                }
-                Field::Count { name, .. } => {
-                    st.field(format!("pub {}", name), "i64");
-                }
+    // Regular query - use select fields
+    let parent_prefix = &name_meta.value;
+    let table_name = &table.value;
+
+    for (field_name_meta, field_def) in &select.fields {
+        let field_name = &field_name_meta.value;
+        match field_def {
+            None => {
+                // Simple column
+                let rust_ty = ctx
+                    .schema
+                    .column_type(table_name, field_name)
+                    .unwrap_or_else(|| "String".to_string());
+                st.field(format!("pub {}", field_name), &rust_ty);
+            }
+            Some(FieldDef::Rel(rel)) => {
+                let nested_name = format!("{}{}", parent_prefix, to_pascal_case(field_name));
+                let ty = if rel.first.is_some() {
+                    format!("Option<{}>", nested_name)
+                } else {
+                    format!("Vec<{}>", nested_name)
+                };
+                st.field(format!("pub {}", field_name), &ty);
+            }
+            Some(FieldDef::Count(_)) => {
+                st.field(format!("pub {}", field_name), "i64");
             }
         }
     }
@@ -212,9 +218,7 @@ fn generate_result_struct(
     scope.push_struct(st);
 
     // Generate nested structs for relations (recursively)
-    if !query.is_raw() {
-        generate_nested_structs(ctx, &query.name, fields, scope);
-    }
+    generate_nested_structs(ctx, parent_prefix, select, scope);
 }
 
 /// Recursively generate structs for nested relations.
@@ -224,16 +228,14 @@ fn generate_result_struct(
 fn generate_nested_structs(
     ctx: &CodegenContext,
     parent_prefix: &str,
-    fields: &[Field],
+    select: &Select,
     scope: &mut Scope,
 ) {
-    for field in fields {
-        if let Field::Relation {
-            name, select, from, ..
-        } = field
-        {
-            let nested_name = format!("{}{}", parent_prefix, to_pascal_case(name));
-            let rel_table = from.as_deref().unwrap_or(name);
+    for (field_name_meta, field_def) in &select.fields {
+        if let Some(FieldDef::Rel(rel)) = field_def {
+            let field_name = &field_name_meta.value;
+            let nested_name = format!("{}{}", parent_prefix, to_pascal_case(field_name));
+            let rel_table = rel.from.as_ref().map(|m| &m.value).unwrap_or(field_name);
 
             let mut nested_st = Struct::new(&nested_name);
             nested_st.vis("pub");
@@ -242,34 +244,32 @@ fn generate_nested_structs(
             nested_st.derive("Facet");
             nested_st.attr("facet(crate = dibs_runtime::facet)");
 
-            for f in select {
-                match f {
-                    Field::Column { name: col_name, .. } => {
-                        let rust_ty = ctx
-                            .schema
-                            .column_type(rel_table, col_name)
-                            .unwrap_or_else(|| "String".to_string());
-                        nested_st.field(format!("pub {}", col_name), &rust_ty);
-                    }
-                    Field::Relation {
-                        name: rel_name,
-                        first: rel_first,
-                        ..
-                    } => {
-                        // Nested relation field - namespace with current struct name
-                        let nested_rel_name =
-                            format!("{}{}", nested_name, to_pascal_case(rel_name));
-                        let ty = if *rel_first {
-                            format!("Option<{}>", nested_rel_name)
-                        } else {
-                            format!("Vec<{}>", nested_rel_name)
-                        };
-                        nested_st.field(format!("pub {}", rel_name), &ty);
-                    }
-                    Field::Count {
-                        name: count_name, ..
-                    } => {
-                        nested_st.field(format!("pub {}", count_name), "i64");
+            if let Some(rel_select) = &rel.select {
+                for (rel_field_name_meta, rel_field_def) in &rel_select.fields {
+                    let rel_field_name = &rel_field_name_meta.value;
+                    match rel_field_def {
+                        None => {
+                            // Simple column
+                            let rust_ty = ctx
+                                .schema
+                                .column_type(rel_table, rel_field_name)
+                                .unwrap_or_else(|| "String".to_string());
+                            nested_st.field(format!("pub {}", rel_field_name), &rust_ty);
+                        }
+                        Some(FieldDef::Rel(nested_rel)) => {
+                            // Nested relation field - namespace with current struct name
+                            let nested_rel_name =
+                                format!("{}{}", nested_name, to_pascal_case(rel_field_name));
+                            let ty = if nested_rel.first.is_some() {
+                                format!("Option<{}>", nested_rel_name)
+                            } else {
+                                format!("Vec<{}>", nested_rel_name)
+                            };
+                            nested_st.field(format!("pub {}", rel_field_name), &ty);
+                        }
+                        Some(FieldDef::Count(_)) => {
+                            nested_st.field(format!("pub {}", rel_field_name), "i64");
+                        }
                     }
                 }
             }
@@ -277,28 +277,33 @@ fn generate_nested_structs(
             scope.push_struct(nested_st);
 
             // Recursively generate structs for nested relations
-            generate_nested_structs(ctx, &nested_name, select, scope);
+            if let Some(rel_select) = &rel.select {
+                generate_nested_structs(ctx, &nested_name, rel_select, scope);
+            }
         }
     }
 }
 
 fn generate_query_function(
     ctx: &CodegenContext,
+    name_meta: &Meta<String>,
     query: &Query,
     struct_name: &str,
     scope: &mut Scope,
 ) {
-    let fn_name = to_snake_case(&query.name);
+    let name = &name_meta.value;
+    let fn_name = to_snake_case(name);
 
-    let return_ty = if query.first {
+    let return_ty = if query.first.is_some() {
         format!("Result<Option<{}>, QueryError>", struct_name)
     } else {
         format!("Result<Vec<{}>, QueryError>", struct_name)
     };
 
     let mut func = Function::new(&fn_name);
-    if let Some(doc) = &query.doc_comment {
-        func.doc(doc);
+    if let Some(doc) = &name_meta.doc {
+        let doc_str = doc.join("\n");
+        func.doc(&doc_str);
     }
     func.vis("pub");
     func.set_async(true);
@@ -307,17 +312,20 @@ fn generate_query_function(
     // Allow clone_on_copy since we generate .clone() calls on parent IDs that might be Copy types
     func.attr("allow(clippy::clone_on_copy)");
 
-    for param in &query.params {
-        let rust_ty = param_type_to_rust(&param.ty);
-        func.arg(&param.name, format!("&{}", rust_ty));
+    if let Some(params) = &query.params {
+        for (param_name_meta, param_type) in &params.params {
+            let param_name = &param_name_meta.value;
+            let rust_ty = param_type_to_rust(param_type);
+            func.arg(param_name, format!("&{}", rust_ty));
+        }
     }
 
     func.ret(&return_ty);
     func.bound("C", "tokio_postgres::GenericClient");
 
     // Generate function body
-    if let Some(raw_sql) = &query.raw_sql {
-        let body = generate_raw_query_body(query, raw_sql);
+    if let Some(raw_sql_meta) = &query.sql {
+        let body = generate_raw_query_body(query, &raw_sql_meta.value);
         func.line(block_to_string(&body));
     } else {
         // Always use the planner-based SQL generation (it falls back to simple if needed)
@@ -332,29 +340,37 @@ fn generate_query_function(
 fn has_vec_relations(query: &Query) -> bool {
     query
         .select
-        .iter()
-        .any(|f| matches!(f, Field::Relation { first: false, .. }))
+        .as_ref()
+        .map(|select| has_vec_relations_in_select(select))
+        .unwrap_or(false)
+}
+
+/// Check if a select has any Vec (has-many) relations.
+fn has_vec_relations_in_select(select: &Select) -> bool {
+    select.fields.values().any(|field_def| {
+        if let Some(FieldDef::Rel(rel)) = field_def {
+            rel.first.is_none()
+        } else {
+            false
+        }
+    })
 }
 
 /// Check if any relation has nested Vec relations.
-fn has_nested_vec_relations(fields: &[Field]) -> bool {
-    for field in fields {
-        if let Field::Relation {
-            first: false,
-            select,
-            ..
-        } = field
-        {
-            // This Vec relation has nested Vec relations
-            if select
-                .iter()
-                .any(|f| matches!(f, Field::Relation { first: false, .. }))
-            {
-                return true;
-            }
-            // Check recursively
-            if has_nested_vec_relations(select) {
-                return true;
+fn has_nested_vec_relations(select: &Select) -> bool {
+    for field_def in select.fields.values() {
+        if let Some(FieldDef::Rel(rel)) = field_def {
+            if rel.first.is_none() {
+                // This Vec relation has nested Vec relations
+                if let Some(rel_select) = &rel.select {
+                    if has_vec_relations_in_select(rel_select) {
+                        return true;
+                    }
+                    // Check recursively
+                    if has_nested_vec_relations(rel_select) {
+                        return true;
+                    }
+                }
             }
         }
     }
@@ -407,7 +423,7 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
     // If there's no plan (simple query with no relations), use from_row() directly
     let Some(plan) = generated.plan.as_ref() else {
         // Simple query - use from_row() for direct deserialization
-        if query.first {
+        if query.first.is_some() {
             let mut match_block = Block::new("match rows.into_iter().next()");
             match_block.line("Some(row) => Ok(Some(from_row(&row)?)),");
             match_block.line("None => Ok(None),");
@@ -421,34 +437,33 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
     block.line("");
 
     // Check if we have Vec relations - if so, use HashMap-based grouping
-    if has_vec_relations(query) {
-        if has_nested_vec_relations(&query.select) {
-            block.line(generate_nested_vec_relation_assembly(
-                ctx,
-                &query.name,
-                query,
-                struct_name,
-                plan,
-                &generated.column_order,
-            ));
+    if let Some(select) = &query.select {
+        if has_vec_relations(query) {
+            if has_nested_vec_relations(select) {
+                block.line(generate_nested_vec_relation_assembly(
+                    ctx,
+                    select,
+                    struct_name,
+                    plan,
+                    &generated.column_order,
+                ));
+            } else {
+                block.line(generate_vec_relation_assembly(
+                    ctx,
+                    select,
+                    struct_name,
+                    plan,
+                    &generated.column_order,
+                ));
+            }
         } else {
-            block.line(generate_vec_relation_assembly(
+            block.line(generate_option_relation_assembly(
                 ctx,
-                &query.name,
-                query,
+                select,
                 struct_name,
-                plan,
                 &generated.column_order,
             ));
         }
-    } else {
-        block.line(generate_option_relation_assembly(
-            ctx,
-            &query.name,
-            query,
-            struct_name,
-            &generated.column_order,
-        ));
     }
 
     block_to_string(&block)
@@ -500,8 +515,7 @@ fn generate_from_row_body(query: &Query, generated: &GeneratedSql) -> Block {
 /// Generate assembly code for queries with Vec (has-many) relations.
 fn generate_vec_relation_assembly(
     ctx: &CodegenContext,
-    parent_prefix: &str,
-    query: &Query,
+    select: &Select,
     struct_name: &str,
     plan: &crate::planner::QueryPlan,
     column_order: &HashMap<String, usize>,
@@ -1145,12 +1159,10 @@ fn generate_nested_vec_with_dedup(
 }
 
 /// Get the "id" column from a list of fields, if present.
-fn get_id_column(select: &[Field]) -> Option<String> {
-    select.iter().find_map(|f| {
-        if let Field::Column { name, .. } = f
-            && name == "id"
-        {
-            return Some(name.clone());
+fn get_id_column(select: &Select) -> Option<String> {
+    select.fields.iter().find_map(|(name_meta, field_def)| {
+        if name_meta.value == "id" && field_def.is_none() {
+            return Some(name_meta.value.clone());
         }
         None
     })
@@ -1159,8 +1171,7 @@ fn get_id_column(select: &[Field]) -> Option<String> {
 /// Generate assembly code for queries with only Option relations.
 fn generate_option_relation_assembly(
     ctx: &CodegenContext,
-    parent_prefix: &str,
-    query: &Query,
+    select: &Select,
     struct_name: &str,
     column_order: &HashMap<String, usize>,
 ) -> String {
@@ -1342,12 +1353,13 @@ fn generate_raw_query_body(query: &Query, raw_sql: &str) -> Block {
     block
 }
 
-fn get_first_column(select: &[Field]) -> String {
+fn get_first_column(select: &Select) -> String {
     select
+        .fields
         .iter()
-        .find_map(|f| {
-            if let Field::Column { name, .. } = f {
-                Some(name.clone())
+        .find_map(|(name_meta, field_def)| {
+            if field_def.is_none() {
+                Some(name_meta.value.clone())
             } else {
                 None
             }
@@ -1415,115 +1427,135 @@ fn to_snake_case(s: &str) -> String {
 // Mutation code generation
 // ============================================================================
 
-fn generate_insert_code(_ctx: &CodegenContext, insert: &InsertMutation, scope: &mut Scope) {
-    let fn_name = to_snake_case(&insert.name);
+fn generate_insert_code(
+    _ctx: &CodegenContext,
+    name_meta: &Meta<String>,
+    insert: &Insert,
+    scope: &mut Scope,
+) {
+    let name = &name_meta.value;
+    let fn_name = to_snake_case(name);
     let generated = crate::sql::generate_insert_sql(insert);
 
     // Generate result struct if RETURNING is used
-    let return_ty = if insert.returning.is_empty() {
+    let has_returning = insert.returning.is_some();
+    let return_ty = if !has_returning {
         "Result<u64, QueryError>".to_string()
     } else {
-        let struct_name = format!("{}Result", insert.name);
-        generate_mutation_result_struct(
-            _ctx,
-            &struct_name,
-            &insert.table,
-            &insert.returning,
-            scope,
-        );
+        let struct_name = format!("{}Result", name);
+        if let Some(returning) = &insert.returning {
+            generate_mutation_result_struct(_ctx, &struct_name, &insert.into, returning, scope);
+        }
         format!("Result<Option<{}>, QueryError>", struct_name)
     };
 
     let mut func = Function::new(&fn_name);
-    if let Some(doc) = &insert.doc_comment {
-        func.doc(doc);
+    if let Some(doc) = &name_meta.doc {
+        let doc_str = doc.join("\n");
+        func.doc(&doc_str);
     }
     func.vis("pub");
     func.set_async(true);
     func.generic("C");
     func.arg("client", "&C");
 
-    for param in &insert.params {
-        let rust_ty = param_type_to_rust(&param.ty);
-        func.arg(&param.name, format!("&{}", rust_ty));
+    if let Some(params) = &insert.params {
+        for (param_name_meta, param_type) in &params.params {
+            let param_name = &param_name_meta.value;
+            let rust_ty = param_type_to_rust(param_type);
+            func.arg(param_name, format!("&{}", rust_ty));
+        }
     }
 
     func.ret(&return_ty);
     func.bound("C", "tokio_postgres::GenericClient");
 
-    let body = generate_mutation_body(&generated, insert.returning.is_empty());
+    let body = generate_mutation_body(&generated, !has_returning);
     func.line(block_to_string(&body));
 
     scope.push_fn(func);
 }
 
-fn generate_upsert_code(_ctx: &CodegenContext, upsert: &UpsertMutation, scope: &mut Scope) {
-    let fn_name = to_snake_case(&upsert.name);
+fn generate_upsert_code(
+    _ctx: &CodegenContext,
+    name_meta: &Meta<String>,
+    upsert: &Upsert,
+    scope: &mut Scope,
+) {
+    let name = &name_meta.value;
+    let fn_name = to_snake_case(name);
     let generated = crate::sql::generate_upsert_sql(upsert);
 
-    let return_ty = if upsert.returning.is_empty() {
+    let has_returning = upsert.returning.is_some();
+    let return_ty = if !has_returning {
         "Result<u64, QueryError>".to_string()
     } else {
-        let struct_name = format!("{}Result", upsert.name);
-        generate_mutation_result_struct(
-            _ctx,
-            &struct_name,
-            &upsert.table,
-            &upsert.returning,
-            scope,
-        );
+        let struct_name = format!("{}Result", name);
+        if let Some(returning) = &upsert.returning {
+            generate_mutation_result_struct(_ctx, &struct_name, &upsert.into, returning, scope);
+        }
         format!("Result<Option<{}>, QueryError>", struct_name)
     };
 
     let mut func = Function::new(&fn_name);
-    if let Some(doc) = &upsert.doc_comment {
-        func.doc(doc);
+    if let Some(doc) = &name_meta.doc {
+        let doc_str = doc.join("\n");
+        func.doc(&doc_str);
     }
     func.vis("pub");
     func.set_async(true);
     func.generic("C");
     func.arg("client", "&C");
 
-    for param in &upsert.params {
-        let rust_ty = param_type_to_rust(&param.ty);
-        func.arg(&param.name, format!("&{}", rust_ty));
+    if let Some(params) = &upsert.params {
+        for (param_name_meta, param_type) in &params.params {
+            let param_name = &param_name_meta.value;
+            let rust_ty = param_type_to_rust(param_type);
+            func.arg(param_name, format!("&{}", rust_ty));
+        }
     }
 
     func.ret(&return_ty);
     func.bound("C", "tokio_postgres::GenericClient");
 
-    let body = generate_mutation_body(&generated, upsert.returning.is_empty());
+    let body = generate_mutation_body(&generated, !has_returning);
     func.line(block_to_string(&body));
 
     scope.push_fn(func);
 }
 
-fn generate_insert_many_code(ctx: &CodegenContext, insert: &InsertManyMutation, scope: &mut Scope) {
-    let fn_name = to_snake_case(&insert.name);
+fn generate_insert_many_code(
+    ctx: &CodegenContext,
+    name_meta: &Meta<String>,
+    insert: &InsertMany,
+    scope: &mut Scope,
+) {
+    let name = &name_meta.value;
+    let fn_name = to_snake_case(name);
     let generated = crate::sql::generate_insert_many_sql(insert);
 
     // Generate params struct
-    let params_struct_name = format!("{}Params", insert.name);
-    generate_bulk_params_struct(
-        ctx,
-        &params_struct_name,
-        &insert.table,
-        &insert.params,
-        scope,
-    );
+    let params_struct_name = format!("{}Params", name);
+    if let Some(params) = &insert.params {
+        generate_bulk_params_struct(ctx, &params_struct_name, &insert.into, params, scope);
+    }
 
     // Generate result struct if RETURNING is used
-    let return_ty = if insert.returning.is_empty() {
+    let has_returning = insert.returning.is_some();
+    let return_ty = if !has_returning {
         "Result<u64, QueryError>".to_string()
     } else {
-        let struct_name = format!("{}Result", insert.name);
-        generate_mutation_result_struct(ctx, &struct_name, &insert.table, &insert.returning, scope);
+        let struct_name = format!("{}Result", name);
+        if let Some(returning) = &insert.returning {
+            generate_mutation_result_struct(ctx, &struct_name, &insert.into, returning, scope);
+        }
         format!("Result<Vec<{}>, QueryError>", struct_name)
     };
 
     let mut func = Function::new(&fn_name);
-    if let Some(doc) = &insert.doc_comment {
-        func.doc(doc);
+    if let Some(doc) = &name_meta.doc {
+        let doc_str = doc.join("\n");
+        func.doc(&doc_str);
     }
     func.vis("pub");
     func.set_async(true);
@@ -1534,38 +1566,44 @@ fn generate_insert_many_code(ctx: &CodegenContext, insert: &InsertManyMutation, 
     func.ret(&return_ty);
     func.bound("C", "tokio_postgres::GenericClient");
 
-    let body = generate_bulk_mutation_body(&generated, &insert.params, insert.returning.is_empty());
+    let body = generate_bulk_mutation_body(&generated, insert.params.as_ref(), !has_returning);
     func.line(block_to_string(&body));
 
     scope.push_fn(func);
 }
 
-fn generate_upsert_many_code(ctx: &CodegenContext, upsert: &UpsertManyMutation, scope: &mut Scope) {
-    let fn_name = to_snake_case(&upsert.name);
+fn generate_upsert_many_code(
+    ctx: &CodegenContext,
+    name_meta: &Meta<String>,
+    upsert: &UpsertMany,
+    scope: &mut Scope,
+) {
+    let name = &name_meta.value;
+    let fn_name = to_snake_case(name);
     let generated = crate::sql::generate_upsert_many_sql(upsert);
 
     // Generate params struct
-    let params_struct_name = format!("{}Params", upsert.name);
-    generate_bulk_params_struct(
-        ctx,
-        &params_struct_name,
-        &upsert.table,
-        &upsert.params,
-        scope,
-    );
+    let params_struct_name = format!("{}Params", name);
+    if let Some(params) = &upsert.params {
+        generate_bulk_params_struct(ctx, &params_struct_name, &upsert.into, params, scope);
+    }
 
     // Generate result struct if RETURNING is used
-    let return_ty = if upsert.returning.is_empty() {
+    let has_returning = upsert.returning.is_some();
+    let return_ty = if !has_returning {
         "Result<u64, QueryError>".to_string()
     } else {
-        let struct_name = format!("{}Result", upsert.name);
-        generate_mutation_result_struct(ctx, &struct_name, &upsert.table, &upsert.returning, scope);
+        let struct_name = format!("{}Result", name);
+        if let Some(returning) = &upsert.returning {
+            generate_mutation_result_struct(ctx, &struct_name, &upsert.into, returning, scope);
+        }
         format!("Result<Vec<{}>, QueryError>", struct_name)
     };
 
     let mut func = Function::new(&fn_name);
-    if let Some(doc) = &upsert.doc_comment {
-        func.doc(doc);
+    if let Some(doc) = &name_meta.doc {
+        let doc_str = doc.join("\n");
+        func.doc(&doc_str);
     }
     func.vis("pub");
     func.set_async(true);
@@ -1576,7 +1614,7 @@ fn generate_upsert_many_code(ctx: &CodegenContext, upsert: &UpsertManyMutation, 
     func.ret(&return_ty);
     func.bound("C", "tokio_postgres::GenericClient");
 
-    let body = generate_bulk_mutation_body(&generated, &upsert.params, upsert.returning.is_empty());
+    let body = generate_bulk_mutation_body(&generated, upsert.params.as_ref(), !has_returning);
     func.line(block_to_string(&body));
 
     scope.push_fn(func);
@@ -1586,8 +1624,8 @@ fn generate_upsert_many_code(ctx: &CodegenContext, upsert: &UpsertManyMutation, 
 fn generate_bulk_params_struct(
     ctx: &CodegenContext,
     struct_name: &str,
-    table: &str,
-    params: &[Param],
+    table: &Meta<String>,
+    params: &Params,
     scope: &mut Scope,
 ) {
     let mut st = Struct::new(struct_name);
@@ -1595,12 +1633,14 @@ fn generate_bulk_params_struct(
     st.derive("Debug");
     st.derive("Clone");
 
-    for param in params {
+    let table_name = &table.value;
+    for (param_name_meta, param_type) in &params.params {
+        let param_name = &param_name_meta.value;
         let rust_ty = ctx
             .schema
-            .column_type(table, &param.name)
-            .unwrap_or_else(|| param_type_to_rust(&param.ty));
-        st.field(format!("pub {}", param.name), &rust_ty);
+            .column_type(table_name, param_name)
+            .unwrap_or_else(|| param_type_to_rust(param_type));
+        st.field(format!("pub {}", param_name), &rust_ty);
     }
 
     scope.push_struct(st);
@@ -1609,7 +1649,7 @@ fn generate_bulk_params_struct(
 /// Generate body for bulk mutation (INSERT MANY / UPSERT MANY).
 fn generate_bulk_mutation_body(
     generated: &crate::sql::GeneratedSql,
-    params: &[Param],
+    params: Option<&Params>,
     execute_only: bool,
 ) -> Block {
     let mut block = Block::new("");
@@ -1619,115 +1659,136 @@ fn generate_bulk_mutation_body(
     block.line("");
 
     // Convert slice of structs to parallel arrays
-    block.line("// Convert items to parallel arrays for UNNEST");
-    for param in params {
-        let rust_ty = param_type_to_rust(&param.ty);
-        block.line(format!(
-            "let {}_arr: Vec<{}> = items.iter().map(|i| i.{}.clone()).collect();",
-            param.name, rust_ty, param.name
-        ));
-    }
-    block.line("");
+    if let Some(params) = params {
+        block.line("// Convert items to parallel arrays for UNNEST");
+        for (param_name_meta, param_type) in &params.params {
+            let param_name = &param_name_meta.value;
+            let rust_ty = param_type_to_rust(param_type);
+            block.line(format!(
+                "let {}_arr: Vec<{}> = items.iter().map(|i| i.{}.clone()).collect();",
+                param_name, rust_ty, param_name
+            ));
+        }
+        block.line("");
 
-    // Build the params reference array
-    let param_refs: Vec<String> = params.iter().map(|p| format!("&{}_arr", p.name)).collect();
+        // Build the params reference array
+        let param_refs: Vec<String> = params
+            .params
+            .keys()
+            .map(|p| format!("&{}_arr", p.value))
+            .collect();
 
-    if execute_only {
-        // No RETURNING - use execute
-        block.line(format!(
-            "let affected = client.execute(SQL, &[{}]).await?;",
-            param_refs.join(", ")
-        ));
-        block.line("Ok(affected)");
-    } else {
-        // Has RETURNING - use query
-        block.line(format!(
-            "let rows = client.query(SQL, &[{}]).await?;",
-            param_refs.join(", ")
-        ));
-        block.line("rows.iter().map(|row| Ok(from_row(row)?)).collect()");
+        if execute_only {
+            // No RETURNING - use execute
+            block.line(format!(
+                "let affected = client.execute(SQL, &[{}]).await?;",
+                param_refs.join(", ")
+            ));
+            block.line("Ok(affected)");
+        } else {
+            // Has RETURNING - use query
+            block.line(format!(
+                "let rows = client.query(SQL, &[{}]).await?;",
+                param_refs.join(", ")
+            ));
+            block.line("rows.iter().map(|row| Ok(from_row(row)?)).collect()");
+        }
     }
 
     block
 }
 
-fn generate_update_code(_ctx: &CodegenContext, update: &UpdateMutation, scope: &mut Scope) {
-    let fn_name = to_snake_case(&update.name);
+fn generate_update_code(
+    _ctx: &CodegenContext,
+    name_meta: &Meta<String>,
+    update: &Update,
+    scope: &mut Scope,
+) {
+    let name = &name_meta.value;
+    let fn_name = to_snake_case(name);
     let generated = crate::sql::generate_update_sql(update);
 
-    let return_ty = if update.returning.is_empty() {
+    let has_returning = update.returning.is_some();
+    let return_ty = if !has_returning {
         "Result<u64, QueryError>".to_string()
     } else {
-        let struct_name = format!("{}Result", update.name);
-        generate_mutation_result_struct(
-            _ctx,
-            &struct_name,
-            &update.table,
-            &update.returning,
-            scope,
-        );
+        let struct_name = format!("{}Result", name);
+        if let Some(returning) = &update.returning {
+            generate_mutation_result_struct(_ctx, &struct_name, &update.table, returning, scope);
+        }
         format!("Result<Option<{}>, QueryError>", struct_name)
     };
 
     let mut func = Function::new(&fn_name);
-    if let Some(doc) = &update.doc_comment {
-        func.doc(doc);
+    if let Some(doc) = &name_meta.doc {
+        let doc_str = doc.join("\n");
+        func.doc(&doc_str);
     }
     func.vis("pub");
     func.set_async(true);
     func.generic("C");
     func.arg("client", "&C");
 
-    for param in &update.params {
-        let rust_ty = param_type_to_rust(&param.ty);
-        func.arg(&param.name, format!("&{}", rust_ty));
+    if let Some(params) = &update.params {
+        for (param_name_meta, param_type) in &params.params {
+            let param_name = &param_name_meta.value;
+            let rust_ty = param_type_to_rust(param_type);
+            func.arg(param_name, format!("&{}", rust_ty));
+        }
     }
 
     func.ret(&return_ty);
     func.bound("C", "tokio_postgres::GenericClient");
 
-    let body = generate_mutation_body(&generated, update.returning.is_empty());
+    let body = generate_mutation_body(&generated, !has_returning);
     func.line(block_to_string(&body));
 
     scope.push_fn(func);
 }
 
-fn generate_delete_code(_ctx: &CodegenContext, delete: &DeleteMutation, scope: &mut Scope) {
-    let fn_name = to_snake_case(&delete.name);
+fn generate_delete_code(
+    _ctx: &CodegenContext,
+    name_meta: &Meta<String>,
+    delete: &Delete,
+    scope: &mut Scope,
+) {
+    let name = &name_meta.value;
+    let fn_name = to_snake_case(name);
     let generated = crate::sql::generate_delete_sql(delete);
 
-    let return_ty = if delete.returning.is_empty() {
+    let has_returning = delete.returning.is_some();
+    let return_ty = if !has_returning {
         "Result<u64, QueryError>".to_string()
     } else {
-        let struct_name = format!("{}Result", delete.name);
-        generate_mutation_result_struct(
-            _ctx,
-            &struct_name,
-            &delete.table,
-            &delete.returning,
-            scope,
-        );
+        let struct_name = format!("{}Result", name);
+        if let Some(returning) = &delete.returning {
+            generate_mutation_result_struct(_ctx, &struct_name, &delete.table, returning, scope);
+        }
         format!("Result<Option<{}>, QueryError>", struct_name)
     };
 
     let mut func = Function::new(&fn_name);
-    if let Some(doc) = &delete.doc_comment {
-        func.doc(doc);
+    if let Some(doc) = &name_meta.doc {
+        let doc_str = doc.join("\n");
+        func.doc(&doc_str);
     }
     func.vis("pub");
     func.set_async(true);
     func.generic("C");
     func.arg("client", "&C");
 
-    for param in &delete.params {
-        let rust_ty = param_type_to_rust(&param.ty);
-        func.arg(&param.name, format!("&{}", rust_ty));
+    if let Some(params) = &delete.params {
+        for (param_name_meta, param_type) in &params.params {
+            let param_name = &param_name_meta.value;
+            let rust_ty = param_type_to_rust(param_type);
+            func.arg(param_name, format!("&{}", rust_ty));
+        }
     }
 
     func.ret(&return_ty);
     func.bound("C", "tokio_postgres::GenericClient");
 
-    let body = generate_mutation_body(&generated, delete.returning.is_empty());
+    let body = generate_mutation_body(&generated, !has_returning);
     func.line(block_to_string(&body));
 
     scope.push_fn(func);
