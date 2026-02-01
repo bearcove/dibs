@@ -21,6 +21,10 @@ pub struct Meta<T> {
     /// The wrapped value.
     pub value: T,
 
+    /// The tag associated to this value if any
+    #[facet(metadata = "tag")]
+    pub tag: Option<String>,
+
     /// The source span (offset and length), if available.
     #[facet(metadata = "span")]
     pub span: Option<Span>,
@@ -57,6 +61,7 @@ impl<T> Meta<T> {
             value,
             span: None,
             doc: None,
+            tag: None,
         }
     }
 
@@ -66,6 +71,7 @@ impl<T> Meta<T> {
             value,
             span: Some(span),
             doc: None,
+            tag: None,
         }
     }
 
@@ -88,6 +94,7 @@ impl<T> From<T> for Meta<T> {
             value,
             span: None,
             doc: None,
+            tag: None,
         }
     }
 }
