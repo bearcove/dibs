@@ -2,11 +2,13 @@
 
 use std::collections::HashMap;
 
+use dibs_sql::{ColumnName, TableName};
+
 /// A planned query with JOINs resolved.
 #[derive(Debug, Clone)]
 pub struct QueryPlan {
     /// The base table
-    pub from_table: String,
+    pub from_table: TableName,
     /// Alias for the base table
     pub from_alias: String,
     /// JOIN clauses
@@ -23,7 +25,7 @@ pub struct QueryPlan {
 
 impl QueryPlan {
     /// Create a new QueryPlan with the given base table.
-    pub fn new(from_table: String) -> Self {
+    pub fn new(from_table: TableName) -> Self {
         Self {
             from_table,
             from_alias: "t0".to_string(),
@@ -46,13 +48,13 @@ impl QueryPlan {
     pub fn add_column(
         &mut self,
         table_alias: &str,
-        column: &str,
-        result_alias: String,
-        path: Vec<String>,
+        column: &ColumnName,
+        result_alias: ColumnName,
+        path: Vec<ColumnName>,
     ) {
         self.select_columns.push(SelectColumn {
             table_alias: table_alias.to_string(),
-            column: column.to_string(),
+            column: column.clone(),
             result_alias: result_alias.clone(),
         });
         self.result_mapping.columns.insert(result_alias, path);
@@ -66,14 +68,14 @@ impl QueryPlan {
     }
 
     /// Add a COUNT subquery.
-    pub fn add_count(&mut self, subquery: CountSubquery, path: Vec<String>) {
+    pub fn add_count(&mut self, subquery: CountSubquery, path: Vec<ColumnName>) {
         let alias = subquery.result_alias.clone();
         self.count_subqueries.push(subquery);
         self.result_mapping.columns.insert(alias, path);
     }
 
     /// Add a relation mapping at the top level.
-    pub fn add_relation(&mut self, name: String, mapping: RelationMapping) {
+    pub fn add_relation(&mut self, name: ColumnName, mapping: RelationMapping) {
         self.result_mapping.relations.insert(name, mapping);
     }
 }
@@ -84,7 +86,7 @@ pub struct JoinClause {
     /// JOIN type (LEFT, INNER)
     pub join_type: JoinType,
     /// Table to join
-    pub table: String,
+    pub table: TableName,
     /// Alias for the joined table
     pub alias: String,
     /// ON condition: (left_col, right_col)
@@ -92,7 +94,7 @@ pub struct JoinClause {
     /// Whether this is a first:true relation (affects LATERAL generation)
     pub first: bool,
     /// Columns selected from this join (needed for LATERAL subquery)
-    pub select_columns: Vec<String>,
+    pub select_columns: Vec<ColumnName>,
 }
 
 /// JOIN type.
@@ -108,50 +110,50 @@ pub struct SelectColumn {
     /// Table alias
     pub table_alias: String,
     /// Column name
-    pub column: String,
+    pub column: ColumnName,
     /// Result alias (for AS clause)
-    pub result_alias: String,
+    pub result_alias: ColumnName,
 }
 
 /// A COUNT subquery in the SELECT clause.
 #[derive(Debug, Clone)]
 pub struct CountSubquery {
     /// Result alias (e.g., "variant_count")
-    pub result_alias: String,
+    pub result_alias: ColumnName,
     /// Table to count from (e.g., "product_variant")
-    pub count_table: String,
+    pub count_table: TableName,
     /// FK column in the count table (e.g., "product_id")
-    pub fk_column: String,
+    pub fk_column: ColumnName,
     /// Parent table alias (e.g., "t0")
     pub parent_alias: String,
     /// Parent key column (e.g., "id")
-    pub parent_key: String,
+    pub parent_key: ColumnName,
 }
 
 /// Mapping of result columns to nested struct paths.
 #[derive(Debug, Clone, Default)]
 pub struct ResultMapping {
     /// Map from result alias to struct path (e.g., "t_title" -> ["translation", "title"])
-    pub columns: HashMap<String, Vec<String>>,
+    pub columns: HashMap<ColumnName, Vec<ColumnName>>,
     /// Nested relations and their mappings
-    pub relations: HashMap<String, RelationMapping>,
+    pub relations: HashMap<ColumnName, RelationMapping>,
 }
 
 /// Mapping for a single relation.
 #[derive(Debug, Clone)]
 pub struct RelationMapping {
     /// Relation name
-    pub name: String,
+    pub name: ColumnName,
     /// Whether it's first (`Option<T>`) or many (`Vec<T>`)
     pub first: bool,
     /// Column mappings within this relation
-    pub columns: HashMap<String, String>,
+    pub columns: HashMap<ColumnName, ColumnName>,
     /// Parent's primary key column name (used for grouping Vec relations)
-    pub parent_key_column: Option<String>,
+    pub parent_key_column: Option<ColumnName>,
     /// Table alias for this relation (e.g., "t1", "t2")
     pub table_alias: String,
     /// Nested relations within this relation
-    pub nested_relations: HashMap<String, RelationMapping>,
+    pub nested_relations: HashMap<ColumnName, RelationMapping>,
 }
 
 /// Error type for query planning.
@@ -182,5 +184,5 @@ pub struct FkResolution {
     /// Direction of the relationship
     pub direction: FkDirection,
     /// Parent's primary key column (used for grouping Vec relations)
-    pub parent_key_column: String,
+    pub parent_key_column: ColumnName,
 }

@@ -2,7 +2,7 @@
 
 use crate::{QueryPlan, QueryPlanner};
 use dibs_db_schema::Schema;
-use dibs_query_schema::SelectFields;
+use dibs_query_schema::Select;
 use std::collections::HashMap;
 
 use super::format_filter;
@@ -23,7 +23,7 @@ pub struct GeneratedSelect {
 
 /// Generate SQL for a SELECT query using the planner.
 pub fn generate_select_sql(
-    query: &SelectFields,
+    query: &Select,
     schema: &Schema,
 ) -> Result<GeneratedSelect, crate::planner::PlanError> {
     // Plan the query

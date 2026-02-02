@@ -9,9 +9,10 @@
 mod types;
 
 use dibs_db_schema::Schema;
+use dibs_sql::{ColumnName, TableName};
 pub use types::*;
 
-use crate::{SelectFields, SelectFields};
+use crate::{Select, SelectFields};
 use std::collections::HashMap;
 
 impl std::fmt::Display for PlanError {
@@ -41,7 +42,7 @@ impl<'a> QueryPlanner<'a> {
     }
 
     /// Plan a query, resolving all relations to JOINs.
-    pub fn plan(&self, query: &SelectFields) -> Result<QueryPlan, PlanError> {
+    pub fn plan(&self, query: &Select) -> Result<QueryPlan, PlanError> {
         let from_table_meta = query
             .from
             .as_ref()
@@ -53,7 +54,7 @@ impl<'a> QueryPlanner<'a> {
         let mut plan = QueryPlan::new(from_table.clone());
 
         // Process top-level fields (columns and relations)
-        if let Some(select) = &query.select {
+        if let Some(select) = &query.fields {
             self.process_select(
                 select,
                 &from_table,
@@ -70,19 +71,20 @@ impl<'a> QueryPlanner<'a> {
     fn process_select(
         &self,
         select: &SelectFields,
-        parent_table: &str,
+        parent_table: &TableName,
         parent_alias: &str,
-        path: &[String], // path to this relation (e.g., ["variants", "prices"])
+        path: &[ColumnName], // path to this relation (e.g., ["variants", "prices"])
         plan: &mut QueryPlan,
     ) -> Result<(), PlanError> {
         // Process simple columns
         for (name_meta, _field_def) in select.columns() {
             let name = &name_meta.value;
             // Build result alias: for nested relations, prefix with path
-            let result_alias = if path.is_empty() {
+            let result_alias: ColumnName = if path.is_empty() {
                 name.clone()
             } else {
-                format!("{}_{}", path.join("_"), name)
+                let path_str: Vec<&str> = path.iter().map(|c| c.as_str()).collect();
+                format!("{}_{}", path_str.join("_"), name).into()
             };
 
             // Build full path for column mapping
@@ -97,13 +99,11 @@ impl<'a> QueryPlanner<'a> {
             let name = &name_meta.value;
 
             // Resolve the relation table name
-            let relation_table = relation
-                .table_name()
-                .map(|s| s.to_string())
-                .or_else(|| Some(name.clone()))
-                .ok_or_else(|| PlanError::RelationNeedsFrom {
-                    relation: name.clone(),
-                })?;
+            let relation_table: TableName = relation
+                .from
+                .as_ref()
+                .map(|m| m.value.clone())
+                .unwrap_or_else(|| name.as_str().into());
 
             // Find FK relationship
             let relation_alias = plan.next_alias();
@@ -111,7 +111,7 @@ impl<'a> QueryPlanner<'a> {
                 self.resolve_fk(parent_table, &relation_table, &relation_alias, parent_alias)?;
 
             // Collect column names for the join (only direct columns, not nested relations)
-            let join_select_columns: Vec<String> = relation
+            let join_select_columns: Vec<ColumnName> = relation
                 .fields
                 .as_ref()
                 .map(|sel| sel.columns().map(|(n, _)| n.value.clone()).collect())
@@ -165,15 +165,19 @@ impl<'a> QueryPlanner<'a> {
         }
 
         // Process count aggregations
-        for (name_meta, _tables) in select.counts() {
+        for (name_meta, tables) in select.counts() {
             let name = &name_meta.value;
-            // For now, skip count processing - would need to map table names
+            // Use the first table from the count annotation, or derive from parent
+            let count_table: TableName = tables
+                .first()
+                .map(|t| t.value.clone())
+                .unwrap_or_else(|| format!("{}_count", parent_table).into());
             let subquery = CountSubquery {
                 result_alias: name.clone(),
-                count_table: format!("{}_count", parent_table), // placeholder
-                fk_column: format!("{}_id", parent_table),      // placeholder
+                count_table,
+                fk_column: format!("{}_id", parent_table).into(), // placeholder
                 parent_alias: parent_alias.to_string(),
-                parent_key: "id".to_string(), // placeholder
+                parent_key: "id".into(), // placeholder
             };
             plan.add_count(subquery, vec![name.clone()]);
         }
@@ -185,17 +189,18 @@ impl<'a> QueryPlanner<'a> {
     fn process_select_nested(
         &self,
         select: &SelectFields,
-        parent_table: &str,
+        parent_table: &TableName,
         parent_alias: &str,
-        path: &[String],
+        path: &[ColumnName],
         plan: &mut QueryPlan,
-        column_mappings: &mut HashMap<String, String>,
-        relation_mappings: &mut HashMap<String, RelationMapping>,
+        column_mappings: &mut HashMap<ColumnName, ColumnName>,
+        relation_mappings: &mut HashMap<ColumnName, RelationMapping>,
     ) -> Result<(), PlanError> {
         // Process simple columns in nested select
         for (name_meta, _field_def) in select.columns() {
             let col_name = &name_meta.value;
-            let result_alias = format!("{}_{}", path.join("_"), col_name);
+            let path_str: Vec<&str> = path.iter().map(|c| c.as_str()).collect();
+            let result_alias: ColumnName = format!("{}_{}", path_str.join("_"), col_name).into();
 
             plan.select_columns.push(SelectColumn {
                 table_alias: parent_alias.to_string(),
@@ -209,19 +214,17 @@ impl<'a> QueryPlanner<'a> {
         for (name_meta, relation) in select.relations() {
             let name = &name_meta.value;
 
-            let relation_table = relation
-                .table_name()
-                .map(|s| s.to_string())
-                .or_else(|| Some(name.clone()))
-                .ok_or_else(|| PlanError::RelationNeedsFrom {
-                    relation: name.clone(),
-                })?;
+            let relation_table: TableName = relation
+                .from
+                .as_ref()
+                .map(|m| m.value.clone())
+                .unwrap_or_else(|| name.as_str().into());
 
             let relation_alias = plan.next_alias();
             let fk_resolution =
                 self.resolve_fk(parent_table, &relation_table, &relation_alias, parent_alias)?;
 
-            let join_select_columns: Vec<String> = relation
+            let join_select_columns: Vec<ColumnName> = relation
                 .fields
                 .as_ref()
                 .map(|sel| sel.columns().map(|(n, _)| n.value.clone()).collect())
@@ -277,29 +280,29 @@ impl<'a> QueryPlanner<'a> {
     /// Returns the FkResolution with JoinClause, direction, and parent key column.
     fn resolve_fk(
         &self,
-        from_table: &str,
-        to_table: &str,
+        from_table: &TableName,
+        to_table: &TableName,
         alias: &str,
         parent_alias: &str,
     ) -> Result<FkResolution, PlanError> {
         let to_table_info =
             self.schema
                 .tables
-                .get(to_table)
+                .get(to_table.as_str())
                 .ok_or_else(|| PlanError::TableNotFound {
                     table: to_table.to_string(),
                 })?;
 
         // Check if to_table has FK pointing to from_table (reverse/has-many)
         for fk in &to_table_info.foreign_keys {
-            if fk.references_table == from_table {
+            if fk.references_table == from_table.as_str() {
                 // Found: to_table.fk_col -> from_table.ref_col
                 // JOIN to_table ON from_table.ref_col = to_table.fk_col
-                let parent_key_column = fk.references_columns[0].clone();
+                let parent_key_column: ColumnName = fk.references_columns[0].clone().into();
                 return Ok(FkResolution {
                     join_clause: JoinClause {
                         join_type: JoinType::Left,
-                        table: to_table.to_string(),
+                        table: to_table.clone(),
                         alias: alias.to_string(),
                         on_condition: (
                             format!("{}.{}", parent_alias, parent_key_column),
@@ -315,24 +318,22 @@ impl<'a> QueryPlanner<'a> {
         }
 
         // Check if from_table has FK pointing to to_table (forward/belongs-to)
-        let from_table_info =
-            self.schema
-                .tables
-                .get(from_table)
-                .ok_or_else(|| PlanError::TableNotFound {
-                    table: from_table.to_string(),
-                })?;
+        let from_table_info = self.schema.tables.get(from_table.as_str()).ok_or_else(|| {
+            PlanError::TableNotFound {
+                table: from_table.to_string(),
+            }
+        })?;
 
         for fk in &from_table_info.foreign_keys {
-            if fk.references_table == to_table {
+            if fk.references_table == to_table.as_str() {
                 // Found: from_table.fk_col -> to_table.ref_col
                 // JOIN to_table ON from_table.fk_col = to_table.ref_col
                 // For forward (belongs-to), parent key is the FK column in from_table
-                let parent_key_column = fk.columns[0].clone();
+                let parent_key_column: ColumnName = fk.columns[0].clone().into();
                 return Ok(FkResolution {
                     join_clause: JoinClause {
                         join_type: JoinType::Left,
-                        table: to_table.to_string(),
+                        table: to_table.clone(),
                         alias: alias.to_string(),
                         on_condition: (
                             format!("{}.{}", parent_alias, parent_key_column),
