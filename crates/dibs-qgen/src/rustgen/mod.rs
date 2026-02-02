@@ -1,10 +1,15 @@
 //! Rust code generation from query schema types using the `codegen` crate.
 
 use codegen::{Block, Function, Scope, Struct};
-use dibs_query_schema::{Meta, Select};
+use dibs_query_schema::{
+    Decl, Delete, FieldDef, Insert, InsertMany, Meta, Params, QueryFile, Relation, Returning,
+    Select, SelectFields, Update, Upsert, UpsertMany,
+};
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::QueryPlan;
+use crate::sqlgen::GeneratedSql;
+use crate::{QError, QErrorKind, QSource, QueryPlan};
 
 // ============================================================================
 // Code Generation Contexts
@@ -30,8 +35,8 @@ struct QueryGenerationContext<'a> {
     /// The name of the result struct being built.
     struct_name: &'a str,
 
-    /// The original source code - used for error reporting.
-    source: &'a str,
+    /// The original source - used for error reporting.
+    source: Arc<QSource>,
 }
 
 impl<'a> QueryGenerationContext<'a> {
@@ -42,17 +47,14 @@ impl<'a> QueryGenerationContext<'a> {
 
     /// Get the type of a column with error reporting.
     /// Takes the Meta wrapper so we have span for error reporting.
-    fn root_column_type_with_span(
-        &self,
-        col_name_meta: &Meta<String>,
-    ) -> Result<String, QueryGenError> {
+    fn root_column_type_with_span(&self, col_name_meta: &Meta<String>) -> Result<String, QError> {
         self.codegen
             .schema
             .column_type(self.root_table, &col_name_meta.value)
-            .ok_or_else(|| QueryGenError {
+            .ok_or_else(|| QError {
                 span: col_name_meta.span,
-                source: self.source.to_string(),
-                kind: ErrorKind::ColumnNotFound {
+                source: self.source.clone(),
+                kind: QErrorKind::ColumnNotFound {
                     table: self.root_table.to_string(),
                     column: col_name_meta.value.clone(),
                 },
@@ -339,12 +341,12 @@ fn generate_query_code(
     }
 
     // Generate query function
-    generate_query_function(ctx, name_meta, query, &struct_name, scope);
+    generate_select_function(ctx, name_meta, query, &struct_name, scope);
 }
 
 fn generate_result_struct(
     ctx: &CodegenContext,
-    query: &Query,
+    query: &Select,
     name_meta: &Meta<String>,
     struct_name: &str,
     table: &Meta<String>,
@@ -457,10 +459,10 @@ fn generate_nested_structs(
     }
 }
 
-fn generate_query_function(
+fn generate_select_function(
     ctx: &CodegenContext,
     name_meta: &Meta<String>,
-    query: &Query,
+    query: &Select,
     struct_name: &str,
     scope: &mut Scope,
 ) {
@@ -610,7 +612,7 @@ fn generate_query_body(ctx: &CodegenContext, query: &Query, struct_name: &str) -
     block.line("");
 
     // Check if we have Vec relations - if so, use HashMap-based grouping
-    if let Some(select) = &query.select {
+    if let Some(select) = &query.fields {
         let root_table = query
             .from
             .as_ref()
@@ -780,7 +782,7 @@ fn generate_vec_relation_assembly(
 
         if let Some(FieldDef::Rel(rel)) = field_def {
             let rel_table = rel.table_name().unwrap_or(field_name);
-            if let Some(rel_select) = &rel.select {
+            if let Some(rel_select) = &rel.fields {
                 let first_col = rel_select.first_column().unwrap_or_default();
                 let first_alias = format!("{field_name}_{first_col}");
 
@@ -924,7 +926,7 @@ fn generate_nested_vec_relation_assembly(
             let field_name = &field_name_meta.value;
             if !rel.is_first() {
                 // This is a Vec relation
-                if let Some(rel_select) = &rel.select {
+                if let Some(rel_select) = &rel.fields {
                     let rel_table = rel.table_name().unwrap_or(field_name);
                     // Get the ID column of this relation for deduplication
                     if let Some(id_col) = rel_select.id_column() {
@@ -942,7 +944,7 @@ fn generate_nested_vec_relation_assembly(
                                 let inner_field_name = &inner_field_name_meta.value;
                                 if !inner_rel.is_first() {
                                     // This is a nested Vec relation
-                                    if let Some(inner_rel_select) = &inner_rel.select {
+                                    if let Some(inner_rel_select) = &inner_rel.fields {
                                         let inner_table =
                                             inner_rel.table_name().unwrap_or(inner_field_name);
                                         if let Some(inner_id_col) = inner_rel_select.id_column() {
@@ -1014,7 +1016,7 @@ fn generate_nested_vec_relation_assembly(
 
         if let Some(FieldDef::Rel(rel)) = field_def {
             let rel_table = rel.table_name().unwrap_or(field_name);
-            if let Some(rel_select) = &rel.select {
+            if let Some(rel_select) = &rel.fields {
                 let first_col = rel_select.first_column().unwrap_or_default();
                 let first_alias = format!("{field_name}_{first_col}");
 
@@ -1219,7 +1221,7 @@ fn generate_nested_vec_with_dedup(
     for (inner_field_name_meta, inner_field_def) in &select.fields {
         if let Some(FieldDef::Rel(inner_rel)) = inner_field_def {
             let inner_field_name = &inner_field_name_meta.value;
-            if let Some(inner_select) = &inner_rel.select {
+            if let Some(inner_select) = &inner_rel.fields {
                 let inner_table = inner_rel.table_name().unwrap_or(inner_field_name);
                 let inner_nested_name = format!(
                     "{}Nested{}",
@@ -1374,7 +1376,7 @@ fn generate_option_relation_assembly(
             Some(FieldDef::Rel(rel)) => {
                 if rel.is_first() {
                     // Option relation - map it inline
-                    if let Some(rel_select) = &rel.select {
+                    if let Some(rel_select) = &rel.fields {
                         let rel_table = rel.table_name().unwrap_or(field_name);
                         let first_col = rel_select.first_column().unwrap_or_default();
                         let first_alias = format!("{field_name}_{first_col}");
@@ -1576,7 +1578,7 @@ fn generate_insert_code(
 ) {
     let name = &name_meta.value;
     let fn_name = to_snake_case(name);
-    let generated = crate::sql::generate_insert_sql(insert);
+    let generated = crate::sqlgen::generate_insert_sql(insert);
 
     // Generate result struct if RETURNING is used
     let has_returning = insert.returning.is_some();
@@ -1625,7 +1627,7 @@ fn generate_upsert_code(
 ) {
     let name = &name_meta.value;
     let fn_name = to_snake_case(name);
-    let generated = crate::sql::generate_upsert_sql(upsert);
+    let generated = crate::sqlgen::generate_upsert_sql(upsert);
 
     let has_returning = upsert.returning.is_some();
     let return_ty = if !has_returning {
@@ -1673,7 +1675,7 @@ fn generate_insert_many_code(
 ) {
     let name = &name_meta.value;
     let fn_name = to_snake_case(name);
-    let generated = crate::sql::generate_insert_many_sql(insert);
+    let generated = crate::sqlgen::generate_insert_many_sql(insert);
 
     // Generate params struct
     let params_struct_name = format!("{}Params", name);
@@ -1721,7 +1723,7 @@ fn generate_upsert_many_code(
 ) {
     let name = &name_meta.value;
     let fn_name = to_snake_case(name);
-    let generated = crate::sql::generate_upsert_many_sql(upsert);
+    let generated = crate::sqlgen::generate_upsert_many_sql(upsert);
 
     // Generate params struct
     let params_struct_name = format!("{}Params", name);
@@ -1847,7 +1849,7 @@ fn generate_update_code(
 ) {
     let name = &name_meta.value;
     let fn_name = to_snake_case(name);
-    let generated = crate::sql::generate_update_sql(update);
+    let generated = crate::sqlgen::generate_update_sql(update);
 
     let has_returning = update.returning.is_some();
     let return_ty = if !has_returning {
@@ -1895,7 +1897,7 @@ fn generate_delete_code(
 ) {
     let name = &name_meta.value;
     let fn_name = to_snake_case(name);
-    let generated = crate::sql::generate_delete_sql(delete);
+    let generated = crate::sqlgen::generate_delete_sql(delete);
 
     let has_returning = delete.returning.is_some();
     let return_ty = if !has_returning {

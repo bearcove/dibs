@@ -27,7 +27,7 @@ pub use sqlgen::{
 };
 
 // Rust code generation
-// mod rustgen;
+mod rustgen;
 
 // Internal stuff
 mod filter_spec;

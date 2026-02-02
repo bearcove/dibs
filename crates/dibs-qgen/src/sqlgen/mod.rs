@@ -9,10 +9,7 @@ mod update;
 mod upsert;
 mod upsert_many;
 
-pub use common::{
-    filter_value_to_expr, meta_string_to_expr, update_value_to_expr, value_expr_to_expr,
-    where_to_expr,
-};
+// Common helpers are used by submodules via `super::common::`
 pub use delete::{GeneratedDelete, generate_delete_sql};
 use indexmap::IndexMap;
 pub use insert::{GeneratedInsert, generate_insert_sql};
