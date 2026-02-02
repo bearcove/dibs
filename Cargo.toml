@@ -17,8 +17,10 @@ dibs = { path = "crates/dibs" }
 dibs-config = { path = "crates/dibs-config" }
 dibs-macros = { path = "crates/dibs-macros" }
 dibs-proto = { path = "crates/dibs-proto" }
-dibs-query-gen = { path = "crates/dibs-query-gen" }
+dibs-qgen = { path = "crates/dibs-qgen" }
 dibs-query-schema = { path = "crates/dibs-query-schema" }
+dibs-db-schema = { path = "crates/dibs-db-schema" }
+dibs-jsonb = { path = "crates/dibs-jsonb" }
 dibs-runtime = { path = "crates/dibs-runtime" }
 dockside = { path = "crates/dockside" }
 
@@ -32,6 +34,8 @@ facet-reflect = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-testhelpers = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-format = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres" }
+
+strid = { git = "https://github.com/bearcove/strid", version = "8.0.0" }
 
 # styx ecosystem
 facet-styx = { git = "https://github.com/bearcove/styx", branch = "main" }
@@ -58,7 +62,7 @@ bytes = "1"
 chrono = "0.4"
 jiff = "0.2"
 postgres-types = "0.2"
-rust_decimal = { version = "1", default-features = false, features = ["std"] }
+rust_decimal = { version = "1", default-features = false, features = [] }
 time = "0.3"
 uuid = "1"
 
@@ -86,6 +90,8 @@ unsynn = { version = "0.3", features = ["proc_macro2"] }
 codegen = "0.3"
 
 # misc
+camino = "1"
+indexmap = "2"
 inventory = "0.3"
 blake3 = "1"
 
@@ -96,6 +102,9 @@ testcontainers = "0.26"
 testcontainers-modules = { version = "0.14", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[patch.crates-io]
+facet = { git = "https://github.com/facet-rs/facet", branch = "main" }
 
 # Note: Mutations require facet-rs/facet#1844 to be merged for IndexMap<String, ()> support
 # [patch."https://github.com/facet-rs/facet"]

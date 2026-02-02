@@ -5,7 +5,7 @@
 ## Syntax
 
 ```styx
-SalesByCategory @query{
+SalesByCategory @select{
   from order_item
   group_by{ category_id }
   having{ total @gt(1000) }
