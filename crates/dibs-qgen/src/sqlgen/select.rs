@@ -3,6 +3,7 @@
 use crate::{QueryPlan, QueryPlanner};
 use dibs_db_schema::Schema;
 use dibs_query_schema::Select;
+use dibs_sql::{ColumnName, ParamName};
 use std::collections::HashMap;
 
 use super::format_filter;
@@ -13,12 +14,12 @@ pub struct GeneratedSelect {
     /// The SQL string with $1, $2, etc. placeholders.
     pub sql: String,
     /// Parameter names in order (maps to $1, $2, etc.).
-    pub param_order: Vec<String>,
+    pub param_order: Vec<ParamName>,
     /// Query plan (for JOINs and result assembly).
     pub plan: QueryPlan,
     /// Column names in SELECT order (for index-based access).
     /// Maps column names to their index in the result set.
-    pub column_order: HashMap<String, usize>,
+    pub column_order: HashMap<ColumnName, usize>,
 }
 
 /// Generate SQL for a SELECT query using the planner.
@@ -31,9 +32,9 @@ pub fn generate_select_sql(
     let plan = planner.plan(query)?;
 
     let mut sql = String::new();
-    let mut param_order = Vec::new();
+    let mut param_order: Vec<ParamName> = Vec::new();
     let mut param_idx = 1;
-    let mut column_order = HashMap::new();
+    let mut column_order: HashMap<ColumnName, usize> = HashMap::new();
 
     // Build column_order from plan's select_columns and count_subqueries
     let mut col_idx = 0;
@@ -117,7 +118,7 @@ pub fn generate_select_sql(
         sql.push_str(" LIMIT ");
         let limit_str = limit.value.as_str();
         if let Some(param_name) = limit_str.strip_prefix('$') {
-            param_order.push(param_name.to_string());
+            param_order.push(param_name.into());
             sql.push_str(&format!("${}", param_idx));
             param_idx += 1;
         } else {
@@ -131,7 +132,7 @@ pub fn generate_select_sql(
         sql.push_str(" OFFSET ");
         let offset_str = offset.value.as_str();
         if let Some(param_name) = offset_str.strip_prefix('$') {
-            param_order.push(param_name.to_string());
+            param_order.push(param_name.into());
             sql.push_str(&format!("${}", param_idx));
             param_idx += 1;
         } else {

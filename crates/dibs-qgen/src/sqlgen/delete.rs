@@ -1,7 +1,7 @@
 //! SQL generation for DELETE statements.
 
-use dibs_query_schema::{Delete, FilterValue, Meta, Returning, Where};
-use dibs_sql::{DeleteStmt, Expr, RenderedSql, render};
+use dibs_query_schema::{Delete, FilterValue, Meta, Where};
+use dibs_sql::{ColumnName, DeleteStmt, Expr, ParamName, render};
 
 /// Generated SQL with parameter info.
 #[derive(Debug, Clone)]
@@ -9,14 +9,14 @@ pub struct GeneratedDelete {
     /// The rendered SQL string with $1, $2, etc. placeholders.
     pub sql: String,
     /// Parameter names in order (maps to $1, $2, etc.).
-    pub params: Vec<String>,
+    pub params: Vec<ParamName>,
     /// Column names in RETURNING order (for index-based access).
-    pub returning_columns: Vec<String>,
+    pub returning_columns: Vec<ColumnName>,
 }
 
 /// Generate SQL for a DELETE statement.
 pub fn generate_delete_sql(delete: &Delete) -> GeneratedDelete {
-    let mut stmt = DeleteStmt::new(delete.from.value.as_str().into());
+    let mut stmt = DeleteStmt::new(delete.from.value.clone());
 
     // WHERE clause
     if let Some(where_clause) = &delete.where_clause {
@@ -26,21 +26,21 @@ pub fn generate_delete_sql(delete: &Delete) -> GeneratedDelete {
     }
 
     // RETURNING clause
-    let returning_columns: Vec<String> = if let Some(returning) = &delete.returning {
+    let returning_columns: Vec<ColumnName> = if let Some(returning) = &delete.returning {
         returning.columns.keys().map(|k| k.value.clone()).collect()
     } else {
         vec![]
     };
 
     for col in &returning_columns {
-        stmt = stmt.returning([col.as_str().into()]);
+        stmt = stmt.returning([col.clone()]);
     }
 
     let rendered = render(&stmt);
 
     GeneratedDelete {
         sql: rendered.sql,
-        params: rendered.params.iter().map(|p| p.to_string()).collect(),
+        params: rendered.params,
         returning_columns,
     }
 }
@@ -63,8 +63,8 @@ fn where_to_expr(where_clause: &Where) -> Option<Expr> {
 }
 
 /// Convert a FilterValue to a dibs_sql::Expr.
-fn filter_value_to_expr(column: &str, filter: &FilterValue) -> Option<Expr> {
-    let col = Expr::column(column);
+fn filter_value_to_expr(column: &ColumnName, filter: &FilterValue) -> Option<Expr> {
+    let col = Expr::column(column.clone());
 
     match filter {
         FilterValue::Null => Some(col.is_null()),
@@ -80,7 +80,7 @@ fn filter_value_to_expr(column: &str, filter: &FilterValue) -> Option<Expr> {
                 Some(col.eq(meta_string_to_expr(meta)))
             } else {
                 // Shorthand: {id} means {id $id} - use column name as param name
-                Some(col.eq(Expr::param(column)))
+                Some(col.eq(Expr::param(column.as_str().into())))
             }
         }
 
@@ -178,7 +178,7 @@ fn filter_value_to_expr(column: &str, filter: &FilterValue) -> Option<Expr> {
 fn meta_string_to_expr(meta: &Meta<String>) -> Expr {
     let s = &meta.value;
     if let Some(param_name) = s.strip_prefix('$') {
-        Expr::param(param_name)
+        Expr::param(param_name.into())
     } else {
         // Try to parse as integer
         if let Ok(n) = s.parse::<i64>() {
@@ -220,10 +220,7 @@ DeleteUser @delete {
 "#;
         let delete = get_first_delete(source);
         let result = generate_delete_sql(&delete);
-
-        insta::assert_snapshot!(result.sql);
-        assert_eq!(result.params, vec!["id"]);
-        assert_eq!(result.returning_columns, vec!["id"]);
+        insta::assert_debug_snapshot!(result);
     }
 
     #[test]
@@ -236,10 +233,7 @@ DeleteOldSessions @delete {
 "#;
         let delete = get_first_delete(source);
         let result = generate_delete_sql(&delete);
-
-        insta::assert_snapshot!(result.sql);
-        assert_eq!(result.params, vec!["now"]);
-        assert!(result.returning_columns.is_empty());
+        insta::assert_debug_snapshot!(result);
     }
 
     #[test]
@@ -254,9 +248,6 @@ DeleteUserPosts @delete {
 "#;
         let delete = get_first_delete(source);
         let result = generate_delete_sql(&delete);
-
-        insta::assert_snapshot!(result.sql);
-        assert_eq!(result.params, vec!["user_id", "status"]);
-        assert_eq!(result.returning_columns, vec!["id", "title"]);
+        insta::assert_debug_snapshot!(result);
     }
 }
