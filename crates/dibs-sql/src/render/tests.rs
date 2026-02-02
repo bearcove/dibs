@@ -14,46 +14,49 @@ fn test_simple_select() {
     insta::assert_snapshot!(result.sql);
 }
 
-// #[test]
-// fn test_select_with_where_and_order() {
-//     let stmt = SelectStmt::new()
-//         .columns([
-//             SelectColumn::expr(Expr::column("id")),
-//             SelectColumn::expr(Expr::column("name")),
-//         ])
-//         .from(FromClause::table("users"))
-//         .where_(
-//             Expr::column("active")
-//                 .eq(Expr::Bool(true))
-//                 .and(Expr::column("deleted_at").is_null()),
-//         )
-//         .order_by(OrderBy::desc(Expr::column("created_at")))
-//         .limit(Expr::Int(10))
-//         .offset(Expr::Int(20));
+#[test]
+fn test_select_with_where_and_order() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::expr(Expr::column("id".into())),
+            SelectColumn::expr(Expr::column("name".into())),
+        ])
+        .from(FromClause::table("users".into()))
+        .where_(
+            Expr::column("active".into())
+                .eq(Expr::Bool(true))
+                .and(Expr::column("deleted_at".into()).is_null()),
+        )
+        .order_by(OrderBy::desc(Expr::column("created_at".into())))
+        .limit(Expr::Int(10))
+        .offset(Expr::Int(20));
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
 
-// #[test]
-// fn test_select_with_params() {
-//     let stmt = SelectStmt::new()
-//         .columns([
-//             SelectColumn::expr(Expr::column("id")),
-//             SelectColumn::expr(Expr::column("handle")),
-//             SelectColumn::expr(Expr::column("status")),
-//         ])
-//         .from(FromClause::table("products"))
-//         .where_(
-//             Expr::column("handle")
-//                 .eq(Expr::param("handle"))
-//                 .and(Expr::column("status").eq(Expr::param("status"))),
-//         );
+#[test]
+fn test_select_with_params() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::expr(Expr::column("id".into())),
+            SelectColumn::expr(Expr::column("handle".into())),
+            SelectColumn::expr(Expr::column("status".into())),
+        ])
+        .from(FromClause::table("products".into()))
+        .where_(
+            Expr::column("handle".into())
+                .eq(Expr::param("handle".into()))
+                .and(Expr::column("status".into()).eq(Expr::param("status".into()))),
+        );
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     assert_eq!(result.params, vec!["handle", "status"]);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(
+        result.params,
+        vec![ParamName::from("handle"), ParamName::from("status")]
+    );
+}
 
 // #[test]
 // fn test_select_with_join() {
