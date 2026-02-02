@@ -1540,7 +1540,8 @@ fn get_first_column(select: &Select) -> String {
         .unwrap_or_default()
 }
 
-fn param_type_to_rust(ty: &ParamType) -> String {
+fn param_type_to_rust(ty: &dibs_query_schema::ParamType) -> String {
+    use dibs_query_schema::ParamType;
     match ty {
         ParamType::String => "String".to_string(),
         ParamType::Int => "i64".to_string(),

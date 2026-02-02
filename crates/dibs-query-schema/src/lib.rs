@@ -700,6 +700,13 @@ impl Select {
         false
     }
 
+    /// Check if this select has any count aggregations.
+    pub fn has_count(&self) -> bool {
+        self.fields
+            .values()
+            .any(|field_def| matches!(field_def, Some(FieldDef::Count(_))))
+    }
+
     /// Iterate over simple columns (fields with None FieldDef).
     pub fn columns(&self) -> impl Iterator<Item = (&Meta<String>, &Option<FieldDef>)> {
         self.fields

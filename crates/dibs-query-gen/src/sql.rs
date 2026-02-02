@@ -32,27 +32,30 @@ pub fn generate_simple_sql(query: &Query) -> GeneratedSql {
     sql.push_str("SELECT ");
 
     // DISTINCT or DISTINCT ON
-    if !query.distinct_on.is_empty() {
+    if let Some(distinct_on) = &query.distinct_on {
         sql.push_str("DISTINCT ON (");
-        let distinct_cols: Vec<_> = query
-            .distinct_on
+        let distinct_cols: Vec<_> = distinct_on
+            .0
             .iter()
-            .map(|col| format!("\"{}\"", col))
+            .map(|col_meta| format!("\"{}\"", col_meta.as_str()))
             .collect();
         sql.push_str(&distinct_cols.join(", "));
         sql.push_str(") ");
-    } else if query.distinct {
-        sql.push_str("DISTINCT ");
+    } else if let Some(distinct_meta) = &query.distinct {
+        if distinct_meta.get() {
+            sql.push_str("DISTINCT ");
+        }
     }
 
-    let columns: Vec<_> = query
-        .select
-        .iter()
-        .filter_map(|f| match f {
-            Field::Column { name, .. } => Some(name.clone()),
-            _ => None, // Skip relations/aggregates for simple query
-        })
-        .collect();
+    // Get columns from select clause
+    let columns: Vec<_> = if let Some(select) = &query.select {
+        select
+            .columns()
+            .map(|(name_meta, _)| name_meta.value.clone())
+            .collect()
+    } else {
+        vec![]
+    };
 
     // Build column_order map
     for (idx, col_name) in columns.iter().enumerate() {
@@ -68,75 +71,81 @@ pub fn generate_simple_sql(query: &Query) -> GeneratedSql {
     }
 
     // FROM
-    sql.push_str(" FROM \"");
-    sql.push_str(&query.from);
-    sql.push('"');
+    if let Some(from_meta) = &query.from {
+        sql.push_str(" FROM \"");
+        sql.push_str(&from_meta.value);
+        sql.push('"');
+    }
 
     // WHERE
-    if !query.filters.is_empty() {
-        sql.push_str(" WHERE ");
-        let conditions: Vec<_> = query
-            .filters
-            .iter()
-            .map(|f| {
-                let (cond, new_idx) = format_filter(f, param_idx, &mut param_order);
-                param_idx = new_idx;
-                cond
-            })
-            .collect();
-        sql.push_str(&conditions.join(" AND "));
+    if let Some(where_clause) = &query.where_clause {
+        if !where_clause.filters.is_empty() {
+            sql.push_str(" WHERE ");
+            let conditions: Vec<_> = where_clause
+                .filters
+                .iter()
+                .map(|(col_meta, filter_value)| {
+                    let col = col_meta.as_str();
+                    let (cond, new_idx) =
+                        format_filter_value(col, filter_value, param_idx, &mut param_order);
+                    param_idx = new_idx;
+                    cond
+                })
+                .collect();
+            sql.push_str(&conditions.join(" AND "));
+        }
     }
 
     // ORDER BY
-    if !query.order_by.is_empty() {
-        sql.push_str(" ORDER BY ");
-        let orders: Vec<_> = query
-            .order_by
-            .iter()
-            .map(|o| {
-                format!(
-                    "\"{}\" {}",
-                    o.column,
-                    match o.direction {
-                        SortDir::Asc => "ASC",
-                        SortDir::Desc => "DESC",
-                    }
-                )
-            })
-            .collect();
-        sql.push_str(&orders.join(", "));
+    if let Some(order_by) = &query.order_by {
+        if !order_by.columns.is_empty() {
+            sql.push_str(" ORDER BY ");
+            let orders: Vec<_> = order_by
+                .columns
+                .iter()
+                .map(|(col_meta, dir_opt)| {
+                    let dir =
+                        if let Some(dir_str) = dir_opt.as_ref().and_then(|m| m.value_as_deref()) {
+                            if dir_str == "desc" { "DESC" } else { "ASC" }
+                        } else {
+                            "ASC"
+                        };
+                    format!("\"{}\" {}", col_meta.as_str(), dir)
+                })
+                .collect();
+            sql.push_str(&orders.join(", "));
+        }
     }
 
     // LIMIT
-    if let Some(limit) = &query.limit {
+    if let Some(limit_meta) = &query.limit {
         sql.push_str(" LIMIT ");
-        match limit {
-            Expr::Int(n) => sql.push_str(&n.to_string()),
-            Expr::Param(name) => {
-                param_order.push(name.clone());
-                sql.push_str(&format!("${}", param_idx));
-                param_idx += 1;
-            }
-            _ => sql.push_str("20"), // fallback
+        let limit_str = &limit_meta.value;
+        if limit_str.starts_with('$') {
+            // Parameter reference
+            param_order.push(limit_str[1..].to_string());
+            sql.push_str(&format!("${}", param_idx));
+            param_idx += 1;
+        } else {
+            // Literal value
+            sql.push_str(limit_str);
         }
     }
 
     // OFFSET
-    if let Some(offset) = &query.offset {
+    if let Some(offset_meta) = &query.offset {
         sql.push_str(" OFFSET ");
-        match offset {
-            Expr::Int(n) => sql.push_str(&n.to_string()),
-            Expr::Param(name) => {
-                param_order.push(name.clone());
-                sql.push_str(&format!("${}", param_idx));
-                param_idx += 1;
-            }
-            _ => sql.push('0'), // fallback
+        let offset_str = &offset_meta.value;
+        if offset_str.starts_with('$') {
+            // Parameter reference
+            param_order.push(offset_str[1..].to_string());
+            sql.push_str(&format!("${}", param_idx));
+            param_idx += 1;
+        } else {
+            // Literal value
+            sql.push_str(offset_str);
         }
     }
-
-    // Suppress unused warning - param_idx is used during iteration
-    let _ = param_idx;
 
     GeneratedSql {
         sql,
@@ -156,8 +165,9 @@ pub fn generate_sql_with_joins(
     // Check if query needs the planner (has relations or COUNT fields)
     let needs_planner = query
         .select
-        .iter()
-        .any(|f| matches!(f, Field::Relation { .. }) || matches!(f, Field::Count { .. }));
+        .as_ref()
+        .map(|sel| sel.has_relations() || sel.has_count())
+        .unwrap_or(false);
 
     if !needs_planner || schema.is_none() {
         // Fall back to simple SQL generation
@@ -281,6 +291,243 @@ pub fn generate_sql_with_joins(
         plan: Some(plan),
         column_order,
     })
+}
+
+/// Format a filter value for the new schema structure.
+fn format_filter_value(
+    col: &str,
+    filter_value: &FilterValue,
+    mut param_idx: usize,
+    param_order: &mut Vec<String>,
+) -> (String, usize) {
+    let col_quoted = format!("\"{}\"", col);
+    let mut used_param = false;
+
+    let result = match filter_value {
+        FilterValue::Null => format!("{} IS NULL", col_quoted),
+        FilterValue::NotNull => format!("{} IS NOT NULL", col_quoted),
+        FilterValue::EqBare(opt_meta) => {
+            if let Some(meta) = opt_meta {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    // Parameter reference
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} = ${}", col_quoted, param_idx)
+                } else {
+                    // Literal string value
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} = '{}'", col_quoted, escaped)
+                }
+            } else {
+                format!("{} IS NULL", col_quoted)
+            }
+        }
+        FilterValue::Eq(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    // Parameter reference
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} = ${}", col_quoted, param_idx)
+                } else {
+                    // Try to parse as a literal value
+                    if let Ok(n) = val_str.parse::<i64>() {
+                        format!("{} = {}", col_quoted, n)
+                    } else if let Ok(b) = val_str.parse::<bool>() {
+                        format!("{} = {}", col_quoted, b)
+                    } else {
+                        // String literal
+                        let escaped = val_str.replace('\'', "''");
+                        format!("{} = '{}'", col_quoted, escaped)
+                    }
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::Ne(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} != ${}", col_quoted, param_idx)
+                } else {
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} != '{}'", col_quoted, escaped)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::Lt(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} < ${}", col_quoted, param_idx)
+                } else {
+                    format!("{} < {}", col_quoted, val_str)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::Lte(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} <= ${}", col_quoted, param_idx)
+                } else {
+                    format!("{} <= {}", col_quoted, val_str)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::Gt(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} > ${}", col_quoted, param_idx)
+                } else {
+                    format!("{} > {}", col_quoted, val_str)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::Gte(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} >= ${}", col_quoted, param_idx)
+                } else {
+                    format!("{} >= {}", col_quoted, val_str)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::Like(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} LIKE ${}", col_quoted, param_idx)
+                } else {
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} LIKE '{}'", col_quoted, escaped)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::Ilike(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} ILIKE ${}", col_quoted, param_idx)
+                } else {
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} ILIKE '{}'", col_quoted, escaped)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::In(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} = ANY(${})", col_quoted, param_idx)
+                } else {
+                    format!("{} = ANY(ARRAY[{}])", col_quoted, val_str)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::JsonGet(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} -> ${}", col_quoted, param_idx)
+                } else {
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} -> '{}'", col_quoted, escaped)
+                }
+            } else {
+                col_quoted.clone()
+            }
+        }
+        FilterValue::JsonGetText(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} ->> ${}", col_quoted, param_idx)
+                } else {
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} ->> '{}'", col_quoted, escaped)
+                }
+            } else {
+                col_quoted.clone()
+            }
+        }
+        FilterValue::Contains(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} @> ${}", col_quoted, param_idx)
+                } else {
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} @> '{}'", col_quoted, escaped)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+        FilterValue::KeyExists(args) => {
+            if let Some(meta) = args.first() {
+                let val_str = meta.as_str();
+                if val_str.starts_with('$') {
+                    param_order.push(val_str[1..].to_string());
+                    used_param = true;
+                    format!("{} ? ${}", col_quoted, param_idx)
+                } else {
+                    let escaped = val_str.replace('\'', "''");
+                    format!("{} ? '{}'", col_quoted, escaped)
+                }
+            } else {
+                "1 = 1".to_string()
+            }
+        }
+    };
+
+    if used_param {
+        param_idx += 1;
+    }
+    (result, param_idx)
 }
 
 fn format_filter(
@@ -908,9 +1155,13 @@ fn param_type_to_pg_array(ty: &ParamType) -> &'static str {
         ParamType::Decimal => "numeric[]",
         ParamType::Timestamp => "timestamptz[]",
         ParamType::Bytes => "bytea[]",
-        ParamType::Optional(inner) => {
-            // For optional, use the inner type's array
-            param_type_to_pg_array(inner)
+        ParamType::Optional(inner_vec) => {
+            // For optional, use the inner type's array (from first element if available)
+            if let Some(inner) = inner_vec.first() {
+                param_type_to_pg_array(inner)
+            } else {
+                "text[]" // fallback for empty optional
+            }
         }
     }
 }
@@ -919,6 +1170,88 @@ fn param_type_to_pg_array(ty: &ParamType) -> &'static str {
 mod tests {
     use super::*;
     use crate::parse::parse_query_file;
+    use dibs_query_schema::Decl;
+
+    /// Helper to extract first Query from QueryFile
+    fn get_first_query(file: &dibs_query_schema::QueryFile) -> &dibs_query_schema::Query {
+        file.0
+            .values()
+            .find_map(|decl| match decl {
+                Decl::Query(q) => Some(q),
+                _ => None,
+            })
+            .expect("no query found")
+    }
+
+    /// Helper to extract first Insert from QueryFile
+    fn get_first_insert(file: &dibs_query_schema::QueryFile) -> &dibs_query_schema::Insert {
+        file.0
+            .values()
+            .find_map(|decl| match decl {
+                Decl::Insert(i) => Some(i),
+                _ => None,
+            })
+            .expect("no insert found")
+    }
+
+    /// Helper to extract first Upsert from QueryFile
+    fn get_first_upsert(file: &dibs_query_schema::QueryFile) -> &dibs_query_schema::Upsert {
+        file.0
+            .values()
+            .find_map(|decl| match decl {
+                Decl::Upsert(u) => Some(u),
+                _ => None,
+            })
+            .expect("no upsert found")
+    }
+
+    /// Helper to extract first Update from QueryFile
+    fn get_first_update(file: &dibs_query_schema::QueryFile) -> &dibs_query_schema::Update {
+        file.0
+            .values()
+            .find_map(|decl| match decl {
+                Decl::Update(u) => Some(u),
+                _ => None,
+            })
+            .expect("no update found")
+    }
+
+    /// Helper to extract first Delete from QueryFile
+    fn get_first_delete(file: &dibs_query_schema::QueryFile) -> &dibs_query_schema::Delete {
+        file.0
+            .values()
+            .find_map(|decl| match decl {
+                Decl::Delete(d) => Some(d),
+                _ => None,
+            })
+            .expect("no delete found")
+    }
+
+    /// Helper to extract first InsertMany from QueryFile
+    fn get_first_insert_many(
+        file: &dibs_query_schema::QueryFile,
+    ) -> &dibs_query_schema::InsertMany {
+        file.0
+            .values()
+            .find_map(|decl| match decl {
+                Decl::InsertMany(im) => Some(im),
+                _ => None,
+            })
+            .expect("no insert-many found")
+    }
+
+    /// Helper to extract first UpsertMany from QueryFile
+    fn get_first_upsert_many(
+        file: &dibs_query_schema::QueryFile,
+    ) -> &dibs_query_schema::UpsertMany {
+        file.0
+            .values()
+            .find_map(|decl| match decl {
+                Decl::UpsertMany(um) => Some(um),
+                _ => None,
+            })
+            .expect("no upsert-many found")
+    }
 
     #[test]
     fn test_simple_select() {
@@ -929,7 +1262,7 @@ AllProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         // Column order is non-deterministic due to HashMap iteration
         assert!(sql.sql.starts_with("SELECT "));
@@ -950,7 +1283,7 @@ ActiveProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         // Check structure without depending on order
         assert!(sql.sql.contains("SELECT "));
@@ -973,7 +1306,7 @@ ProductByHandle @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""handle" = $1"#));
         assert_eq!(sql.param_order, vec!["handle"]);
@@ -990,7 +1323,7 @@ RecentProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#"ORDER BY "created_at" DESC"#));
         assert!(sql.sql.contains("LIMIT 20"));
@@ -1006,7 +1339,7 @@ ActiveProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""deleted_at" IS NULL"#));
     }
@@ -1022,7 +1355,7 @@ SearchProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""handle" ILIKE $1"#));
         assert_eq!(sql.param_order, vec!["q"]);
@@ -1038,7 +1371,7 @@ PublishedProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(
             sql.sql.contains(r#""published_at" IS NOT NULL"#),
@@ -1058,7 +1391,7 @@ FilteredProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""price" >= $1"#), "SQL: {}", sql.sql);
         assert_eq!(sql.param_order, vec!["min_price"]);
@@ -1075,7 +1408,7 @@ FilteredProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""price" <= $1"#), "SQL: {}", sql.sql);
         assert_eq!(sql.param_order, vec!["max_price"]);
@@ -1092,7 +1425,7 @@ NonDraftProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""status" != $1"#), "SQL: {}", sql.sql);
         assert_eq!(sql.param_order, vec!["excluded_status"]);
@@ -1109,7 +1442,7 @@ ProductsByStatus @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(
             sql.sql.contains(r#""status" = ANY($1)"#),
@@ -1130,7 +1463,7 @@ ProductWithMetadata @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""metadata" -> $1"#), "SQL: {}", sql.sql);
         assert_eq!(sql.param_order, vec!["key"]);
@@ -1146,7 +1479,7 @@ ProductWithSettings @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(
             sql.sql.contains(r#""metadata" -> 'settings'"#),
@@ -1167,7 +1500,7 @@ ProductWithJsonValue @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""metadata" ->> $1"#), "SQL: {}", sql.sql);
         assert_eq!(sql.param_order, vec!["key"]);
@@ -1184,7 +1517,7 @@ ProductWithMetadataContains @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""metadata" @> $1"#), "SQL: {}", sql.sql);
         assert_eq!(sql.param_order, vec!["json_value"]);
@@ -1201,7 +1534,7 @@ ProductWithMetadataKey @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains(r#""metadata" ? $1"#), "SQL: {}", sql.sql);
         assert_eq!(sql.param_order, vec!["key"]);
@@ -1217,7 +1550,7 @@ ProductWithLocale @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(
             sql.sql.contains(r#""metadata" ? 'locale'"#),
@@ -1239,7 +1572,7 @@ PaginatedProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains("LIMIT 20"), "SQL: {}", sql.sql);
         assert!(sql.sql.contains("OFFSET 40"), "SQL: {}", sql.sql);
@@ -1256,7 +1589,7 @@ UniqueStatuses @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains("SELECT DISTINCT"), "SQL: {}", sql.sql);
         assert!(sql.sql.contains("\"status\""), "SQL: {}", sql.sql);
@@ -1273,7 +1606,7 @@ LatestPerCategory @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let query = &file.queries[0];
+        let query = get_first_query(&file);
         eprintln!("distinct_on: {:?}", query.distinct_on);
         eprintln!("order_by: {:?}", query.order_by);
         let sql = generate_simple_sql(query);
@@ -1303,7 +1636,7 @@ DistinctProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let query = &file.queries[0];
+        let query = get_first_query(&file);
         eprintln!("distinct_on: {:?}", query.distinct_on);
         eprintln!("order_by: {:?}", query.order_by);
         let sql = generate_simple_sql(query);
@@ -1330,7 +1663,7 @@ PaginatedProducts @query{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_simple_sql(&file.queries[0]);
+        let sql = generate_simple_sql(get_first_query(&file));
 
         assert!(sql.sql.contains("LIMIT $1"));
         assert!(sql.sql.contains("OFFSET $2"));
@@ -1387,7 +1720,7 @@ ProductWithTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
+        let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
 
         // Check SELECT
         assert!(sql.sql.contains("\"t0\".\"id\""));
@@ -1460,7 +1793,7 @@ ProductWithEnglishTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
+        let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
 
         // Check that relation filter is in the ON clause
         assert!(
@@ -1519,7 +1852,7 @@ ProductWithTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
+        let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
 
         // Check that relation filter is in the ON clause with param placeholder
         assert!(
@@ -1582,7 +1915,7 @@ ProductWithTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
+        let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
 
         // Relation filter should be $1 (comes first in FROM clause)
         assert!(
@@ -1620,7 +1953,7 @@ CreateUser @insert{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_insert_sql(&file.inserts[0]);
+        let sql = generate_insert_sql(get_first_insert(&file));
 
         assert!(sql.sql.contains("INSERT INTO \"users\""));
         assert!(sql.sql.contains("\"name\""));
@@ -1654,7 +1987,7 @@ UpsertProduct @upsert{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_upsert_sql(&file.upserts[0]);
+        let sql = generate_upsert_sql(get_first_upsert(&file));
 
         assert!(sql.sql.contains("INSERT INTO \"products\""));
         assert!(sql.sql.contains("ON CONFLICT (\"id\")"));
@@ -1684,7 +2017,7 @@ UpdateUserEmail @update{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_update_sql(&file.updates[0]);
+        let sql = generate_update_sql(get_first_update(&file));
 
         assert!(sql.sql.contains("UPDATE \"users\" SET"));
         assert!(sql.sql.contains("\"email\" = $1"));
@@ -1707,7 +2040,7 @@ DeleteUser @delete{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        let sql = generate_delete_sql(&file.deletes[0]);
+        let sql = generate_delete_sql(get_first_delete(&file));
 
         assert!(sql.sql.contains("DELETE FROM \"users\""));
         assert!(sql.sql.contains("WHERE \"id\" = $1"));
@@ -1763,7 +2096,7 @@ ProductWithLatestTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
+        let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
 
         // Should use LATERAL join for first:true with order_by
         assert!(
@@ -1844,7 +2177,7 @@ ProductWithLatestEnglishTranslation @query{
             },
         );
 
-        let sql = generate_sql_with_joins(&file.queries[0], Some(&schema)).unwrap();
+        let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
 
         // Should use LATERAL
         assert!(
@@ -1882,9 +2215,7 @@ BulkCreateProducts @insert-many{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        assert_eq!(file.insert_manys.len(), 1);
-
-        let sql = generate_insert_many_sql(&file.insert_manys[0]);
+        let sql = generate_insert_many_sql(get_first_insert_many(&file));
 
         // Check INSERT INTO with correct columns
         assert!(
@@ -1935,9 +2266,7 @@ BulkUpsertProducts @upsert-many{
 }
 "#;
         let file = parse_query_file("<test>", source).unwrap();
-        assert_eq!(file.upsert_manys.len(), 1);
-
-        let sql = generate_upsert_many_sql(&file.upsert_manys[0]);
+        let sql = generate_upsert_many_sql(get_first_upsert_many(&file));
 
         // Check INSERT INTO
         assert!(
