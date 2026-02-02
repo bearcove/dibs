@@ -121,10 +121,40 @@ impl Render for Expr {
                 let suffix = if *negated { " IS NOT NULL" } else { " IS NULL" };
                 write!(f, "{expr}{suffix}")
             }
+            Expr::Like { expr, pattern } => {
+                let expr = Fmt(ctx, expr.as_ref());
+                let pattern = Fmt(ctx, pattern.as_ref());
+                write!(f, "{expr} LIKE {pattern}")
+            }
             Expr::ILike { expr, pattern } => {
                 let expr = Fmt(ctx, expr.as_ref());
                 let pattern = Fmt(ctx, pattern.as_ref());
                 write!(f, "{expr} ILIKE {pattern}")
+            }
+            Expr::Any { expr, array } => {
+                let expr = Fmt(ctx, expr.as_ref());
+                let array = Fmt(ctx, array.as_ref());
+                write!(f, "{expr} = ANY({array})")
+            }
+            Expr::JsonGet { expr, key } => {
+                let expr = Fmt(ctx, expr.as_ref());
+                let key = Fmt(ctx, key.as_ref());
+                write!(f, "{expr} -> {key}")
+            }
+            Expr::JsonGetText { expr, key } => {
+                let expr = Fmt(ctx, expr.as_ref());
+                let key = Fmt(ctx, key.as_ref());
+                write!(f, "{expr} ->> {key}")
+            }
+            Expr::Contains { expr, value } => {
+                let expr = Fmt(ctx, expr.as_ref());
+                let value = Fmt(ctx, value.as_ref());
+                write!(f, "{expr} @> {value}")
+            }
+            Expr::KeyExists { expr, key } => {
+                let expr = Fmt(ctx, expr.as_ref());
+                let key = Fmt(ctx, key.as_ref());
+                write!(f, "{expr} ? {key}")
             }
             Expr::FnCall { name, args } => {
                 write!(f, "{name}(")?;

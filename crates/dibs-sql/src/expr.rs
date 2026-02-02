@@ -29,8 +29,20 @@ pub enum Expr {
     },
     /// IS NULL / IS NOT NULL
     IsNull { expr: Box<Expr>, negated: bool },
-    /// ILIKE pattern match
+    /// LIKE pattern match (case-sensitive)
+    Like { expr: Box<Expr>, pattern: Box<Expr> },
+    /// ILIKE pattern match (case-insensitive)
     ILike { expr: Box<Expr>, pattern: Box<Expr> },
+    /// = ANY(array) for IN checks with array parameter
+    Any { expr: Box<Expr>, array: Box<Expr> },
+    /// JSONB -> operator (get object field, returns JSONB)
+    JsonGet { expr: Box<Expr>, key: Box<Expr> },
+    /// JSONB ->> operator (get object field as text)
+    JsonGetText { expr: Box<Expr>, key: Box<Expr> },
+    /// @> operator (contains, typically for JSONB)
+    Contains { expr: Box<Expr>, value: Box<Expr> },
+    /// ? operator (key exists, typically for JSONB)
+    KeyExists { expr: Box<Expr>, key: Box<Expr> },
     /// Function call
     FnCall { name: String, args: Vec<Expr> },
     /// COUNT(table.*) for counting related rows
@@ -179,11 +191,59 @@ impl Expr {
         }
     }
 
-    /// Create ILIKE expression
+    /// Create LIKE expression (case-sensitive pattern match)
+    pub fn like(self, pattern: Expr) -> Self {
+        Expr::Like {
+            expr: Box::new(self),
+            pattern: Box::new(pattern),
+        }
+    }
+
+    /// Create ILIKE expression (case-insensitive pattern match)
     pub fn ilike(self, pattern: Expr) -> Self {
         Expr::ILike {
             expr: Box::new(self),
             pattern: Box::new(pattern),
+        }
+    }
+
+    /// Create = ANY(array) expression for IN checks
+    pub fn any(self, array: Expr) -> Self {
+        Expr::Any {
+            expr: Box::new(self),
+            array: Box::new(array),
+        }
+    }
+
+    /// Create JSONB -> expression (get object field, returns JSONB)
+    pub fn json_get(self, key: Expr) -> Self {
+        Expr::JsonGet {
+            expr: Box::new(self),
+            key: Box::new(key),
+        }
+    }
+
+    /// Create JSONB ->> expression (get object field as text)
+    pub fn json_get_text(self, key: Expr) -> Self {
+        Expr::JsonGetText {
+            expr: Box::new(self),
+            key: Box::new(key),
+        }
+    }
+
+    /// Create @> expression (contains, typically for JSONB)
+    pub fn contains(self, value: Expr) -> Self {
+        Expr::Contains {
+            expr: Box::new(self),
+            value: Box::new(value),
+        }
+    }
+
+    /// Create ? expression (key exists, typically for JSONB)
+    pub fn key_exists(self, key: Expr) -> Self {
+        Expr::KeyExists {
+            expr: Box::new(self),
+            key: Box::new(key),
         }
     }
 }

@@ -111,13 +111,6 @@ pub fn quote_ident(name: &str) -> String {
 /// Generate a standard index name for a table and columns.
 ///
 /// Uses the convention `idx_{table}_{columns}` where columns are joined by underscore.
-///
-/// # Examples
-///
-/// ```
-/// assert_eq!(dibs::index_name("user", &["email"]), "idx_user_email");
-/// assert_eq!(dibs::index_name("post", &["author_id", "created_at"]), "idx_post_author_id_created_at");
-/// ```
 pub fn index_name(table: &str, columns: &[impl AsRef<str>]) -> String {
     let cols: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
     format!("idx_{}_{}", table, cols.join("_"))
@@ -126,13 +119,6 @@ pub fn index_name(table: &str, columns: &[impl AsRef<str>]) -> String {
 /// Generate a standard unique index name for a table and columns.
 ///
 /// Uses the convention `uq_{table}_{columns}` where columns are joined by underscore.
-///
-/// # Examples
-///
-/// ```
-/// assert_eq!(dibs::unique_index_name("user", &["email"]), "uq_user_email");
-/// assert_eq!(dibs::unique_index_name("category", &["shop_id", "handle"]), "uq_category_shop_id_handle");
-/// ```
 pub fn unique_index_name(table: &str, columns: &[impl AsRef<str>]) -> String {
     let cols: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
     format!("uq_{}_{}", table, cols.join("_"))

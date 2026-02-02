@@ -348,3 +348,80 @@ fn test_ilike_search() {
         vec![ParamName::from("pattern"), ParamName::from("limit")]
     );
 }
+
+#[test]
+fn test_like_search() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::expr(Expr::column("id".into())),
+            SelectColumn::expr(Expr::column("handle".into())),
+        ])
+        .from(FromClause::table("products".into()))
+        .where_(Expr::column("handle".into()).like(Expr::param("pattern".into())));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(result.params, vec![ParamName::from("pattern")]);
+}
+
+#[test]
+fn test_any_in_array() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::expr(Expr::column("id".into())),
+            SelectColumn::expr(Expr::column("status".into())),
+        ])
+        .from(FromClause::table("products".into()))
+        .where_(Expr::column("status".into()).any(Expr::param("statuses".into())));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(result.params, vec![ParamName::from("statuses")]);
+}
+
+#[test]
+fn test_jsonb_get() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(
+            Expr::column("metadata".into()).json_get(Expr::String("key".into())),
+        )])
+        .from(FromClause::table("products".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_jsonb_get_text() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(
+            Expr::column("metadata".into()).json_get_text(Expr::String("name".into())),
+        )])
+        .from(FromClause::table("products".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_jsonb_contains() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::column("id".into()))])
+        .from(FromClause::table("products".into()))
+        .where_(Expr::column("metadata".into()).contains(Expr::param("filter".into())));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(result.params, vec![ParamName::from("filter")]);
+}
+
+#[test]
+fn test_jsonb_key_exists() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::column("id".into()))])
+        .from(FromClause::table("products".into()))
+        .where_(Expr::column("metadata".into()).key_exists(Expr::String("featured".into())));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
