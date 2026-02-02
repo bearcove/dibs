@@ -66,7 +66,7 @@ pub fn lint_relations_in_select(
 
             // Recurse into nested selects
             if let Some(nested_select) = &rel.fields {
-                let rel_table = rel.from.value_as_deref();
+                let rel_table = rel.from.as_ref().map(|m| m.value.as_str());
                 lint_relations_in_select(nested_select, rel_table, ctx);
             }
         }

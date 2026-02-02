@@ -3,8 +3,8 @@
 use codegen::{Block, Function, Scope, Struct};
 use dibs_db_schema::Schema;
 use dibs_query_schema::{
-    Decl, Delete, FieldDef, Insert, InsertMany, Meta, Params, QueryFile, Returning, Select,
-    SelectFields, Update, Upsert, UpsertMany,
+    Decl, Delete, FieldDef, Insert, InsertMany, Meta, Params, QueryFile, Returning, Returns,
+    Select, SelectFields, Update, Upsert, UpsertMany,
 };
 
 use std::collections::HashMap;
@@ -308,10 +308,30 @@ fn generate_select_code(
         if select.fields.is_some() {
             generate_result_struct(ctx, select, name_meta, &struct_name, from, scope);
         }
+    } else if let Some(returns) = &select.returns {
+        // Raw SQL query with explicit returns clause
+        generate_raw_sql_result_struct(&struct_name, returns, scope);
     }
 
     // Generate query function
     generate_select_function(ctx, name_meta, select, &struct_name, scope);
+}
+
+fn generate_raw_sql_result_struct(struct_name: &str, returns: &Returns, scope: &mut Scope) {
+    let mut st = Struct::new(struct_name);
+    st.vis("pub");
+    st.derive("Debug");
+    st.derive("Clone");
+    st.derive("Facet");
+    st.attr("facet(crate = dibs_runtime::facet)");
+
+    for (field_name_meta, param_type) in &returns.fields {
+        let field_name = field_name_meta.value.as_str();
+        let rust_ty = param_type_to_rust(param_type);
+        st.field(format!("pub {}", field_name), &rust_ty);
+    }
+
+    scope.push_struct(st);
 }
 
 fn generate_result_struct(
@@ -722,11 +742,10 @@ fn generate_vec_relation_assembly(
 
                 if rel.is_first() {
                     // Option relation - populate with map
-                    let nested_struct_name = format!(
-                        "{}Nested{}",
-                        to_pascal_case(&struct_name.replace("Result", "")),
-                        to_pascal_case(field_name)
-                    );
+                    // Struct name matches generate_nested_structs: parent_prefix + field_name
+                    let parent_prefix = struct_name.replace("Result", "");
+                    let nested_struct_name =
+                        format!("{}{}", parent_prefix, to_pascal_case(field_name));
 
                     let mut map_block = Block::new(format!(
                         "entry.{field_name} = row.get::<_, Option<_>>({}).map(|{first_alias}_val| {nested_struct_name}",
@@ -763,11 +782,10 @@ fn generate_vec_relation_assembly(
                         "// Append {field_name} if present (LEFT JOIN may have NULL)"
                     ));
 
-                    let nested_struct_name = format!(
-                        "{}Nested{}",
-                        to_pascal_case(&struct_name.replace("Result", "")),
-                        to_pascal_case(field_name)
-                    );
+                    // Struct name matches generate_nested_structs: parent_prefix + field_name
+                    let parent_prefix = struct_name.replace("Result", "");
+                    let nested_struct_name =
+                        format!("{}{}", parent_prefix, to_pascal_case(field_name));
 
                     let mut if_block = Block::new(format!(
                         "if let Some({first_alias}_val) = row.get::<_, Option<_>>({})",
@@ -956,11 +974,10 @@ fn generate_nested_vec_relation_assembly(
 
                 if rel.is_first() {
                     // Option relation - populate if entry.field is None
-                    let nested_struct_name = format!(
-                        "{}Nested{}",
-                        to_pascal_case(&struct_name.replace("Result", "")),
-                        to_pascal_case(field_name)
-                    );
+                    // Struct name matches generate_nested_structs: parent_prefix + field_name
+                    let parent_prefix = struct_name.replace("Result", "");
+                    let nested_struct_name =
+                        format!("{}{}", parent_prefix, to_pascal_case(field_name));
 
                     for_block.line(format!("// Populate {field_name} (Option) if not yet set"));
 
@@ -1000,11 +1017,10 @@ fn generate_nested_vec_relation_assembly(
                     // Vec relation - check if it has nested Vec children
                     let has_nested_vec = rel_select.has_vec_relations();
 
-                    let nested_struct_name = format!(
-                        "{}Nested{}",
-                        to_pascal_case(&struct_name.replace("Result", "")),
-                        to_pascal_case(field_name)
-                    );
+                    // Struct name matches generate_nested_structs: parent_prefix + field_name
+                    let parent_prefix = struct_name.replace("Result", "");
+                    let nested_struct_name =
+                        format!("{}{}", parent_prefix, to_pascal_case(field_name));
 
                     if has_nested_vec {
                         // Vec relation with nested Vec children - needs deduplication
@@ -1162,11 +1178,9 @@ fn generate_nested_vec_with_dedup(
             let inner_field_name = inner_field_name_meta.value.as_str();
             if let Some(inner_select) = &inner_rel.fields {
                 let inner_table = inner_rel.table_name().unwrap_or(inner_field_name);
-                let inner_nested_name = format!(
-                    "{}Nested{}",
-                    nested_struct_name,
-                    to_pascal_case(inner_field_name)
-                );
+                // Struct name matches generate_nested_structs: nested_struct_name + inner_field_name
+                let inner_nested_name =
+                    format!("{}{}", nested_struct_name, to_pascal_case(inner_field_name));
                 let inner_first_col = inner_select
                     .first_column()
                     .map(|c| c.as_str())
@@ -1322,11 +1336,10 @@ fn generate_option_relation_assembly(
                             .map(|c| c.as_str())
                             .unwrap_or("id");
                         let first_alias = format!("{field_name}_{first_col}");
-                        let nested_struct_name = format!(
-                            "{}Nested{}",
-                            to_pascal_case(&struct_name.replace("Result", "")),
-                            to_pascal_case(field_name)
-                        );
+                        // Struct name matches generate_nested_structs: parent_prefix + field_name
+                        let parent_prefix = struct_name.replace("Result", "");
+                        let nested_struct_name =
+                            format!("{}{}", parent_prefix, to_pascal_case(field_name));
 
                         let mut map_block_inner = Block::new(format!(
                             "{field_name}: row.get::<_, Option<_>>({}).map(|{first_alias}_val| {nested_struct_name}",

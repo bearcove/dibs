@@ -2,11 +2,10 @@
 
 use dibs::diff::SchemaExt;
 use dibs::introspect::SchemaIntrospect;
-use dibs::schema::collect_schema;
+use dibs::schema::{SchemaCodegen, collect_schema};
 use dibs::{PgType, Schema, Table};
 use dockside::{Container, containers};
 use facet::Facet;
-use indexmap::IndexMap;
 use std::time::Duration;
 use tokio_postgres::NoTls;
 

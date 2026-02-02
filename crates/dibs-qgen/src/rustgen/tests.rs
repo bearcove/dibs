@@ -62,7 +62,7 @@ fn test_generate_simple_query() {
     let source = r#"
 AllProducts @select{
   from product
-  select { id, handle, status }
+  fields { id, handle, status }
 }
 "#;
     let file = parse_test(source);
@@ -92,7 +92,7 @@ ProductByHandle @select{
   from product
   where { handle $handle }
   first true
-  select { id, handle }
+  fields { id, handle }
 }
 "#;
     let file = parse_test(source);
@@ -107,8 +107,9 @@ ProductByHandle @select{
     let code = generate_rust_code(&file, &schema);
 
     assert!(code.code.contains("handle: &String"));
-    assert!(code.code.contains("from_row"));
+    // Uses direct struct construction for Option-returning queries
     assert!(code.code.contains("Ok(None)"));
+    assert!(code.code.contains("ProductByHandleResult {"));
 }
 
 #[test]
@@ -116,12 +117,12 @@ fn test_generate_query_with_relation() {
     let source = r#"
 ProductListing @select{
   from product
-  select {
+  fields {
     id
     translation @rel{
       from product_translation
       first true
-      select { title, description }
+      fields { title, description }
     }
   }
 }
@@ -197,11 +198,11 @@ ProductWithTranslation @select{
   from product
   where { handle $handle }
   first true
-  select {
+  fields {
     id, handle, translation @rel{
       from product_translation
       first true
-      select { title, description }
+      fields { title, description }
     }
   }
 }
@@ -276,10 +277,10 @@ fn test_generate_vec_relation_query() {
     let source = r#"
 ProductWithVariants @select{
   from product
-  select {
+  fields {
     id, handle, variants @rel{
       from product_variant
-      select { id, sku }
+      fields { id, sku }
     }
   }
 }
@@ -361,7 +362,7 @@ fn test_generate_count_query() {
     let source = r#"
 ProductWithVariantCount @select{
   from product
-  select { id, handle, variant_count @count(product_variant) }
+  fields { id, handle, variant_count @count(product_variant) }
 }
 "#;
     let file = parse_test(source);
@@ -422,12 +423,12 @@ fn test_generate_nested_vec_relation_query() {
     let source = r#"
 ProductWithVariantsAndPrices @select{
   from product
-  select {
+  fields {
     id, handle, variants @rel{
       from product_variant
-      select { id, sku, prices @rel{
+      fields { id, sku, prices @rel{
           from variant_price
-          select { id, currency_code, amount }
+          fields { id, currency_code, amount }
       }}
     }
   }

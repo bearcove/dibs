@@ -20,7 +20,7 @@ AllProducts @select{
     from product
     where {deleted_at @null}
     order-by {created_at desc}
-    select {id, handle, status, active}
+    fields {id, handle, status, active}
 }
 
 ActiveProducts @select{
@@ -28,7 +28,7 @@ ActiveProducts @select{
     where {status "published", active true, deleted_at @null}
     order-by {created_at desc}
     limit 2
-    select {id, handle, status}
+    fields {id, handle, status}
 }
 
 ProductByHandle @select{
@@ -36,7 +36,7 @@ ProductByHandle @select{
     from product
     where {handle $handle, deleted_at @null}
     first true
-    select {id, handle, status, active}
+    fields {id, handle, status, active}
 }
 
 SearchProducts @select{
@@ -45,7 +45,7 @@ SearchProducts @select{
     where {handle @ilike($q), deleted_at @null}
     order-by {handle asc}
     limit 50
-    select {id, handle, status}
+    fields {id, handle, status}
 }
 // Paginated query with limit/offset parameters
 
@@ -56,7 +56,7 @@ ProductsPaginated @select{
     order-by {handle asc}
     limit $page_size
     offset $page_offset
-    select {id, handle, status, active}
+    fields {id, handle, status, active}
 }
 // Query with JOIN - returns product with its first translation (singular relation)
 
@@ -65,14 +65,14 @@ ProductWithTranslation @select{
     from product
     where {handle $handle, deleted_at @null}
     first true
-    select {
+    fields {
         id
         handle
         status
         translation @rel{
             from product_translation
             first true
-            select {locale, title, description}
+            fields {locale, title, description}
         }
     }
 }
@@ -84,13 +84,13 @@ ProductWithAllTranslations @select{
     from product
     where {handle $handle, deleted_at @null}
     first true
-    select {
+    fields {
         id
         handle
         status
         translations @rel{
             from product_translation
-            select {locale, title, description}
+            fields {locale, title, description}
         }
     }
 }
@@ -101,7 +101,7 @@ UniqueStatuses @select{
     from product
     where {deleted_at @null}
     distinct true
-    select {status}
+    fields {status}
 }
 
 // COUNT query - count products by status
@@ -110,7 +110,7 @@ CountProducts @select{
     from product
     where {deleted_at @null}
     count true
-    select {id}
+    fields {id}
 }
 
 // Query with filter operators
@@ -124,7 +124,7 @@ CountProducts @select{
 //         price @lte($max_price)
 //         deleted_at @null
 //     }
-//     select {id, handle, price}
+//     fields {id, handle, price}
 // }
 
 // Query with literal @in filter
@@ -132,7 +132,7 @@ CountProducts @select{
 ProductsByKnownHandles @select{
     from product
     where {handle @in("prod-1" "prod-2" "prod-3"), deleted_at @null}
-    select {id, handle, status}
+    fields {id, handle, status}
 }
 
 // Query with @ne filter
@@ -141,7 +141,7 @@ ProductsExcludingStatus @select{
     params {excluded_status @string}
     from product
     where {status @ne($excluded_status), deleted_at @null}
-    select {id, handle, status}
+    fields {id, handle, status}
 }
 
 // ============================================================================
@@ -290,7 +290,7 @@ DeleteProduct @delete{
 //     params {search_json @string}
 //     from product
 //     where {metadata @>($search_json), deleted_at @null}
-//     select {id, handle, metadata}
+//     fields {id, handle, metadata}
 // }
 
 // Query with JSONB key exists (@?)
@@ -299,7 +299,7 @@ DeleteProduct @delete{
 //     params {key_name @string}
 //     from product
 //     where {metadata @?($key_name), deleted_at @null}
-//     select {id, handle, metadata}
+//     fields {id, handle, metadata}
 // }
 
 // Query with JSONB field access (->)
@@ -308,7 +308,7 @@ DeleteProduct @delete{
 //     params {tag @string}
 //     from product
 //     where {metadata -> "tags" @>($tag), deleted_at @null}
-//     select {id, handle, metadata}
+//     fields {id, handle, metadata}
 // }
 
 // Query with JSONB text extraction (->>)
@@ -317,7 +317,7 @@ DeleteProduct @delete{
 //     params {category @string}
 //     from product
 //     where {metadata ->> "category" $category, deleted_at @null}
-//     select {id, handle, metadata}
+//     fields {id, handle, metadata}
 // }
 
 // ============================================================================
@@ -331,7 +331,7 @@ ProductDetailsFull @select{
     from product
     where {id $id, deleted_at @null}
     first true
-    select {
+    fields {
         id
         handle
         status
@@ -343,13 +343,13 @@ ProductDetailsFull @select{
             from product_translation
             where {locale @in("en" "fr")}
             order-by {locale asc}
-            select {locale, title, description}
+            fields {locale, title, description}
         }
         variants @rel{
             from product_variant
             where {deleted_at @null}
             order-by {position asc}
-            select {
+            fields {
                 id
                 sku
                 price

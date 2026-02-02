@@ -13,7 +13,7 @@ RatesByDate @select{
     from exchange_rate
     where {published_date $date}
     order-by {currency_code asc}
-    select {id, currency_code, rate, cached_at}
+    fields {id, currency_code, rate, cached_at}
 }
 
 /// Get the latest exchange rate for a specific currency
@@ -23,7 +23,7 @@ LatestRateByCurrency @select{
     where {currency_code $currency}
     order-by {published_date desc}
     first true
-    select {id, published_date, currency_code, rate, cached_at}
+    fields {id, published_date, currency_code, rate, cached_at}
 }
 
 /// Get all rates for the latest published date
@@ -31,7 +31,7 @@ LatestRates @select{
     from exchange_rate
     order-by {published_date desc, currency_code asc}
     limit 50
-    select {id, published_date, currency_code, rate}
+    fields {id, published_date, currency_code, rate}
 }
 
 // ============================================================================
@@ -80,7 +80,7 @@ GetMagicLinkToken @select{
     where {token}
     order-by {token asc}
     first true
-    select {email, expires_at, used}
+    fields {email, expires_at, used}
 }
 
 /// Mark a magic link token as used
@@ -100,7 +100,7 @@ GetUserByEmail @select{
     where {email}
     order-by {id asc}
     first true
-    select {id}
+    fields {id}
 }
 
 /// Get a user by their ID
@@ -110,7 +110,7 @@ GetUserById @select{
     where {id}
     order-by {id asc}
     first true
-    select {id, email}
+    fields {id, email}
 }
 
 /// Create a new user, returning their ID
@@ -142,14 +142,14 @@ ValidateSession @select{
     where {id $session_id}
     order-by {id asc}
     first true
-    select {
+    fields {
         user_id
         expires_at
         user @rel{
             from admin_user
             order-by {id asc}
             first true
-            select {email}
+            fields {email}
         }
     }
 }
@@ -168,7 +168,7 @@ GetUserPasskeyIds @select{
     params {user_id @int}
     from passkey
     where {user_id}
-    select {credential_id}
+    fields {credential_id}
 }
 
 /// Get all passkeys for a user (for authentication)
@@ -176,7 +176,7 @@ GetUserPasskeys @select{
     params {user_id @int}
     from passkey
     where {user_id}
-    select {public_key}
+    fields {public_key}
 }
 
 /// Create a new passkey for a user
