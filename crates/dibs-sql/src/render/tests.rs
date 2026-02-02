@@ -1,6 +1,126 @@
 use crate::*;
 
 #[test]
+fn test_expr_fncall() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::FnCall {
+            name: "COALESCE".into(),
+            args: vec![
+                Expr::qualified_column("u".into(), "nickname".into()),
+                Expr::qualified_column("u".into(), "name".into()),
+                Expr::String("Anonymous".into()),
+            ],
+        })])
+        .from(FromClause::aliased("users".into(), "u".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_expr_count() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::Count {
+            table: "users".into(),
+        })])
+        .from(FromClause::table("users".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_expr_raw() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::Raw("1 + 1 AS computed".into()))])
+        .from(FromClause::table("users".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_order_by_nulls_first() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::column("name".into()))])
+        .from(FromClause::table("users".into()))
+        .order_by(OrderBy {
+            expr: Expr::column("name".into()),
+            desc: false,
+            nulls: Some(NullsOrder::First),
+        });
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_order_by_nulls_last() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::column("name".into()))])
+        .from(FromClause::table("users".into()))
+        .order_by(OrderBy {
+            expr: Expr::column("score".into()),
+            desc: true,
+            nulls: Some(NullsOrder::Last),
+        });
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_select_column_alias() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::aliased(Expr::column("first_name".into()), "name".into()),
+            SelectColumn::aliased(
+                Expr::FnCall {
+                    name: "COUNT".into(),
+                    args: vec![Expr::column("id".into())],
+                },
+                "total".into(),
+            ),
+        ])
+        .from(FromClause::table("users".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_select_all_from_table() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::all_from("users".into()),
+            SelectColumn::expr(Expr::qualified_column("posts".into(), "title".into())),
+        ])
+        .from(FromClause::aliased("users".into(), "users".into()))
+        .join(Join {
+            kind: JoinKind::Left,
+            table: "posts".into(),
+            alias: Some("posts".into()),
+            on: Expr::qualified_column("posts".into(), "user_id".into())
+                .eq(Expr::qualified_column("users".into(), "id".into())),
+        });
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_order_by_multiple_with_comma() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(Expr::column("name".into()))])
+        .from(FromClause::table("users".into()))
+        .order_by(OrderBy::desc(Expr::column("created_at".into())))
+        .order_by(OrderBy::asc(Expr::column("name".into())));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
 fn test_simple_select() {
     let stmt = SelectStmt::new()
         .columns([
