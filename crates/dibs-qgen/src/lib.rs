@@ -4,6 +4,7 @@
 
 // Error types
 mod error;
+pub use error::{QueryGenError, QueryGenErrorKind};
 
 // Happy types;
 pub use dibs_query_schema::*;

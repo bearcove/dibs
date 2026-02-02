@@ -940,7 +940,7 @@ dependencies = [
  "dibs-db-schema",
  "dibs-macros",
  "dibs-proto",
- "dibs-query-gen",
+ "dibs-qgen",
  "dockside",
  "facet",
  "insta",
@@ -1045,7 +1045,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dibs-query-gen"
+name = "dibs-qgen"
 version = "0.1.0"
 dependencies = [
  "ariadne 0.6.0",

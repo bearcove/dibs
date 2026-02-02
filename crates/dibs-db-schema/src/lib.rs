@@ -1,7 +1,7 @@
 //! Database schema types for dibs.
 //!
 //! This crate contains the core schema types that are shared between
-//! `dibs` (schema introspection) and `dibs-query-gen` (query planning).
+//! `dibs` (schema introspection) and `dibs-qgen` (query planning).
 
 use dibs_jsonb::Jsonb;
 use dibs_sql::{check_constraint_name, index_name, trigger_check_name, unique_index_name};

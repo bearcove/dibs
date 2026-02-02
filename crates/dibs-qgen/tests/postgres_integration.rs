@@ -5,11 +5,11 @@
 //! 2. Row assembly logic produces correct results
 //! 3. JOIN queries with relations work as expected
 //!
-//! Run with: cargo nextest run -p dibs-query-gen --test postgres_integration
+//! Run with: cargo nextest run -p dibs-qgen --test postgres_integration
 //!
 //! Note: Requires Docker to be running.
 
-use dibs_query_gen::{
+use dibs_qgen::{
     ColumnInfo, PlannerForeignKey, PlannerSchema, PlannerTable, SchemaInfo, TableInfo,
     generate_rust_code_with_planner, generate_sql, parse_query_file,
 };
@@ -942,7 +942,7 @@ CreateProduct @insert{
     let insert = &file.inserts[0];
 
     // Generate SQL
-    let generated = dibs_query_gen::generate_insert_sql(insert);
+    let generated = dibs_qgen::generate_insert_sql(insert);
     tracing::info!("Generated INSERT SQL: {}", generated.sql);
 
     // Verify SQL structure
@@ -1003,7 +1003,7 @@ CreateProductWithDefault @insert{
     let file = parse_query_file("<test>", source).unwrap();
     let insert = &file.inserts[0];
 
-    let generated = dibs_query_gen::generate_insert_sql(insert);
+    let generated = dibs_qgen::generate_insert_sql(insert);
     tracing::info!("Generated INSERT SQL: {}", generated.sql);
 
     // Should use DEFAULT keyword
@@ -1039,7 +1039,7 @@ UpdateProductStatus @update{
     let file = parse_query_file("<test>", source).unwrap();
     let update = &file.updates[0];
 
-    let generated = dibs_query_gen::generate_update_sql(update);
+    let generated = dibs_qgen::generate_update_sql(update);
     tracing::info!("Generated UPDATE SQL: {}", generated.sql);
 
     // Verify SQL structure
@@ -1098,7 +1098,7 @@ DeleteProduct @delete{
     let file = parse_query_file("<test>", source).unwrap();
     let delete = &file.deletes[0];
 
-    let generated = dibs_query_gen::generate_delete_sql(delete);
+    let generated = dibs_qgen::generate_delete_sql(delete);
     tracing::info!("Generated DELETE SQL: {}", generated.sql);
 
     // Verify SQL structure
@@ -1160,7 +1160,7 @@ UpsertProduct @upsert{
     let file = parse_query_file("<test>", source).unwrap();
     let upsert = &file.upserts[0];
 
-    let generated = dibs_query_gen::generate_upsert_sql(upsert);
+    let generated = dibs_qgen::generate_upsert_sql(upsert);
     tracing::info!("Generated UPSERT SQL: {}", generated.sql);
 
     // Verify SQL structure
@@ -1220,7 +1220,7 @@ UpsertProduct @upsert{
     let file = parse_query_file("<test>", source).unwrap();
     let upsert = &file.upserts[0];
 
-    let generated = dibs_query_gen::generate_upsert_sql(upsert);
+    let generated = dibs_qgen::generate_upsert_sql(upsert);
 
     // Upsert existing product - should update
     let handle = "widget".to_string(); // exists from test data
@@ -1262,7 +1262,7 @@ CreateProductNoReturn @insert{
     let file = parse_query_file("<test>", source).unwrap();
     let insert = &file.inserts[0];
 
-    let generated = dibs_query_gen::generate_insert_sql(insert);
+    let generated = dibs_qgen::generate_insert_sql(insert);
     tracing::info!("Generated INSERT SQL: {}", generated.sql);
 
     // Should not have RETURNING clause
@@ -1311,7 +1311,7 @@ BulkCreateProducts @insert-many{
     let insert_many = &file.insert_manys[0];
 
     // Generate SQL
-    let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
+    let generated = dibs_qgen::generate_insert_many_sql(insert_many);
     tracing::info!("Generated INSERT MANY SQL: {}", generated.sql);
 
     // Verify SQL structure uses UNNEST
@@ -1389,7 +1389,7 @@ BulkCreateProductsNoReturn @insert-many{
     let file = parse_query_file("<test>", source).unwrap();
     let insert_many = &file.insert_manys[0];
 
-    let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
+    let generated = dibs_qgen::generate_insert_many_sql(insert_many);
     tracing::info!(
         "Generated INSERT MANY SQL (no returning): {}",
         generated.sql
@@ -1438,7 +1438,7 @@ BulkUpsertProducts @upsert-many{
     assert_eq!(file.upsert_manys.len(), 1);
     let upsert_many = &file.upsert_manys[0];
 
-    let generated = dibs_query_gen::generate_upsert_many_sql(upsert_many);
+    let generated = dibs_qgen::generate_upsert_many_sql(upsert_many);
     tracing::info!("Generated UPSERT MANY SQL: {}", generated.sql);
 
     // Verify SQL structure
@@ -1515,7 +1515,7 @@ BulkUpsertProducts @upsert-many{
 "#;
     let file = parse_query_file("<test>", source).unwrap();
     let upsert_many = &file.upsert_manys[0];
-    let generated = dibs_query_gen::generate_upsert_many_sql(upsert_many);
+    let generated = dibs_qgen::generate_upsert_many_sql(upsert_many);
 
     // Upsert with mix of existing and new
     let handles = vec![
@@ -1577,7 +1577,7 @@ BulkCreateProducts @insert-many{
 "#;
     let file = parse_query_file("<test>", source).unwrap();
     let insert_many = &file.insert_manys[0];
-    let generated = dibs_query_gen::generate_insert_many_sql(insert_many);
+    let generated = dibs_qgen::generate_insert_many_sql(insert_many);
 
     // Execute with empty arrays
     let handles: Vec<String> = vec![];
@@ -1694,7 +1694,7 @@ FindByBrand @query{
     let (_schema_info, _planner_schema) = build_jsonb_test_schema();
 
     // For this test, we'll use simple SQL generation since we're testing the operator
-    let generated = dibs_query_gen::generate_simple_sql(query);
+    let generated = dibs_qgen::generate_simple_sql(query);
 
     tracing::info!("Generated SQL: {}", generated.sql);
 

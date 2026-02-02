@@ -166,7 +166,7 @@ The `db.crate` field specifies which crate contains the schema and migrations.
 | `dibs` | Core: schema, migrations, diffing, introspection |
 | `dibs-cli` | CLI binary with TUI and commands |
 | `dibs-macros` | `#[dibs::migration]` proc macro |
-| `dibs-query-gen` | Styx query parser and Rust codegen |
+| `dibs-qgen` | Styx query parser and Rust codegen |
 | `dibs-query-schema` | Query DSL schema types |
 | `dibs-proto` | RPC protocol definitions |
 | `dibs-config` | Configuration types |

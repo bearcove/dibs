@@ -1,7 +1,7 @@
 @schema {id crate:dibs-queries@1, cli dibs}
 
 // Queries for reef ecommerce backend.
-// These are parsed by dibs-query-gen and generate Rust code + SQL.
+// These are parsed by dibs-qgen and generate Rust code + SQL.
 
 // ============================================================================
 // Exchange Rate Queries

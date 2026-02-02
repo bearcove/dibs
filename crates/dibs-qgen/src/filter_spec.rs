@@ -1,8 +1,5 @@
 //! Filter argument specification and parsing.
 
-use crate::error::QueryGenError;
-use crate::schema::Meta;
-
 /// Specification of what kind of argument is valid at a position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgSpec {

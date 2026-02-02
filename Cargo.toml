@@ -17,7 +17,7 @@ dibs = { path = "crates/dibs" }
 dibs-config = { path = "crates/dibs-config" }
 dibs-macros = { path = "crates/dibs-macros" }
 dibs-proto = { path = "crates/dibs-proto" }
-dibs-query-gen = { path = "crates/dibs-query-gen" }
+dibs-qgen = { path = "crates/dibs-qgen" }
 dibs-query-schema = { path = "crates/dibs-query-schema" }
 dibs-db-schema = { path = "crates/dibs-db-schema" }
 dibs-jsonb = { path = "crates/dibs-jsonb" }

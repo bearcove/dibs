@@ -42,8 +42,8 @@ use dibs_db_schema::{
 /// `generate_rust_code_with_planner`.
 pub fn schema_to_query_schema(
     schema: &Schema,
-) -> (dibs_query_gen::SchemaInfo, dibs_query_gen::PlannerSchema) {
-    use dibs_query_gen::{
+) -> (dibs_qgen::SchemaInfo, dibs_qgen::PlannerSchema) {
+    use dibs_qgen::{
         ColumnInfo, PlannerForeignKey, PlannerSchema as PlannerSchemaType, PlannerTable,
         SchemaInfo, TableInfo,
     };

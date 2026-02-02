@@ -22,12 +22,12 @@ pub struct QueryGenError {
     pub span: Span,
 
     /// Error classification and details
-    pub kind: ErrorKind,
+    pub kind: QueryGenErrorKind,
 }
 
 /// Error classification for query generation.
 #[derive(Debug, Clone)]
-pub enum ErrorKind {
+pub enum QueryGenErrorKind {
     /// A column referenced in the query does not exist in the table.
     ColumnNotFound {
         /// The table that was searched.
@@ -65,26 +65,26 @@ pub enum ErrorKind {
     },
 }
 
-impl fmt::Display for ErrorKind {
+impl fmt::Display for QueryGenErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorKind::ColumnNotFound { table, column } => {
+            QueryGenErrorKind::ColumnNotFound { table, column } => {
                 write!(f, "column '{}' not found in table '{}'", column, table)
             }
-            ErrorKind::TableNotFound { table } => {
+            QueryGenErrorKind::TableNotFound { table } => {
                 write!(f, "table '{}' not found", table)
             }
-            ErrorKind::SchemaMismatch {
+            QueryGenErrorKind::SchemaMismatch {
                 table,
                 column,
                 reason,
             } => {
                 write!(f, "schema mismatch for '{}.{}': {}", table, column, reason)
             }
-            ErrorKind::PlanMissing { reason } => {
+            QueryGenErrorKind::PlanMissing { reason } => {
                 write!(f, "query plan missing: {}", reason)
             }
-            ErrorKind::Parse { message } => {
+            QueryGenErrorKind::Parse { message } => {
                 write!(f, "{}", message)
             }
         }

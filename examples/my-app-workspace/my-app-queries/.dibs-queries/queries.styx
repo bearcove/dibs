@@ -1,7 +1,7 @@
 @schema {id crate:dibs-queries@1, cli dibs}
 
 // Queries for my-app ecommerce example.
-// These are parsed by dibs-query-gen and generate Rust code + SQL.
+// These are parsed by dibs-qgen and generate Rust code + SQL.
 //
 // This file showcases all supported query features including:
 // - Basic queries with WHERE, ORDER BY, LIMIT/OFFSET

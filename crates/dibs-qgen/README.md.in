@@ -1,4 +1,4 @@
-# dibs-query-gen
+# dibs-qgen
 
 Code generator for type-safe SQL queries from Styx DSL definitions.
 
