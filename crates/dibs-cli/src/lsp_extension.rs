@@ -626,7 +626,7 @@ impl DibsExtension {
             }
         }
 
-        // Also check inside tagged payloads (e.g., @query{...}, @insert{...}, etc.)
+        // Also check inside tagged payloads (e.g., @select{...}, @insert{...}, etc.)
         if let Some(styx_tree::Payload::Object(obj)) = &context.payload {
             debug!(entries = obj.entries.len(), "checking payload object");
             for entry in &obj.entries {

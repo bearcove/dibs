@@ -66,7 +66,7 @@ Queries are written in [Styx](https://github.com/bearcove/styx) format in `.dibs
 ```styx
 @schema {id crate:dibs-queries@1, cli dibs}
 
-ProductByHandle @query{
+ProductByHandle @select{
     params {handle @string}
     from product
     where {handle $handle, deleted_at @null}

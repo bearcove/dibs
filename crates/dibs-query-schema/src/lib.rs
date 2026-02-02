@@ -5,7 +5,7 @@
 //! - Used to generate a styx schema via facet-styx's schema generation
 //! - Used by the LSP extension for diagnostics, hover, go-to-definition
 
-use dibs_sql::TableName;
+use dibs_sql::{ColumnName, ParamName, TableName};
 use facet::Facet;
 pub use facet_reflect::Span;
 use indexmap::IndexMap;
@@ -191,7 +191,7 @@ pub struct QueryFile(pub IndexMap<Meta<String>, Decl>);
 #[allow(clippy::large_enum_variant)]
 pub enum Decl {
     /// A SELECT query declaration.
-    Query(Query),
+    Select(Select),
     /// An INSERT declaration.
     Insert(Insert),
     /// A bulk INSERT declaration (insert multiple rows).
@@ -206,18 +206,18 @@ pub enum Decl {
     Delete(Delete),
 }
 
-/// A query definition.
+/// A SELECT query definition.
 ///
 /// Can be either a structured query (with `from` and `select`) or a raw SQL query
 /// (with `sql` and `returns`).
 #[derive(Debug, Facet)]
 #[facet(rename_all = "kebab-case")]
-pub struct Query {
+pub struct Select {
     /// Query parameters.
     pub params: Option<Params>,
 
     /// Source table to query from (for structured queries).
-    pub from: Option<Meta<String>>,
+    pub from: Option<Meta<TableName>>,
 
     /// Filter conditions.
     #[facet(rename = "where")]
@@ -255,27 +255,27 @@ pub struct Query {
 #[derive(Debug, Facet)]
 pub struct Returns {
     #[facet(flatten)]
-    pub fields: IndexMap<Meta<String>, ParamType>,
+    pub fields: IndexMap<Meta<ColumnName>, ParamType>,
 }
 
 /// DISTINCT ON clause (PostgreSQL-specific) - a sequence of column names.
 #[derive(Debug, Facet)]
 #[facet(transparent)]
-pub struct DistinctOn(pub Vec<Meta<String>>);
+pub struct DistinctOn(pub Vec<Meta<ColumnName>>);
 
 /// ORDER BY clause.
 #[derive(Debug, Facet)]
 pub struct OrderBy {
     /// Column name -> direction ("asc" or "desc", None means asc)
     #[facet(flatten)]
-    pub columns: IndexMap<Meta<String>, Option<Meta<String>>>,
+    pub columns: IndexMap<Meta<ColumnName>, Option<Meta<String>>>,
 }
 
 /// WHERE clause - filter conditions.
 #[derive(Debug, Facet)]
 pub struct Where {
     #[facet(flatten)]
-    pub filters: IndexMap<Meta<String>, FilterValue>,
+    pub filters: IndexMap<Meta<ColumnName>, FilterValue>,
 }
 
 /// A filter value - tagged operators or bare scalars for where clauses.
@@ -336,7 +336,7 @@ pub enum FilterValue {
 #[derive(Debug, Facet)]
 pub struct Params {
     #[facet(flatten)]
-    pub params: IndexMap<Meta<String>, ParamType>,
+    pub params: IndexMap<Meta<ParamName>, ParamType>,
 }
 
 /// Parameter type.
@@ -364,7 +364,7 @@ pub struct SelectFields {
     pub span: Span,
 
     #[facet(flatten)]
-    pub fields: IndexMap<Meta<String>, Option<FieldDef>>,
+    pub fields: IndexMap<Meta<ColumnName>, Option<FieldDef>>,
 }
 
 /// A field definition - tagged values in select.
@@ -376,7 +376,7 @@ pub enum FieldDef {
     /// A relation field (`@rel{...}`).
     Rel(Relation),
     /// A count aggregation (`@count(table_name)`).
-    Count(Vec<Meta<String>>),
+    Count(Vec<Meta<TableName>>),
 }
 
 /// A relation definition (nested query on related table).
@@ -406,7 +406,7 @@ pub struct Insert {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Meta<String>,
+    pub into: Meta<TableName>,
     /// Values to insert (column -> value expression).
     pub values: Values,
     /// Columns to return.
@@ -419,7 +419,7 @@ pub struct Upsert {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Meta<String>,
+    pub into: Meta<TableName>,
     /// ON CONFLICT clause.
     #[facet(rename = "on-conflict")]
     pub on_conflict: OnConflict,
@@ -447,7 +447,7 @@ pub struct InsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Meta<String>,
+    pub into: Meta<TableName>,
     /// Values to insert (column -> value expression).
     /// Params become UNNEST columns, other expressions are applied to each row.
     pub values: Values,
@@ -477,7 +477,7 @@ pub struct UpsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
     /// Target table.
-    pub into: Meta<String>,
+    pub into: Meta<TableName>,
     /// ON CONFLICT clause.
     #[facet(rename = "on-conflict")]
     pub on_conflict: OnConflict,
@@ -493,7 +493,7 @@ pub struct Update {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub table: Meta<String>,
+    pub table: Meta<TableName>,
     /// Values to set (column -> value expression).
     pub set: Values,
     /// Filter conditions.
@@ -509,7 +509,7 @@ pub struct Delete {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub from: Meta<String>,
+    pub from: Meta<TableName>,
     /// Filter conditions.
     #[facet(rename = "where")]
     pub where_clause: Option<Where>,
@@ -522,7 +522,7 @@ pub struct Delete {
 pub struct Values {
     /// Column name -> value expression. None means use param with same name ($column_name).
     #[facet(flatten)]
-    pub columns: IndexMap<Meta<String>, Option<ValueExpr>>,
+    pub columns: IndexMap<Meta<ColumnName>, Option<ValueExpr>>,
 }
 
 /// Payload of a value expression - can be scalar or sequence.
@@ -574,14 +574,14 @@ pub struct OnConflict {
 #[derive(Debug, Facet)]
 pub struct ConflictTarget {
     #[facet(flatten)]
-    pub columns: IndexMap<Meta<String>, ()>,
+    pub columns: IndexMap<Meta<ColumnName>, ()>,
 }
 
 /// Columns to update on conflict.
 #[derive(Debug, Facet)]
 pub struct ConflictUpdate {
     #[facet(flatten)]
-    pub columns: IndexMap<Meta<String>, Option<UpdateValue>>,
+    pub columns: IndexMap<Meta<ColumnName>, Option<UpdateValue>>,
 }
 
 /// Value for an update column - mirrors `ValueExpr`.
@@ -605,14 +605,14 @@ pub enum UpdateValue {
 #[derive(Debug, Facet)]
 pub struct Returning {
     #[facet(flatten)]
-    pub columns: IndexMap<Meta<String>, ()>,
+    pub columns: IndexMap<Meta<ColumnName>, ()>,
 }
 
 // ============================================================================
 // CONVENIENCE METHODS FOR SCHEMA TYPES
 // ============================================================================
 
-impl Query {
+impl Select {
     /// Check if this query returns only the first result.
     pub fn is_first(&self) -> bool {
         self.first.is_some()
@@ -644,28 +644,6 @@ impl Query {
 }
 
 impl SelectFields {
-    /// Get the first simple column (None field_def) in this select.
-    pub fn first_column(&self) -> Option<String> {
-        self.fields.iter().find_map(|(name_meta, field_def)| {
-            if field_def.is_none() {
-                Some(name_meta.value.clone())
-            } else {
-                None
-            }
-        })
-    }
-
-    /// Get the "id" column if it exists as a simple column.
-    pub fn id_column(&self) -> Option<String> {
-        self.fields.iter().find_map(|(name_meta, field_def)| {
-            if field_def.is_none() && name_meta.value == "id" {
-                Some(name_meta.value.clone())
-            } else {
-                None
-            }
-        })
-    }
-
     /// Check if this select has any relations.
     pub fn has_relations(&self) -> bool {
         self.fields
@@ -709,14 +687,14 @@ impl SelectFields {
     }
 
     /// Iterate over simple columns (fields with None FieldDef).
-    pub fn columns(&self) -> impl Iterator<Item = (&Meta<String>, &Option<FieldDef>)> {
+    pub fn columns(&self) -> impl Iterator<Item = (&Meta<ColumnName>, &Option<FieldDef>)> {
         self.fields
             .iter()
             .filter(|(_, field_def)| field_def.is_none())
     }
 
     /// Iterate over relations (fields with Some(FieldDef::Rel(_))).
-    pub fn relations(&self) -> impl Iterator<Item = (&Meta<String>, &Relation)> {
+    pub fn relations(&self) -> impl Iterator<Item = (&Meta<ColumnName>, &Relation)> {
         self.fields.iter().filter_map(|(name, field_def)| {
             if let Some(FieldDef::Rel(rel)) = field_def {
                 Some((name, rel))
@@ -727,7 +705,7 @@ impl SelectFields {
     }
 
     /// Iterate over count aggregations (fields with Some(FieldDef::Count(_))).
-    pub fn counts(&self) -> impl Iterator<Item = (&Meta<String>, &Vec<Meta<String>>)> {
+    pub fn counts(&self) -> impl Iterator<Item = (&Meta<ColumnName>, &Vec<Meta<TableName>>)> {
         self.fields.iter().filter_map(|(name, field_def)| {
             if let Some(FieldDef::Count(tables)) = field_def {
                 Some((name, tables))
@@ -770,7 +748,7 @@ impl Relation {
 
 impl Params {
     /// Iterate over parameters by name and type.
-    pub fn iter(&self) -> impl Iterator<Item = (&Meta<String>, &ParamType)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Meta<ParamName>, &ParamType)> {
         self.params.iter()
     }
 }

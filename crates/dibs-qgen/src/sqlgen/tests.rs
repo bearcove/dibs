@@ -82,7 +82,7 @@
 // #[test]
 // fn test_simple_select() {
 //     let source = r#"
-// AllProducts @query{
+// AllProducts @select{
 //   from product
 //   select { id, handle, status }
 // }
@@ -106,7 +106,7 @@
 // #[test]
 // fn test_select_with_where() {
 //     let source = r#"
-// ActiveProducts @query{
+// ActiveProducts @select{
 //   from product
 //   where { status "published", active true }
 //   select { id, handle }
@@ -128,7 +128,7 @@
 // #[test]
 // fn test_select_with_params() {
 //     let source = r#"
-// ProductByHandle @query{
+// ProductByHandle @select{
 //   params { handle @string }
 //   from product
 //   where { handle $handle }
@@ -145,7 +145,7 @@
 // #[test]
 // fn test_select_with_order_and_limit() {
 //     let source = r#"
-// RecentProducts @query{
+// RecentProducts @select{
 //   from product
 //   order-by {created_at desc}
 //   limit 20
@@ -162,7 +162,7 @@
 // #[test]
 // fn test_null_filter() {
 //     let source = r#"
-// ActiveProducts @query{
+// ActiveProducts @select{
 //   from product
 //   where { deleted_at @null }
 //   select { id }
@@ -177,7 +177,7 @@
 // #[test]
 // fn test_ilike_filter() {
 //     let source = r#"
-// SearchProducts @query{
+// SearchProducts @select{
 //   params { q @string }
 //   from product
 //   where { handle @ilike($q) }
@@ -194,7 +194,7 @@
 // #[test]
 // fn test_not_null_filter() {
 //     let source = r#"
-// PublishedProducts @query{
+// PublishedProducts @select{
 //   from product
 //   where { published_at @not-null }
 //   select { id }
@@ -213,7 +213,7 @@
 // #[test]
 // fn test_gte_filter() {
 //     let source = r#"
-// FilteredProducts @query{
+// FilteredProducts @select{
 //   params { min_price @int }
 //   from product
 //   where { price @gte($min_price) }
@@ -230,7 +230,7 @@
 // #[test]
 // fn test_lte_filter() {
 //     let source = r#"
-// FilteredProducts @query{
+// FilteredProducts @select{
 //   params { max_price @int }
 //   from product
 //   where { price @lte($max_price) }
@@ -247,7 +247,7 @@
 // #[test]
 // fn test_ne_filter() {
 //     let source = r#"
-// NonDraftProducts @query{
+// NonDraftProducts @select{
 //   params { excluded_status @string }
 //   from product
 //   where { status @ne($excluded_status) }
@@ -264,7 +264,7 @@
 // #[test]
 // fn test_in_filter() {
 //     let source = r#"
-// ProductsByStatus @query{
+// ProductsByStatus @select{
 //   params { statuses @string }
 //   from product
 //   where { status @in($statuses) }
@@ -285,7 +285,7 @@
 // #[test]
 // fn test_json_get_operator() {
 //     let source = r#"
-// ProductWithMetadata @query{
+// ProductWithMetadata @select{
 //   params { key @string }
 //   from product
 //   where { metadata @json-get($key) }
@@ -302,7 +302,7 @@
 // #[test]
 // fn test_json_get_operator_literal() {
 //     let source = r#"
-// ProductWithSettings @query{
+// ProductWithSettings @select{
 //   from product
 //   where { metadata @json-get("settings") }
 //   select { id, metadata }
@@ -322,7 +322,7 @@
 // #[test]
 // fn test_json_get_text_operator() {
 //     let source = r#"
-// ProductWithJsonValue @query{
+// ProductWithJsonValue @select{
 //   params { key @string }
 //   from product
 //   where { metadata @json-get-text($key) }
@@ -339,7 +339,7 @@
 // #[test]
 // fn test_json_contains_operator() {
 //     let source = r#"
-// ProductWithMetadataContains @query{
+// ProductWithMetadataContains @select{
 //   params { json_value @string }
 //   from product
 //   where { metadata @contains($json_value) }
@@ -356,7 +356,7 @@
 // #[test]
 // fn test_json_key_exists_operator() {
 //     let source = r#"
-// ProductWithMetadataKey @query{
+// ProductWithMetadataKey @select{
 //   params { key @string }
 //   from product
 //   where { metadata @key-exists($key) }
@@ -373,7 +373,7 @@
 // #[test]
 // fn test_json_key_exists_operator_literal() {
 //     let source = r#"
-// ProductWithLocale @query{
+// ProductWithLocale @select{
 //   from product
 //   where { metadata @key-exists("locale") }
 //   select { id, metadata }
@@ -393,7 +393,7 @@
 // #[test]
 // fn test_pagination_literals() {
 //     let source = r#"
-// PaginatedProducts @query{
+// PaginatedProducts @select{
 //   from product
 //   order_by { created_at desc }
 //   limit 20
@@ -412,7 +412,7 @@
 // #[test]
 // fn test_distinct() {
 //     let source = r#"
-// UniqueStatuses @query{
+// UniqueStatuses @select{
 //   from product
 //   distinct true
 //   select { status }
@@ -428,7 +428,7 @@
 // #[test]
 // fn test_distinct_on() {
 //     let source = r#"
-// LatestPerCategory @query{
+// LatestPerCategory @select{
 //   from product
 //   distinct-on (category_id)
 //   order-by {category_id asc, created_at desc}
@@ -458,7 +458,7 @@
 // #[test]
 // fn test_distinct_on_multiple_columns() {
 //     let source = r#"
-// DistinctProducts @query{
+// DistinctProducts @select{
 //   from product
 //   distinct-on (brand category)
 //   order-by {brand asc, category asc, created_at desc}
@@ -483,7 +483,7 @@
 // #[test]
 // fn test_pagination_params() {
 //     let source = r#"
-// PaginatedProducts @query{
+// PaginatedProducts @select{
 //   params { page_size @int, page_offset @int }
 //   from product
 //   order_by { created_at desc }
@@ -505,7 +505,7 @@
 //     use crate::planner::{ForeignKey, Table};, Schema
 
 //     let source = r#"
-// ProductWithTranslation @query{
+// ProductWithTranslation @select{
 //   params { handle @string }
 //   from product
 //   where { handle $handle }
@@ -581,7 +581,7 @@
 //     use crate::planner::{ForeignKey, Table};, Schema
 
 //     let source = r#"
-// ProductWithEnglishTranslation @query{
+// ProductWithEnglishTranslation @select{
 //   from product
 //   select {
 //     id
@@ -639,7 +639,7 @@
 //     use crate::planner::{ForeignKey, Table};, Schema
 
 //     let source = r#"
-// ProductWithTranslation @query{
+// ProductWithTranslation @select{
 //   params { locale @string }
 //   from product
 //   select {
@@ -701,7 +701,7 @@
 //     use crate::planner::{ForeignKey, Table};, Schema
 
 //     let source = r#"
-// ProductWithTranslation @query{
+// ProductWithTranslation @select{
 //   params { handle @string, locale @string }
 //   from product
 //   where { handle $handle }
@@ -883,7 +883,7 @@
 //     use crate::planner::{ForeignKey, Table};, Schema
 
 //     let source = r#"
-// ProductWithLatestTranslation @query{
+// ProductWithLatestTranslation @select{
 //   from product
 //   select {
 //     id
@@ -962,7 +962,7 @@
 //     use crate::planner::{ForeignKey, Table};, Schema
 
 //     let source = r#"
-// ProductWithLatestEnglishTranslation @query{
+// ProductWithLatestEnglishTranslation @select{
 //   params {locale @string}
 //   from product
 //   select {

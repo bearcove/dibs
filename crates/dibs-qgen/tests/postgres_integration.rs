@@ -424,7 +424,7 @@ async fn test_simple_query_against_postgres() {
 
     // Simple query - no relations
     let source = r#"
-AllProducts @query{
+AllProducts @select{
   from product
   select { id, handle, status }
 }
@@ -455,7 +455,7 @@ async fn test_option_relation_query_against_postgres() {
 
     // Query with Option relation (first: true)
     let source = r#"
-ProductWithTranslation @query{
+ProductWithTranslation @select{
   from product
   select {
     id
@@ -504,7 +504,7 @@ async fn test_vec_relation_query_against_postgres() {
 
     // Query with Vec relation (first: false - has-many)
     let source = r#"
-ProductWithVariants @query{
+ProductWithVariants @select{
   from product
   select {
     id
@@ -590,7 +590,7 @@ async fn test_filtered_query_with_params() {
 
     // Query with WHERE clause and parameters
     let source = r#"
-ProductByHandle @query{
+ProductByHandle @select{
   params { handle @string }
   from product
   where { handle $handle }
@@ -650,7 +650,7 @@ async fn test_count_query_against_postgres() {
 
     // Query with COUNT aggregate
     let source = r#"
-ProductWithVariantCount @query{
+ProductWithVariantCount @select{
   from product
   select {
     id
@@ -709,7 +709,7 @@ async fn test_relation_where_literal() {
 
     // Query with relation-level WHERE using a literal value
     let source = r#"
-ProductWithEnglishTranslation @query{
+ProductWithEnglishTranslation @select{
   from product
   select {
     id
@@ -784,7 +784,7 @@ async fn test_relation_where_param() {
 
     // Query with relation-level WHERE using a parameter
     let source = r#"
-ProductWithTranslationByLocale @query{
+ProductWithTranslationByLocale @select{
   params { locale @string }
   from product
   select {
@@ -852,7 +852,7 @@ async fn test_relation_where_with_base_where() {
 
     // Query with BOTH base WHERE and relation WHERE
     let source = r#"
-ActiveProductWithTranslation @query{
+ActiveProductWithTranslation @select{
   params { status @string, locale @string }
   from product
   where { status $status }
@@ -1605,7 +1605,7 @@ async fn test_jsonb_get_object_operator() {
 
     // Test that @json-get operator generates correct SQL with -> operator
     let source = r#"
-GetProductWithSpecs @query{
+GetProductWithSpecs @select{
     params {key @string}
     from product_with_metadata
     select {id, handle}
@@ -1642,7 +1642,7 @@ async fn test_jsonb_get_text_operator() {
 
     // Test that @json-get-text operator generates correct SQL with ->> operator
     let source = r#"
-GetProductBrand @query{
+GetProductBrand @select{
     params {key @string}
     from product_with_metadata
     select {id, handle}
@@ -1681,7 +1681,7 @@ async fn test_jsonb_get_text_in_where_clause() {
 
     // Use @json-get-text with equality comparison - proper usage pattern
     let source = r#"
-FindByBrand @query{
+FindByBrand @select{
     params {brand @string}
     from product_with_metadata
     select {id, handle}
@@ -1715,7 +1715,7 @@ async fn test_jsonb_contains_operator() {
     insert_jsonb_test_data(&client).await;
 
     let source = r#"
-FindPremiumProducts @query{
+FindPremiumProducts @select{
     from product_with_metadata
     select {id, handle}
     where {metadata @contains("{\"premium\": true}")}
@@ -1752,7 +1752,7 @@ async fn test_jsonb_contains_with_literal() {
     insert_jsonb_test_data(&client).await;
 
     let source = r#"
-FindProductsByMetadata @query{
+FindProductsByMetadata @select{
     from product_with_metadata
     select {id, handle}
     where {metadata @contains("{\"brand\": \"Acme\"}")}
@@ -1786,7 +1786,7 @@ async fn test_jsonb_contains_nested_object() {
     insert_jsonb_test_data(&client).await;
 
     let source = r#"
-FindByNestedSpec @query{
+FindByNestedSpec @select{
     from product_with_metadata
     select {id, handle}
     where {metadata @contains("{\"specs\": {\"color\": \"blue\"}}")}
@@ -1820,7 +1820,7 @@ async fn test_jsonb_key_exists_operator() {
     insert_jsonb_test_data(&client).await;
 
     let source = r#"
-FindWithPremiumKey @query{
+FindWithPremiumKey @select{
     from product_with_metadata
     select {id, handle}
     where {metadata @key-exists("premium")}
@@ -1858,7 +1858,7 @@ async fn test_jsonb_key_exists_with_param() {
     insert_jsonb_test_data(&client).await;
 
     let source = r#"
-FindWithKey @query{
+FindWithKey @select{
     params {key @string}
     from product_with_metadata
     select {id, handle}
@@ -1897,7 +1897,7 @@ async fn test_jsonb_multiple_operators_combined() {
 
     // Test combining @key-exists operator with regular equality
     let source = r#"
-ComplexJsonQuery @query{
+ComplexJsonQuery @select{
     from product_with_metadata
     select {id, handle}
     where {
@@ -1945,7 +1945,7 @@ async fn test_jsonb_null_handling() {
     insert_jsonb_test_data(&client).await;
 
     let source = r#"
-FindWithMetadata @query{
+FindWithMetadata @select{
     from product_with_metadata
     select {id, handle}
     where {metadata @key-exists("brand")}

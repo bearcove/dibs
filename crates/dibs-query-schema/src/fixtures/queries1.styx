@@ -16,14 +16,14 @@
 // Basic Queries
 // ============================================================================
 
-AllProducts @query{
+AllProducts @select{
     from product
     where {deleted_at @null}
     order-by {created_at desc}
     select {id, handle, status, active}
 }
 
-ActiveProducts @query{
+ActiveProducts @select{
     from product
     where {status "published", active true, deleted_at @null}
     order-by {created_at desc}
@@ -31,7 +31,7 @@ ActiveProducts @query{
     select {id, handle, status}
 }
 
-ProductByHandle @query{
+ProductByHandle @select{
     params {handle @string}
     from product
     where {handle $handle, deleted_at @null}
@@ -39,7 +39,7 @@ ProductByHandle @query{
     select {id, handle, status, active}
 }
 
-SearchProducts @query{
+SearchProducts @select{
     params {q @string}
     from product
     where {handle @ilike($q), deleted_at @null}
@@ -49,7 +49,7 @@ SearchProducts @query{
 }
 // Paginated query with limit/offset parameters
 
-ProductsPaginated @query{
+ProductsPaginated @select{
     params {page_size @int, page_offset @int}
     from product
     where {deleted_at @null}
@@ -60,7 +60,7 @@ ProductsPaginated @query{
 }
 // Query with JOIN - returns product with its first translation (singular relation)
 
-ProductWithTranslation @query{
+ProductWithTranslation @select{
     params {handle @string}
     from product
     where {handle $handle, deleted_at @null}
@@ -79,7 +79,7 @@ ProductWithTranslation @query{
 
 // Query with vec relation - returns product with all translations (plural relation)
 
-ProductWithAllTranslations @query{
+ProductWithAllTranslations @select{
     params {handle @string}
     from product
     where {handle $handle, deleted_at @null}
@@ -97,7 +97,7 @@ ProductWithAllTranslations @query{
 
 // DISTINCT query - unique statuses
 
-UniqueStatuses @query{
+UniqueStatuses @select{
     from product
     where {deleted_at @null}
     distinct true
@@ -106,7 +106,7 @@ UniqueStatuses @query{
 
 // COUNT query - count products by status
 
-CountProducts @query{
+CountProducts @select{
     from product
     where {deleted_at @null}
     count true
@@ -116,7 +116,7 @@ CountProducts @query{
 // Query with filter operators
 // TODO: Fix SQL generation bug where multiple filters on same column aren't all included
 //
-// ProductsByPriceRange @query{
+// ProductsByPriceRange @select{
 //     params {min_price @int, max_price @int}
 //     from product
 //     where {
@@ -129,7 +129,7 @@ CountProducts @query{
 
 // Query with literal @in filter
 
-ProductsByKnownHandles @query{
+ProductsByKnownHandles @select{
     from product
     where {handle @in("prod-1" "prod-2" "prod-3"), deleted_at @null}
     select {id, handle, status}
@@ -137,7 +137,7 @@ ProductsByKnownHandles @query{
 
 // Query with @ne filter
 
-ProductsExcludingStatus @query{
+ProductsExcludingStatus @select{
     params {excluded_status @string}
     from product
     where {status @ne($excluded_status), deleted_at @null}
@@ -286,7 +286,7 @@ DeleteProduct @delete{
 // Query with JSONB containment (@>)
 // Finds products where metadata contains the specified key-value pair
 //
-// ProductsByMetadataContains @query{
+// ProductsByMetadataContains @select{
 //     params {search_json @string}
 //     from product
 //     where {metadata @>($search_json), deleted_at @null}
@@ -295,7 +295,7 @@ DeleteProduct @delete{
 
 // Query with JSONB key exists (@?)
 //
-// ProductsWithMetadataKey @query{
+// ProductsWithMetadataKey @select{
 //     params {key_name @string}
 //     from product
 //     where {metadata @?($key_name), deleted_at @null}
@@ -304,7 +304,7 @@ DeleteProduct @delete{
 
 // Query with JSONB field access (->)
 //
-// ProductsByMetadataField @query{
+// ProductsByMetadataField @select{
 //     params {tag @string}
 //     from product
 //     where {metadata -> "tags" @>($tag), deleted_at @null}
@@ -313,7 +313,7 @@ DeleteProduct @delete{
 
 // Query with JSONB text extraction (->>)
 //
-// ProductsByMetadataText @query{
+// ProductsByMetadataText @select{
 //     params {category @string}
 //     from product
 //     where {metadata ->> "category" $category, deleted_at @null}
@@ -326,7 +326,7 @@ DeleteProduct @delete{
 
 // Complex query with multiple relations, filters, and ordering
 
-ProductDetailsFull @query{
+ProductDetailsFull @select{
     params {id @int}
     from product
     where {id $id, deleted_at @null}
@@ -383,7 +383,7 @@ UpsertProductWithDefaults @upsert{
 
 // Query with raw SQL (for complex queries not expressible in DSL)
 
-ProductStats @query{
+ProductStats @select{
     sql """
         SELECT
             status,

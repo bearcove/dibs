@@ -8,7 +8,7 @@
 // ============================================================================
 
 /// Get all exchange rates for a specific published date
-RatesByDate @query{
+RatesByDate @select{
     params {date @timestamp}
     from exchange_rate
     where {published_date $date}
@@ -17,7 +17,7 @@ RatesByDate @query{
 }
 
 /// Get the latest exchange rate for a specific currency
-LatestRateByCurrency @query{
+LatestRateByCurrency @select{
     params {currency @string}
     from exchange_rate
     where {currency_code $currency}
@@ -27,7 +27,7 @@ LatestRateByCurrency @query{
 }
 
 /// Get all rates for the latest published date
-LatestRates @query{
+LatestRates @select{
     from exchange_rate
     order-by {published_date desc, currency_code asc}
     limit 50
@@ -74,7 +74,7 @@ InsertMagicLinkToken @insert{
 }
 
 /// Look up a magic link token by its value
-GetMagicLinkToken @query{
+GetMagicLinkToken @select{
     params {token @string}
     from magic_link_token
     where {token}
@@ -94,7 +94,7 @@ MarkMagicLinkTokenUsed @update{
 // --- Admin User ---
 
 /// Get a user by their email address
-GetUserByEmail @query{
+GetUserByEmail @select{
     params {email @string}
     from admin_user
     where {email}
@@ -104,7 +104,7 @@ GetUserByEmail @query{
 }
 
 /// Get a user by their ID
-GetUserById @query{
+GetUserById @select{
     params {id @int}
     from admin_user
     where {id}
@@ -136,7 +136,7 @@ CreateSession @insert{
 
 /// Validate a session and get user info
 /// Returns user_id, email, and expires_at for the session
-ValidateSession @query{
+ValidateSession @select{
     params {session_id @string}
     from session
     where {id $session_id}
@@ -164,7 +164,7 @@ DeleteSession @delete{
 // --- Passkey ---
 
 /// Get credential IDs for a user's passkeys (for registration exclusion)
-GetUserPasskeyIds @query{
+GetUserPasskeyIds @select{
     params {user_id @int}
     from passkey
     where {user_id}
@@ -172,7 +172,7 @@ GetUserPasskeyIds @query{
 }
 
 /// Get all passkeys for a user (for authentication)
-GetUserPasskeys @query{
+GetUserPasskeys @select{
     params {user_id @int}
     from passkey
     where {user_id}

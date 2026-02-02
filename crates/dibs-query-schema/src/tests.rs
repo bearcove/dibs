@@ -36,7 +36,7 @@ fn where_clause_with_spanned_keys() {
         Ok(where_clause) => {
             assert_eq!(where_clause.filters.len(), 1);
             let key = where_clause.filters.keys().next().unwrap();
-            assert_eq!(key.value, "deleted_at");
+            assert_eq!(key.value.as_str(), "deleted_at");
         }
         Err(e) => {
             panic!("Failed to parse: {}", e.render("<test>", source));
@@ -54,7 +54,7 @@ fn filter_value_eq() {
         Ok(where_clause) => {
             assert_eq!(where_clause.filters.len(), 1);
             let (key, value) = where_clause.filters.iter().next().unwrap();
-            assert_eq!(key.value, "id");
+            assert_eq!(key.value.as_str(), "id");
             match value {
                 FilterValue::EqBare(Some(meta)) => {
                     assert_eq!(meta.as_str(), "$id");
@@ -81,7 +81,7 @@ fn filter_value_eq_shorthand() {
         Ok(where_clause) => {
             assert_eq!(where_clause.filters.len(), 1);
             let (key, value) = where_clause.filters.iter().next().unwrap();
-            assert_eq!(key.value, "id");
+            assert_eq!(key.value.as_str(), "id");
             match value {
                 FilterValue::EqBare(None) => {
                     // Success - shorthand syntax where {id} means {id $id}

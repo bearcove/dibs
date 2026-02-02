@@ -7,7 +7,7 @@ use facet_testhelpers::test;
 #[test]
 fn test_generate_simple_query() {
     let source = r#"
-AllProducts @query{
+AllProducts @select{
   from product
   select { id, handle, status }
 }
@@ -25,7 +25,7 @@ AllProducts @query{
 #[test]
 fn test_generate_query_with_params() {
     let source = r#"
-ProductByHandle @query{
+ProductByHandle @select{
   params { handle @string }
   from product
   where { handle $handle }
@@ -44,7 +44,7 @@ ProductByHandle @query{
 #[test]
 fn test_generate_query_with_relation() {
     let source = r#"
-ProductListing @query{
+ProductListing @select{
   from product
   select {
     id
@@ -69,7 +69,7 @@ ProductListing @query{
 #[test]
 fn test_generate_raw_sql_query() {
     let source = r#"
-TrendingProducts @query{
+TrendingProducts @select{
   params { locale @string, days @int }
   sql <<SQL
     SELECT id, title FROM products WHERE locale = $1
@@ -105,7 +105,7 @@ fn test_generate_join_query() {
     use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
-ProductWithTranslation @query{
+ProductWithTranslation @select{
   params { handle @string }
   from product
   where { handle $handle }
@@ -236,7 +236,7 @@ fn test_generate_vec_relation_query() {
     use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
-ProductWithVariants @query{
+ProductWithVariants @select{
   from product
   select {
     id, handle, variants @rel{
@@ -370,7 +370,7 @@ fn test_generate_count_query() {
     use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
-ProductWithVariantCount @query{
+ProductWithVariantCount @select{
   from product
   select { id, handle, variant_count @count(product_variant) }
 }
@@ -458,7 +458,7 @@ fn test_generate_nested_vec_relation_query() {
     use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
-ProductWithVariantsAndPrices @query{
+ProductWithVariantsAndPrices @select{
   from product
   select {
     id, handle, variants @rel{
