@@ -1,12 +1,18 @@
 //! Filter argument specification and parsing.
 
+use crate::{QError, QErrorKind, QSource};
+use dibs_query_schema::{Meta, Span};
+use std::sync::Arc;
+
 /// Specification of what kind of argument is valid at a position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgSpec {
     /// Accepts a variable reference (starting with $) or a literal value.
     VariableOrLiteral,
+
     /// Accepts only a variable reference.
     Variable,
+
     /// Accepts only a literal value.
     Literal,
 }
@@ -16,6 +22,7 @@ pub enum ArgSpec {
 pub enum FilterArg {
     /// A variable reference like $handle (stored without the $).
     Variable(String),
+
     /// A literal value.
     Literal(String),
 }
@@ -30,16 +37,22 @@ impl FunctionSpec {
     /// Validate and parse arguments according to this spec.
     ///
     /// Returns rich errors if argument count doesn't match or argument types don't match spec.
-    pub fn parse_args(&self, args: &[Meta<String>]) -> Result<Vec<FilterArg>, QueryGenError> {
+    pub fn parse_args(
+        &self,
+        source: Arc<QSource>,
+        span: Span,
+        args: &[Meta<String>],
+    ) -> Result<Vec<FilterArg>, QError> {
         // Check argument count
         if args.len() != self.args.len() {
-            return Err(QueryGenError::InvalidFilterArgs {
-                filter: self.name.to_string(),
-                reason: format!(
-                    "expects {} argument(s), got {}",
-                    self.args.len(),
-                    args.len()
-                ),
+            return Err(QError {
+                source,
+                span,
+                kind: QErrorKind::InvalidFilterArgCount {
+                    filter: self.name.to_string(),
+                    expected: self.args.len(),
+                    actual: args.len(),
+                },
             });
         }
 
@@ -59,24 +72,32 @@ impl FunctionSpec {
                 }
                 ArgSpec::Variable => {
                     if !is_var {
-                        return Err(QueryGenError::InvalidFilterArgs {
-                            filter: self.name.to_string(),
-                            reason: format!(
-                                "argument {} must be a variable reference (starting with $), got literal",
-                                i
-                            ),
+                        return Err(QError {
+                            source: source.clone(),
+                            span,
+                            kind: QErrorKind::InvalidFilterArgType {
+                                filter: self.name.to_string(),
+                                reason: format!(
+                                    "argument {} must be a variable reference (starting with $), got literal",
+                                    i
+                                ),
+                            },
                         });
                     }
                     FilterArg::Variable(arg_str[1..].to_string())
                 }
                 ArgSpec::Literal => {
                     if is_var {
-                        return Err(QueryGenError::InvalidFilterArgs {
-                            filter: self.name.to_string(),
-                            reason: format!(
-                                "argument {} must be a literal value, got variable reference",
-                                i
-                            ),
+                        return Err(QError {
+                            source: source.clone(),
+                            span,
+                            kind: QErrorKind::InvalidFilterArgType {
+                                filter: self.name.to_string(),
+                                reason: format!(
+                                    "argument {} must be a literal value, got variable reference",
+                                    i
+                                ),
+                            },
                         });
                     }
                     FilterArg::Literal(arg_str.to_string())

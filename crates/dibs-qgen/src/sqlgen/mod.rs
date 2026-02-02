@@ -1,6 +1,6 @@
 //! SQL generation from query schema types.
 
-use crate::error::QueryGenError;
+use crate::error::QError;
 use crate::filter_spec::{FilterArg, *};
 use crate::planner::{QueryPlan, QueryPlanner, Schema};
 use crate::schema::*;
@@ -167,7 +167,7 @@ fn format_filter_value(
     filter_value: &FilterValue,
     mut param_idx: usize,
     param_order: &mut Vec<String>,
-) -> Result<(String, usize), QueryGenError> {
+) -> Result<(String, usize), QError> {
     let col_quoted = format!("\"{col}\"");
     let mut used_param = false;
 

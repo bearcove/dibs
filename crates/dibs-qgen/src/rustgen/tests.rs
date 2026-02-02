@@ -1,5 +1,6 @@
 use super::*;
-use crate::parse::parse_query_file;
+use crate::parse_query_file;
+use facet_testhelpers::test;
 
 // FIXME: All those tests are garbage and should just be using snapshots instead.
 
@@ -230,7 +231,7 @@ ProductWithTranslation @query{
     );
 }
 
-#[facet_testhelpers::test]
+#[test]
 fn test_generate_vec_relation_query() {
     use crate::planner::{ForeignKey, Schema, Table};
 
@@ -364,7 +365,7 @@ ProductWithVariants @query{
     );
 }
 
-#[facet_testhelpers::test]
+#[test]
 fn test_generate_count_query() {
     use crate::planner::{ForeignKey, Schema, Table};
 
@@ -452,7 +453,7 @@ ProductWithVariantCount @query{
     );
 }
 
-#[facet_testhelpers::test]
+#[test]
 fn test_generate_nested_vec_relation_query() {
     use crate::planner::{ForeignKey, Schema, Table};
 

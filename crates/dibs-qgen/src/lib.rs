@@ -4,10 +4,14 @@
 
 // Error types
 mod error;
-pub use error::{QueryGenError, QueryGenErrorKind};
+pub use error::{QError, QErrorKind, QSource};
 
 // Happy types;
 pub use dibs_query_schema::*;
+
+// Parse
+mod parse;
+pub use parse::parse_query_file;
 
 // Query planner
 mod planner;
