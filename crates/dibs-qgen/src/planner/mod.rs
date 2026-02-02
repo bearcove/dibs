@@ -6,111 +6,12 @@
 //! - Column aliasing to avoid collisions
 //! - Result assembly mapping
 
+mod types;
+
+pub use types::*;
+
 use crate::{Query, Select};
-
-// A planned query with JOINs resolved.
-#[derive(Debug, Clone)]
-pub struct QueryPlan {
-    /// The base table
-    pub from_table: String,
-    /// Alias for the base table
-    pub from_alias: String,
-    /// JOIN clauses
-    pub joins: Vec<JoinClause>,
-    /// Column selections with their aliases
-    pub select_columns: Vec<SelectColumn>,
-    /// COUNT subqueries
-    pub count_subqueries: Vec<CountSubquery>,
-    /// Mapping from result columns to nested struct paths
-    pub result_mapping: ResultMapping,
-}
-
-/// A JOIN clause in the query plan.
-#[derive(Debug, Clone)]
-pub struct JoinClause {
-    /// JOIN type (LEFT, INNER)
-    pub join_type: JoinType,
-    /// Table to join
-    pub table: String,
-    /// Alias for the joined table
-    pub alias: String,
-    /// ON condition: (left_col, right_col)
-    pub on_condition: (String, String),
-    /// Whether this is a first:true relation (affects LATERAL generation)
-    pub first: bool,
-    /// Columns selected from this join (needed for LATERAL subquery)
-    pub select_columns: Vec<String>,
-}
-
-/// JOIN type.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum JoinType {
-    Left,
-    Inner,
-}
-
-/// A column in the SELECT clause.
-#[derive(Debug, Clone)]
-pub struct SelectColumn {
-    /// Table alias
-    pub table_alias: String,
-    /// Column name
-    pub column: String,
-    /// Result alias (for AS clause)
-    pub result_alias: String,
-}
-
-/// A COUNT subquery in the SELECT clause.
-#[derive(Debug, Clone)]
-pub struct CountSubquery {
-    /// Result alias (e.g., "variant_count")
-    pub result_alias: String,
-    /// Table to count from (e.g., "product_variant")
-    pub count_table: String,
-    /// FK column in the count table (e.g., "product_id")
-    pub fk_column: String,
-    /// Parent table alias (e.g., "t0")
-    pub parent_alias: String,
-    /// Parent key column (e.g., "id")
-    pub parent_key: String,
-}
-
-/// Mapping of result columns to nested struct paths.
-#[derive(Debug, Clone, Default)]
-pub struct ResultMapping {
-    /// Map from result alias to struct path (e.g., "t_title" -> ["translation", "title"])
-    pub columns: HashMap<String, Vec<String>>,
-    /// Nested relations and their mappings
-    pub relations: HashMap<String, RelationMapping>,
-}
-
-/// Mapping for a single relation.
-#[derive(Debug, Clone)]
-pub struct RelationMapping {
-    /// Relation name
-    pub name: String,
-    /// Whether it's first (`Option<T>`) or many (`Vec<T>`)
-    pub first: bool,
-    /// Column mappings within this relation
-    pub columns: HashMap<String, String>,
-    /// Parent's primary key column name (used for grouping Vec relations)
-    pub parent_key_column: Option<String>,
-    /// Table alias for this relation (e.g., "t1", "t2")
-    pub table_alias: String,
-    /// Nested relations within this relation
-    pub nested_relations: HashMap<String, RelationMapping>,
-}
-
-/// Error type for query planning.
-#[derive(Debug)]
-pub enum PlanError {
-    /// Table not found in schema
-    TableNotFound { table: String },
-    /// No FK relationship found between tables
-    NoForeignKey { from: String, to: String },
-    /// Relation requires explicit 'from' clause
-    RelationNeedsFrom { relation: String },
-}
+use std::collections::HashMap;
 
 impl std::fmt::Display for PlanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -147,54 +48,31 @@ impl<'a> QueryPlanner<'a> {
                 table: "<unknown>".to_string(),
             })?;
         let from_table = from_table_meta.value.clone();
-        let from_alias = "t0".to_string();
 
-        let mut joins = Vec::new();
-        let mut select_columns = Vec::new();
-        let mut count_subqueries = Vec::new();
-        let mut result_mapping = ResultMapping::default();
-        let mut alias_counter = 1;
+        let mut plan = QueryPlan::new(from_table.clone());
 
         // Process top-level fields (columns and relations)
         if let Some(select) = &query.select {
             self.process_select(
                 select,
                 &from_table,
-                &from_alias,
-                &[], // empty path for top-level
-                &mut joins,
-                &mut select_columns,
-                &mut count_subqueries,
-                &mut result_mapping.columns,
-                &mut result_mapping.relations,
-                &mut alias_counter,
+                &plan.from_alias.clone(),
+                &[],
+                &mut plan,
             )?;
         }
 
-        Ok(QueryPlan {
-            from_table,
-            from_alias,
-            joins,
-            select_columns,
-            count_subqueries,
-            result_mapping,
-        })
+        Ok(plan)
     }
 
     /// Process select fields recursively, handling nested relations.
-    #[allow(clippy::too_many_arguments)]
     fn process_select(
         &self,
         select: &Select,
         parent_table: &str,
         parent_alias: &str,
         path: &[String], // path to this relation (e.g., ["variants", "prices"])
-        joins: &mut Vec<JoinClause>,
-        select_columns: &mut Vec<SelectColumn>,
-        count_subqueries: &mut Vec<CountSubquery>,
-        column_mappings: &mut HashMap<String, Vec<String>>,
-        relation_mappings: &mut HashMap<String, RelationMapping>,
-        alias_counter: &mut usize,
+        plan: &mut QueryPlan,
     ) -> Result<(), PlanError> {
         // Process simple columns
         for (name_meta, _field_def) in select.columns() {
@@ -206,16 +84,11 @@ impl<'a> QueryPlanner<'a> {
                 format!("{}_{}", path.join("_"), name)
             };
 
-            select_columns.push(SelectColumn {
-                table_alias: parent_alias.to_string(),
-                column: name.clone(),
-                result_alias: result_alias.clone(),
-            });
-
             // Build full path for column mapping
             let mut full_path = path.to_vec();
             full_path.push(name.clone());
-            column_mappings.insert(result_alias, full_path);
+
+            plan.add_column(parent_alias, name, result_alias, full_path);
         }
 
         // Process relations
@@ -232,9 +105,9 @@ impl<'a> QueryPlanner<'a> {
                 })?;
 
             // Find FK relationship
-            let fk_resolution = self.resolve_fk(parent_table, &relation_table, *alias_counter)?;
-            let relation_alias = fk_resolution.join_clause.alias.clone();
-            *alias_counter += 1;
+            let relation_alias = plan.next_alias();
+            let fk_resolution =
+                self.resolve_fk(parent_table, &relation_table, &relation_alias, parent_alias)?;
 
             // Collect column names for the join (only direct columns, not nested relations)
             let join_select_columns: Vec<String> = relation
@@ -243,18 +116,12 @@ impl<'a> QueryPlanner<'a> {
                 .map(|sel| sel.columns().map(|(n, _)| n.value.clone()).collect())
                 .unwrap_or_default();
 
-            // Build join with proper ON condition referencing parent alias
-            let mut join = fk_resolution.join_clause.clone();
-            // Fix the ON condition to use actual parent alias instead of t0
-            join.on_condition.0 = format!(
-                "{}.{}",
-                parent_alias,
-                join.on_condition.0.split('.').next_back().unwrap_or("id")
-            );
+            // Build join with proper ON condition
+            let mut join = fk_resolution.join_clause;
             join.first = relation.is_first();
             join.select_columns = join_select_columns;
 
-            joins.push(join);
+            plan.add_join(join);
 
             // Build path for nested fields
             let mut nested_path = path.to_vec();
@@ -270,12 +137,9 @@ impl<'a> QueryPlanner<'a> {
                     &relation_table,
                     &relation_alias,
                     &nested_path,
-                    joins,
-                    select_columns,
-                    count_subqueries,
+                    plan,
                     &mut relation_columns,
                     &mut nested_relations,
-                    alias_counter,
                 )?;
             }
 
@@ -286,7 +150,7 @@ impl<'a> QueryPlanner<'a> {
                 Some(fk_resolution.parent_key_column)
             };
 
-            relation_mappings.insert(
+            plan.add_relation(
                 name.clone(),
                 RelationMapping {
                     name: name.clone(),
@@ -303,39 +167,36 @@ impl<'a> QueryPlanner<'a> {
         for (name_meta, _tables) in select.counts() {
             let name = &name_meta.value;
             // For now, skip count processing - would need to map table names
-            count_subqueries.push(CountSubquery {
+            let subquery = CountSubquery {
                 result_alias: name.clone(),
                 count_table: format!("{}_count", parent_table), // placeholder
                 fk_column: format!("{}_id", parent_table),      // placeholder
                 parent_alias: parent_alias.to_string(),
                 parent_key: "id".to_string(), // placeholder
-            });
-            column_mappings.insert(name.clone(), vec![name.clone()]);
+            };
+            plan.add_count(subquery, vec![name.clone()]);
         }
 
         Ok(())
     }
 
     /// Process nested select fields (used for relations).
-    #[allow(clippy::too_many_arguments)]
     fn process_select_nested(
         &self,
         select: &Select,
         parent_table: &str,
         parent_alias: &str,
         path: &[String],
-        joins: &mut Vec<JoinClause>,
-        select_columns: &mut Vec<SelectColumn>,
-        count_subqueries: &mut Vec<CountSubquery>,
+        plan: &mut QueryPlan,
         column_mappings: &mut HashMap<String, String>,
         relation_mappings: &mut HashMap<String, RelationMapping>,
-        alias_counter: &mut usize,
     ) -> Result<(), PlanError> {
         // Process simple columns in nested select
         for (name_meta, _field_def) in select.columns() {
             let col_name = &name_meta.value;
             let result_alias = format!("{}_{}", path.join("_"), col_name);
-            select_columns.push(SelectColumn {
+
+            plan.select_columns.push(SelectColumn {
                 table_alias: parent_alias.to_string(),
                 column: col_name.clone(),
                 result_alias: result_alias.clone(),
@@ -355,9 +216,9 @@ impl<'a> QueryPlanner<'a> {
                     relation: name.clone(),
                 })?;
 
-            let fk_resolution = self.resolve_fk(parent_table, &relation_table, *alias_counter)?;
-            let relation_alias = fk_resolution.join_clause.alias.clone();
-            *alias_counter += 1;
+            let relation_alias = plan.next_alias();
+            let fk_resolution =
+                self.resolve_fk(parent_table, &relation_table, &relation_alias, parent_alias)?;
 
             let join_select_columns: Vec<String> = relation
                 .select
@@ -365,16 +226,11 @@ impl<'a> QueryPlanner<'a> {
                 .map(|sel| sel.columns().map(|(n, _)| n.value.clone()).collect())
                 .unwrap_or_default();
 
-            let mut join = fk_resolution.join_clause.clone();
-            join.on_condition.0 = format!(
-                "{}.{}",
-                parent_alias,
-                join.on_condition.0.split('.').next_back().unwrap_or("id")
-            );
+            let mut join = fk_resolution.join_clause;
             join.first = relation.is_first();
             join.select_columns = join_select_columns;
 
-            joins.push(join);
+            plan.add_join(join);
 
             let mut nested_path = path.to_vec();
             nested_path.push(name.clone());
@@ -388,12 +244,9 @@ impl<'a> QueryPlanner<'a> {
                     &relation_table,
                     &relation_alias,
                     &nested_path,
-                    joins,
-                    select_columns,
-                    count_subqueries,
+                    plan,
                     &mut relation_columns,
                     &mut nested_relations,
-                    alias_counter,
                 )?;
             }
 
@@ -425,7 +278,8 @@ impl<'a> QueryPlanner<'a> {
         &self,
         from_table: &str,
         to_table: &str,
-        alias_counter: usize,
+        alias: &str,
+        parent_alias: &str,
     ) -> Result<FkResolution, PlanError> {
         let to_table_info =
             self.schema
@@ -440,15 +294,14 @@ impl<'a> QueryPlanner<'a> {
             if fk.references_table == from_table {
                 // Found: to_table.fk_col -> from_table.ref_col
                 // JOIN to_table ON from_table.ref_col = to_table.fk_col
-                let alias = format!("t{}", alias_counter);
                 let parent_key_column = fk.references_columns[0].clone();
                 return Ok(FkResolution {
                     join_clause: JoinClause {
                         join_type: JoinType::Left,
                         table: to_table.to_string(),
-                        alias: alias.clone(),
+                        alias: alias.to_string(),
                         on_condition: (
-                            format!("t0.{}", parent_key_column),
+                            format!("{}.{}", parent_alias, parent_key_column),
                             format!("{}.{}", alias, fk.columns[0]),
                         ),
                         first: false,
@@ -473,16 +326,15 @@ impl<'a> QueryPlanner<'a> {
             if fk.references_table == to_table {
                 // Found: from_table.fk_col -> to_table.ref_col
                 // JOIN to_table ON from_table.fk_col = to_table.ref_col
-                let alias = format!("t{}", alias_counter);
                 // For forward (belongs-to), parent key is the FK column in from_table
                 let parent_key_column = fk.columns[0].clone();
                 return Ok(FkResolution {
                     join_clause: JoinClause {
                         join_type: JoinType::Left,
                         table: to_table.to_string(),
-                        alias: alias.clone(),
+                        alias: alias.to_string(),
                         on_condition: (
-                            format!("t0.{}", parent_key_column),
+                            format!("{}.{}", parent_alias, parent_key_column),
                             format!("{}.{}", alias, fk.references_columns[0]),
                         ),
                         first: false,
@@ -499,26 +351,6 @@ impl<'a> QueryPlanner<'a> {
             to: to_table.to_string(),
         })
     }
-}
-
-/// Direction of FK relationship.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FkDirection {
-    /// FK is in from_table pointing to to_table (belongs-to)
-    Forward,
-    /// FK is in to_table pointing to from_table (has-many)
-    Reverse,
-}
-
-/// Result of FK resolution.
-#[derive(Debug, Clone)]
-pub struct FkResolution {
-    /// The JOIN clause
-    pub join_clause: JoinClause,
-    /// Direction of the relationship
-    pub direction: FkDirection,
-    /// Parent's primary key column (used for grouping Vec relations)
-    pub parent_key_column: String,
 }
 
 impl QueryPlan {
