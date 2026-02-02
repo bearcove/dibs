@@ -49,7 +49,6 @@ pub mod backoffice;
 pub mod diff;
 mod error;
 pub mod introspect;
-mod jsonb;
 pub mod meta;
 mod migrate;
 mod plugin;
@@ -61,9 +60,9 @@ pub mod solver;
 mod traced;
 
 pub use backoffice::SquelServiceImpl;
+pub use dibs_jsonb::Jsonb;
 pub use diff::{Change, SchemaDiff, TableDiff};
 pub use error::{Error, MigrationError, SqlErrorContext};
-pub use jsonb::Jsonb;
 pub use meta::{create_meta_tables_sql, record_migration_sql, sync_tables_sql};
 pub use migrate::{
     AppliedMigration, Migration, MigrationContext, MigrationRunner, MigrationStatus, RanMigration,

@@ -849,16 +849,23 @@ impl TableDef {
 }
 
 /// Unwrap Option<T> to get the inner type and nullability.
-fn unwrap_option(shape: &'static Shape) -> (&'static Shape, bool) {
-    // Check if this is an Option type by looking at Def::Option
-    // We use Def::Option instead of decl_id because the decl_id can vary
-    // based on NPO (Null Pointer Optimization) - Option<T> where T allows NPO
-    // gets UserType::Enum while others get UserType::Opaque, causing different decl_ids.
-    if let facet::Def::Option(opt_def) = &shape.def {
-        // Get the inner shape from the OptionDef
-        return (opt_def.t, true);
+fn unwrap_option(lhs: &'static Shape) -> (&'static Shape, bool) {
+    let rhs = Option::<()>::SHAPE;
+
+    if lhs.decl_id == rhs.decl_id {
+        // Get the inner shape from the Option's inner field
+        if let Some(inner) = lhs.inner {
+            return (inner, true);
+        }
     }
-    (shape, false)
+    (lhs, false)
+}
+
+#[test]
+fn test_unwrap_option() {
+    let (inner, success) = unwrap_option(Option::<dibs_jsonb::Jsonb<facet_value::Value>>::SHAPE);
+    assert!(success);
+    assert_eq!(inner, dibs_jsonb::Jsonb::<facet_value::Value>::SHAPE);
 }
 
 /// Get the default Lucide icon name for a subtype.
@@ -1058,9 +1065,7 @@ pub fn parse_fk_reference(fk_ref: &str) -> Option<(&str, &str)> {
 ///
 /// Takes a Shape to properly handle generic types like `Vec<u8>` and `Jsonb<T>`.
 pub fn shape_to_pg_type(shape: &Shape) -> Option<PgType> {
-    // Check for Jsonb<T> by type_identifier since decl_id can vary across crate boundaries
-    // (derive macro computes decl_id from file:line:column which differs per crate)
-    if shape.type_identifier == "Jsonb" {
+    if shape.decl_id == dibs_jsonb::Jsonb::<()>::SHAPE.decl_id {
         return Some(PgType::Jsonb);
     }
 

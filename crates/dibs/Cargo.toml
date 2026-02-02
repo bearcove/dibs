@@ -25,6 +25,7 @@ inventory.workspace = true
 thiserror.workspace = true
 facet.workspace = true
 dibs-db-schema.workspace = true
+dibs-jsonb.workspace = true
 dibs-macros.workspace = true
 dibs-proto.workspace = true
 dibs-qgen.workspace = true

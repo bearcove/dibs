@@ -336,8 +336,7 @@ ProductDetailsFull @select{
         handle
         status
         active
-        // Note: JSONB columns like 'metadata' are not yet supported in codegen
-        // metadata
+        metadata
         created_at
         updated_at
         locales @rel{
@@ -354,8 +353,7 @@ ProductDetailsFull @select{
                 id
                 sku
                 title
-                // Note: JSONB columns like 'attributes' are not yet supported in codegen
-                // attributes
+                attributes
             }
         }
     }
