@@ -1,97 +1,60 @@
 //! Render SQL AST to string.
 
+use std::cell::RefCell;
+use std::fmt;
+
 use indexmap::IndexMap;
 
 use crate::expr::{ColumnRef, Expr};
 use crate::stmt::*;
-use crate::{ColumnName, Ident, ParamName, RenderedSql, TableName, escape_string};
+use crate::{Ident, ParamName, RenderedSql, escape_string};
 
-/// Rendering context that tracks parameters and formatting.
-pub struct RenderContext {
+/// Mutable parameter tracking state.
+struct ParamState {
     /// Named parameters -> their assigned index
     params: IndexMap<ParamName, usize>,
     /// Next parameter index to assign
     next_param_idx: usize,
-    /// The SQL being built
-    sql: String,
-    /// Current indentation level
-    indent_level: usize,
-    /// Whether we're at the start of a line
-    at_line_start: bool,
-    /// Whether to format with newlines/indentation
-    pretty: bool,
+}
+
+impl ParamState {
+    fn new() -> Self {
+        Self {
+            params: IndexMap::new(),
+            next_param_idx: 1,
+        }
+    }
+
+    /// Get or create a parameter index.
+    fn get_or_insert(&mut self, name: &ParamName) -> usize {
+        *self.params.entry(name.clone()).or_insert_with(|| {
+            let idx = self.next_param_idx;
+            self.next_param_idx += 1;
+            idx
+        })
+    }
+}
+
+/// Rendering context that tracks parameters.
+pub struct RenderContext {
+    params: RefCell<ParamState>,
 }
 
 impl RenderContext {
     pub fn new() -> Self {
         Self {
-            params: IndexMap::new(),
-            next_param_idx: 1,
-            sql: String::new(),
-            indent_level: 0,
-            at_line_start: true,
-            pretty: false,
+            params: RefCell::new(ParamState::new()),
         }
     }
 
-    pub fn pretty() -> Self {
-        Self {
-            pretty: true,
-            ..Self::new()
-        }
+    /// Get or create a parameter placeholder index.
+    fn param_idx(&self, name: &ParamName) -> usize {
+        self.params.borrow_mut().get_or_insert(name)
     }
 
-    /// Get or create a parameter placeholder.
-    fn param(&mut self, name: &ParamName) -> String {
-        let idx = *self.params.entry(name.clone()).or_insert_with(|| {
-            let idx = self.next_param_idx;
-            self.next_param_idx += 1;
-            idx
-        });
-        format!("${}", idx)
-    }
-
-    fn write(&mut self, s: &str) {
-        if self.pretty && self.at_line_start && self.indent_level > 0 {
-            for _ in 0..self.indent_level {
-                self.sql.push_str("    ");
-            }
-        }
-        self.sql.push_str(s);
-        self.at_line_start = false;
-    }
-
-    fn space(&mut self) {
-        if !self.sql.is_empty() && !self.at_line_start {
-            self.sql.push(' ');
-        }
-    }
-
-    fn newline(&mut self) {
-        if self.pretty {
-            self.sql.push('\n');
-            self.at_line_start = true;
-        } else {
-            self.space();
-        }
-    }
-
-    #[allow(dead_code)]
-    fn indent(&mut self) {
-        self.indent_level += 1;
-    }
-
-    #[allow(dead_code)]
-    fn dedent(&mut self) {
-        self.indent_level = self.indent_level.saturating_sub(1);
-    }
-
-    /// Finish rendering and return the result.
-    pub fn finish(self) -> RenderedSql {
-        RenderedSql {
-            sql: self.sql,
-            params: self.params.into_keys().collect(),
-        }
+    /// Finish rendering and return the collected params.
+    fn into_params(self) -> Vec<ParamName> {
+        self.params.into_inner().params.into_keys().collect()
     }
 }
 
@@ -101,220 +64,241 @@ impl Default for RenderContext {
     }
 }
 
+/// Wrapper for rendering a value via Display.
+pub struct Fmt<'a, T: Render>(&'a RenderContext, &'a T);
+
+impl<T: Render> fmt::Display for Fmt<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.1.render(self.0, f)
+    }
+}
+
 // ============================================================================
 // Render implementations
 // ============================================================================
 
 /// Trait for types that can be rendered to SQL.
 pub trait Render {
-    fn render(&self, ctx: &mut RenderContext);
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
 impl Render for Expr {
-    fn render(&self, ctx: &mut RenderContext) {
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expr::Param(name) => {
-                let placeholder = ctx.param(name);
-                ctx.write(&placeholder);
+                let idx = ctx.param_idx(name);
+                write!(f, "${idx}")
             }
-            Expr::Column(col) => col.render(ctx),
-            Expr::String(s) => ctx.write(&escape_string(s)),
-            Expr::Int(n) => ctx.write(&n.to_string()),
-            Expr::Bool(b) => ctx.write(if *b { "TRUE" } else { "FALSE" }),
-            Expr::Null => ctx.write("NULL"),
-            Expr::Now => ctx.write("NOW()"),
-            Expr::Default => ctx.write("DEFAULT"),
+            Expr::Column(col) => col.render(ctx, f),
+            Expr::String(s) => {
+                let escaped = escape_string(s);
+                write!(f, "{escaped}")
+            }
+            Expr::Int(n) => write!(f, "{n}"),
+            Expr::Bool(b) => write!(f, "{}", if *b { "TRUE" } else { "FALSE" }),
+            Expr::Null => write!(f, "NULL"),
+            Expr::Now => write!(f, "NOW()"),
+            Expr::Default => write!(f, "DEFAULT"),
             Expr::BinOp { left, op, right } => {
-                left.render(ctx);
-                ctx.space();
-                ctx.write(op.as_str());
-                ctx.space();
-                right.render(ctx);
+                let left = Fmt(ctx, left.as_ref());
+                let right = Fmt(ctx, right.as_ref());
+                let op = op.as_str();
+                write!(f, "{left} {op} {right}")
             }
             Expr::IsNull { expr, negated } => {
-                expr.render(ctx);
-                ctx.write(if *negated { " IS NOT NULL" } else { " IS NULL" });
+                let expr = Fmt(ctx, expr.as_ref());
+                let suffix = if *negated { " IS NOT NULL" } else { " IS NULL" };
+                write!(f, "{expr}{suffix}")
             }
             Expr::ILike { expr, pattern } => {
-                expr.render(ctx);
-                ctx.write(" ILIKE ");
-                pattern.render(ctx);
+                let expr = Fmt(ctx, expr.as_ref());
+                let pattern = Fmt(ctx, pattern.as_ref());
+                write!(f, "{expr} ILIKE {pattern}")
             }
             Expr::FnCall { name, args } => {
-                ctx.write(name);
-                ctx.write("(");
+                write!(f, "{name}(")?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
-                        ctx.write(", ");
+                        write!(f, ", ")?;
                     }
-                    arg.render(ctx);
+                    write!(f, "{}", Fmt(ctx, arg))?;
                 }
-                ctx.write(")");
+                write!(f, ")")
             }
             Expr::Count { table } => {
-                ctx.write(&format!("COUNT({}.*)", &Ident(table.as_str())));
+                let table = Ident(table.as_str());
+                write!(f, "COUNT({table}.*)")
             }
-            Expr::Raw(s) => ctx.write(s),
+            Expr::Raw(s) => write!(f, "{s}"),
         }
     }
 }
 
 impl Render for ColumnRef {
-    fn render(&self, ctx: &mut RenderContext) {
+    fn render(&self, _ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(table) = &self.table {
-            ctx.write(&format!("{}", Ident(table.as_str())));
-            ctx.write(".");
+            let table = Ident(table.as_str());
+            write!(f, "{table}.")?;
         }
-        ctx.write(&format!("{}", Ident(self.column.as_str())));
+        let column = Ident(self.column.as_str());
+        write!(f, "{column}")
     }
 }
 
 impl Render for SelectStmt {
-    fn render(&self, ctx: &mut RenderContext) {
-        ctx.write("SELECT");
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SELECT")?;
 
         // Columns
         if self.columns.is_empty() {
-            ctx.write(" *");
+            write!(f, " *")?;
         } else {
             for (i, col) in self.columns.iter().enumerate() {
                 if i > 0 {
-                    ctx.write(",");
+                    write!(f, ",")?;
                 }
-                ctx.space();
-                col.render(ctx);
+                write!(f, " {}", Fmt(ctx, col))?;
             }
         }
 
         // FROM
         if let Some(from) = &self.from {
-            ctx.newline();
-            ctx.write(&format!("FROM {}", Ident(from.table.as_str())));
+            let table = Ident(from.table.as_str());
+            write!(f, "\nFROM {table}")?;
             if let Some(alias) = &from.alias {
-                ctx.write(&format!(" {}", Ident(alias.as_str())));
+                let alias = Ident(alias.as_str());
+                write!(f, " {alias}")?;
             }
         }
 
         // JOINs
         for join in &self.joins {
-            ctx.newline();
-            ctx.write(join.kind.as_str());
-            ctx.write(&format!(" {}", Ident(join.table.as_str())));
+            let kind = join.kind.as_str();
+            let table = Ident(join.table.as_str());
+            write!(f, "\n{kind} {table}")?;
             if let Some(alias) = &join.alias {
-                ctx.write(&format!(" {}", Ident(alias.as_str())));
+                let alias = Ident(alias.as_str());
+                write!(f, " {alias}")?;
             }
-            ctx.write(" ON ");
-            join.on.render(ctx);
+            let on = Fmt(ctx, &join.on);
+            write!(f, " ON {on}")?;
         }
 
         // WHERE
         if let Some(where_) = &self.where_ {
-            ctx.newline();
-            ctx.write("WHERE ");
-            where_.render(ctx);
+            let where_ = Fmt(ctx, where_);
+            write!(f, "\nWHERE {where_}")?;
         }
 
         // ORDER BY
         if !self.order_by.is_empty() {
-            ctx.newline();
-            ctx.write("ORDER BY ");
+            write!(f, "\nORDER BY ")?;
             for (i, order) in self.order_by.iter().enumerate() {
                 if i > 0 {
-                    ctx.write(", ");
+                    write!(f, ", ")?;
                 }
-                order.expr.render(ctx);
-                ctx.write(if order.desc { " DESC" } else { " ASC" });
+                let expr = Fmt(ctx, &order.expr);
+                let dir = if order.desc { " DESC" } else { " ASC" };
+                write!(f, "{expr}{dir}")?;
                 if let Some(nulls) = &order.nulls {
-                    ctx.write(match nulls {
-                        NullsOrder::First => " NULLS FIRST",
-                        NullsOrder::Last => " NULLS LAST",
-                    });
+                    write!(
+                        f,
+                        "{}",
+                        match nulls {
+                            NullsOrder::First => " NULLS FIRST",
+                            NullsOrder::Last => " NULLS LAST",
+                        }
+                    )?;
                 }
             }
         }
 
         // LIMIT
         if let Some(limit) = &self.limit {
-            ctx.newline();
-            ctx.write("LIMIT ");
-            limit.render(ctx);
+            let limit = Fmt(ctx, limit);
+            write!(f, "\nLIMIT {limit}")?;
         }
 
         // OFFSET
         if let Some(offset) = &self.offset {
-            ctx.newline();
-            ctx.write("OFFSET ");
-            offset.render(ctx);
+            let offset = Fmt(ctx, offset);
+            write!(f, "\nOFFSET {offset}")?;
         }
+
+        Ok(())
     }
 }
 
 impl Render for SelectColumn {
-    fn render(&self, ctx: &mut RenderContext) {
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SelectColumn::Expr { expr, alias } => {
-                expr.render(ctx);
+                let expr = Fmt(ctx, expr);
+                write!(f, "{expr}")?;
                 if let Some(alias) = alias {
-                    ctx.write(&format!(" AS {}", Ident(alias.as_str())));
+                    let alias = Ident(alias.as_str());
+                    write!(f, " AS {alias}")?;
                 }
+                Ok(())
             }
             SelectColumn::AllFrom(table) => {
-                ctx.write(&format!("{}.*", Ident(table.as_str())));
+                let table = Ident(table.as_str());
+                write!(f, "{table}.*")
             }
         }
     }
 }
 
 impl Render for InsertStmt {
-    fn render(&self, ctx: &mut RenderContext) {
-        ctx.write(&format!("INSERT INTO {}", Ident(self.table.as_str())));
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let table = Ident(self.table.as_str());
+        write!(f, "INSERT INTO {table} (")?;
 
         // Columns
-        ctx.write(" (");
         for (i, col) in self.columns.iter().enumerate() {
             if i > 0 {
-                ctx.write(", ");
+                write!(f, ", ")?;
             }
-            ctx.write(&format!("{}", Ident(col.as_str())));
+            let col = Ident(col.as_str());
+            write!(f, "{col}")?;
         }
-        ctx.write(")");
+        write!(f, ")")?;
 
         // VALUES
-        ctx.newline();
-        ctx.write("VALUES (");
+        write!(f, "\nVALUES (")?;
         for (i, val) in self.values.iter().enumerate() {
             if i > 0 {
-                ctx.write(", ");
+                write!(f, ", ")?;
             }
-            val.render(ctx);
+            write!(f, "{}", Fmt(ctx, val))?;
         }
-        ctx.write(")");
+        write!(f, ")")?;
 
         // ON CONFLICT
         if let Some(conflict) = &self.on_conflict {
-            ctx.newline();
-            ctx.write("ON CONFLICT (");
+            write!(f, "\nON CONFLICT (")?;
             for (i, col) in conflict.columns.iter().enumerate() {
                 if i > 0 {
-                    ctx.write(", ");
+                    write!(f, ", ")?;
                 }
-                ctx.write(&format!("{}", Ident(col.as_str())));
+                let col = Ident(col.as_str());
+                write!(f, "{col}")?;
             }
-            ctx.write(")");
+            write!(f, ")")?;
 
             match &conflict.action {
                 ConflictAction::DoNothing => {
-                    ctx.write(" DO NOTHING");
+                    write!(f, " DO NOTHING")?;
                 }
                 ConflictAction::DoUpdate(assignments) => {
-                    ctx.write(" DO UPDATE SET ");
+                    write!(f, " DO UPDATE SET ")?;
                     for (i, assign) in assignments.iter().enumerate() {
                         if i > 0 {
-                            ctx.write(", ");
+                            write!(f, ", ")?;
                         }
-                        ctx.write(&format!("{}", Ident(assign.column.as_str())));
-                        ctx.write(" = ");
-                        assign.value.render(ctx);
+                        let col = Ident(assign.column.as_str());
+                        let val = Fmt(ctx, &assign.value);
+                        write!(f, "{col} = {val}")?;
                     }
                 }
             }
@@ -322,87 +306,92 @@ impl Render for InsertStmt {
 
         // RETURNING
         if !self.returning.is_empty() {
-            ctx.newline();
-            ctx.write("RETURNING ");
+            write!(f, "\nRETURNING ")?;
             for (i, col) in self.returning.iter().enumerate() {
                 if i > 0 {
-                    ctx.write(", ");
+                    write!(f, ", ")?;
                 }
-                ctx.write(&format!("{}", Ident(col.as_str())));
+                let col = Ident(col.as_str());
+                write!(f, "{col}")?;
             }
         }
+
+        Ok(())
     }
 }
 
 impl Render for UpdateStmt {
-    fn render(&self, ctx: &mut RenderContext) {
-        ctx.write(&format!("UPDATE {}", Ident(self.table.as_str())));
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let table = Ident(self.table.as_str());
+        write!(f, "UPDATE {table}")?;
 
         // SET
-        ctx.newline();
-        ctx.write("SET ");
+        write!(f, "\nSET ")?;
         for (i, assign) in self.assignments.iter().enumerate() {
             if i > 0 {
-                ctx.write(", ");
+                write!(f, ", ")?;
             }
-            ctx.write(&format!("{}", Ident(assign.column.as_str())));
-            ctx.write(" = ");
-            assign.value.render(ctx);
+            let col = Ident(assign.column.as_str());
+            let val = Fmt(ctx, &assign.value);
+            write!(f, "{col} = {val}")?;
         }
 
         // WHERE
         if let Some(where_) = &self.where_ {
-            ctx.newline();
-            ctx.write("WHERE ");
-            where_.render(ctx);
+            let where_ = Fmt(ctx, where_);
+            write!(f, "\nWHERE {where_}")?;
         }
 
         // RETURNING
         if !self.returning.is_empty() {
-            ctx.newline();
-            ctx.write("RETURNING ");
+            write!(f, "\nRETURNING ")?;
             for (i, col) in self.returning.iter().enumerate() {
                 if i > 0 {
-                    ctx.write(", ");
+                    write!(f, ", ")?;
                 }
-                ctx.write(&format!("{}", Ident(col.as_str())));
+                let col = Ident(col.as_str());
+                write!(f, "{col}")?;
             }
         }
+
+        Ok(())
     }
 }
 
 impl Render for DeleteStmt {
-    fn render(&self, ctx: &mut RenderContext) {
-        ctx.write(&format!("DELETE FROM {}", Ident(self.table.as_str())));
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let table = Ident(self.table.as_str());
+        write!(f, "DELETE FROM {table}")?;
 
         // WHERE
         if let Some(where_) = &self.where_ {
-            ctx.newline();
-            ctx.write("WHERE ");
-            where_.render(ctx);
+            let where_ = Fmt(ctx, where_);
+            write!(f, "\nWHERE {where_}")?;
         }
 
         // RETURNING
         if !self.returning.is_empty() {
-            ctx.newline();
-            ctx.write("RETURNING ");
+            write!(f, "\nRETURNING ")?;
             for (i, col) in self.returning.iter().enumerate() {
                 if i > 0 {
-                    ctx.write(", ");
+                    write!(f, ", ")?;
                 }
-                ctx.write(&format!("{}", Ident(col.as_str())));
+                let col = Ident(col.as_str());
+                write!(f, "{col}")?;
             }
         }
+
+        Ok(())
     }
 }
 
 impl Render for Stmt {
-    fn render(&self, ctx: &mut RenderContext) {
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Stmt::Select(s) => s.render(ctx),
-            Stmt::Insert(s) => s.render(ctx),
-            Stmt::Update(s) => s.render(ctx),
-            Stmt::Delete(s) => s.render(ctx),
+            Stmt::Select(s) => s.render(ctx, f),
+            Stmt::Insert(s) => s.render(ctx, f),
+            Stmt::Update(s) => s.render(ctx, f),
+            Stmt::Delete(s) => s.render(ctx, f),
         }
     }
 }
@@ -411,18 +400,14 @@ impl Render for Stmt {
 // Convenience methods
 // ============================================================================
 
-/// Render a statement to SQL with default (compact) formatting.
+/// Render a statement to SQL.
 pub fn render(stmt: &impl Render) -> RenderedSql {
-    let mut ctx = RenderContext::new();
-    stmt.render(&mut ctx);
-    ctx.finish()
-}
-
-/// Render a statement to SQL with pretty formatting (newlines, indentation).
-pub fn render_pretty(stmt: &impl Render) -> RenderedSql {
-    let mut ctx = RenderContext::pretty();
-    stmt.render(&mut ctx);
-    ctx.finish()
+    let ctx = RenderContext::new();
+    let sql = format!("{}", Fmt(&ctx, stmt));
+    RenderedSql {
+        sql,
+        params: ctx.into_params(),
+    }
 }
 
 // ============================================================================
