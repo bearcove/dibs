@@ -19,6 +19,7 @@ dibs-macros = { path = "crates/dibs-macros" }
 dibs-proto = { path = "crates/dibs-proto" }
 dibs-query-gen = { path = "crates/dibs-query-gen" }
 dibs-query-schema = { path = "crates/dibs-query-schema" }
+dibs-db-schema = { path = "crates/dibs-db-schema" }
 dibs-runtime = { path = "crates/dibs-runtime" }
 dockside = { path = "crates/dockside" }
 
@@ -86,6 +87,7 @@ unsynn = { version = "0.3", features = ["proc_macro2"] }
 codegen = "0.3"
 
 # misc
+indexmap = "2"
 inventory = "0.3"
 blake3 = "1"
 

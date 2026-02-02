@@ -1,0 +1,16 @@
+[package]
+name = "dibs-db-schema"
+version = "0.1.0"
+edition = "2024"
+authors = ["Amos Wenger <amos@bearcove.eu>"]
+description = "Database schema types for dibs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bearcove/dibs"
+
+[package.metadata]
+
+[package.metadata."docs.rs"]
+rustdoc-args = ["--html-in-header", "arborium-header.html"]
+
+[dependencies]
+indexmap.workspace = true

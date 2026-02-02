@@ -1005,6 +1005,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dibs-db-schema"
+version = "0.1.0"
+dependencies = [
+ "indexmap 2.13.0",
+]
+
+[[package]]
 name = "dibs-macros"
 version = "0.1.0"
 dependencies = [
