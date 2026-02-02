@@ -26,36 +26,24 @@
 //! }
 //! ```
 
-mod codegen;
+pub mod codegen;
 
-use crate::Jsonb;
-use facet::{Facet, Shape, Type, UserType};
-
-use dibs_db_schema::{
+pub use dibs_db_schema::{
     CheckConstraint, Column, ForeignKey, Index, IndexColumn, NullsOrder, PgType, Schema, SortOrder,
-    SourceLocation, Table, TriggerCheckConstraint,
+    SourceLocation, Table, TableDef, TriggerCheckConstraint,
 };
 
-/// Convert a schema to the types needed for query code generation.
+/// Convert a schema to the SchemaInfo needed for query code generation.
 ///
-/// Returns `(SchemaInfo, PlannerSchema)` which can be passed to
-/// `generate_rust_code_with_planner`.
-pub fn schema_to_query_schema(
-    schema: &Schema,
-) -> (dibs_qgen::SchemaInfo, dibs_qgen::PlannerSchema) {
-    use dibs_qgen::{
-        ColumnInfo, PlannerForeignKey, PlannerSchema as PlannerSchemaType, PlannerTable,
-        SchemaInfo, TableInfo,
-    };
+/// The planner uses `dibs_db_schema::Schema` directly for foreign key resolution.
+pub fn schema_to_schema_info(schema: &Schema) -> dibs_qgen::SchemaInfo {
+    use dibs_qgen::{ColumnInfo, SchemaInfo, TableInfo};
     use std::collections::HashMap;
 
     let mut schema_tables = HashMap::new();
-    let mut planner_tables = HashMap::new();
 
     for table in schema.tables.values() {
-        // Build SchemaInfo table
         let mut columns = HashMap::new();
-        let mut column_names = Vec::new();
 
         for col in &table.columns {
             let rust_type = col
@@ -70,40 +58,14 @@ pub fn schema_to_query_schema(
                     nullable: col.nullable,
                 },
             );
-            column_names.push(col.name.clone());
         }
 
         schema_tables.insert(table.name.clone(), TableInfo { columns });
-
-        // Build PlannerSchema table
-        let foreign_keys: Vec<PlannerForeignKey> = table
-            .foreign_keys
-            .iter()
-            .map(|fk| PlannerForeignKey {
-                columns: fk.columns.clone(),
-                references_table: fk.references_table.clone(),
-                references_columns: fk.references_columns.clone(),
-            })
-            .collect();
-
-        planner_tables.insert(
-            table.name.clone(),
-            PlannerTable {
-                name: table.name.clone(),
-                columns: column_names,
-                foreign_keys,
-            },
-        );
     }
 
-    (
-        SchemaInfo {
-            tables: schema_tables,
-        },
-        PlannerSchemaType {
-            tables: planner_tables,
-        },
-    )
+    SchemaInfo {
+        tables: schema_tables,
+    }
 }
 
 /// Generate CREATE TABLE SQL statement.

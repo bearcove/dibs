@@ -925,6 +925,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "bytes",
+ "camino",
  "chrono",
  "deadpool-postgres",
  "dibs-db-schema",
@@ -933,6 +934,7 @@ dependencies = [
  "dibs-qgen",
  "dockside",
  "facet",
+ "indexmap 2.13.0",
  "insta",
  "inventory",
  "proptest",

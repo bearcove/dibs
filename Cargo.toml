@@ -90,6 +90,7 @@ unsynn = { version = "0.3", features = ["proc_macro2"] }
 codegen = "0.3"
 
 # misc
+camino = "1"
 indexmap = "2"
 inventory = "0.3"
 blake3 = "1"

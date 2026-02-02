@@ -1,3 +1,8 @@
+use super::{Schema, Table};
+use crate::schema::{
+    create_index_sql, create_table_sql, create_trigger_check_function_sql, create_trigger_check_sql,
+};
+
 /// Generate SQL to create all tables, foreign keys, and indices.
 ///
 /// Returns a complete SQL script that can be executed to create the schema.

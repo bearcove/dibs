@@ -619,7 +619,8 @@ fn detect_renames(added: &[&Table], dropped: &[&Table]) -> Vec<(String, String)>
     renames
 }
 
-impl Schema {
+/// Extension trait for Schema diffing operations.
+pub trait SchemaExt {
     /// Compare this schema (desired/Rust) against another schema (current/database).
     ///
     /// Returns the changes needed to transform `db_schema` into `self`.
@@ -636,7 +637,9 @@ impl Schema {
     /// # Example
     ///
     /// ```ignore
-    /// let rust_schema = Schema::collect();
+    /// use dibs::diff::SchemaExt;
+    ///
+    /// let rust_schema = schema::collect_schema();
     /// let db_schema = Schema::from_database(&client).await?;
     /// let diff = rust_schema.diff(&db_schema);
     ///
@@ -651,24 +654,28 @@ impl Schema {
     ///     }
     /// }
     /// ```
-    pub fn diff(&self, db_schema: &Schema) -> SchemaDiff {
+    fn diff(&self, db_schema: &Schema) -> SchemaDiff;
+}
+
+impl SchemaExt for Schema {
+    fn diff(&self, db_schema: &Schema) -> SchemaDiff {
         let mut table_diffs = Vec::new();
 
-        let desired_tables: HashSet<&str> = self.tables.iter().map(|t| t.name.as_str()).collect();
+        let desired_tables: HashSet<&str> = self.tables.values().map(|t| t.name.as_str()).collect();
         let current_tables: HashSet<&str> =
-            db_schema.tables.iter().map(|t| t.name.as_str()).collect();
+            db_schema.tables.values().map(|t| t.name.as_str()).collect();
 
         // Find tables only in desired (candidates for add or rename target)
         let added_tables: Vec<&Table> = self
             .tables
-            .iter()
+            .values()
             .filter(|t| !current_tables.contains(t.name.as_str()))
             .collect();
 
         // Find tables only in current (candidates for drop or rename source)
         let dropped_tables: Vec<&Table> = db_schema
             .tables
-            .iter()
+            .values()
             .filter(|t| !desired_tables.contains(t.name.as_str()))
             .collect();
 
@@ -694,10 +701,9 @@ impl Schema {
             });
 
             // Also diff the columns between old and new
-            if let (Some(old_table), Some(new_table)) = (
-                db_schema.tables.iter().find(|t| &t.name == from),
-                self.tables.iter().find(|t| &t.name == to),
-            ) {
+            if let (Some(old_table), Some(new_table)) =
+                (db_schema.tables.get(from), self.tables.get(to))
+            {
                 let column_changes = diff_table(new_table, old_table, &table_renames);
                 if !column_changes.is_empty() {
                     // Add column changes to the same table diff
@@ -729,15 +735,11 @@ impl Schema {
         }
 
         // Tables in both (not renamed) - diff columns and constraints
-        for desired_table in &self.tables {
+        for desired_table in self.tables.values() {
             if renamed_to.contains(desired_table.name.as_str()) {
                 continue; // Already handled above
             }
-            if let Some(current_table) = db_schema
-                .tables
-                .iter()
-                .find(|t| t.name == desired_table.name)
-            {
+            if let Some(current_table) = db_schema.tables.get(&desired_table.name) {
                 let changes = diff_table(desired_table, current_table, &table_renames);
                 if !changes.is_empty() {
                     table_diffs.push(TableDiff {

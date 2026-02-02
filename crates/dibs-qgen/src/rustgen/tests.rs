@@ -1,6 +1,52 @@
 use super::*;
 use crate::parse_query_file;
+use camino::Utf8Path;
+use dibs_db_schema::{Column, ForeignKey, PgType, Schema, SourceLocation, Table};
 use facet_testhelpers::test;
+use indexmap::IndexMap;
+
+fn parse_test(source: &str) -> crate::QueryFile {
+    parse_query_file(Utf8Path::new("<test>"), source).unwrap()
+}
+
+fn make_test_table(name: &str, columns: &[&str], fks: Vec<ForeignKey>) -> Table {
+    Table {
+        name: name.to_string(),
+        columns: columns
+            .iter()
+            .map(|&col| Column {
+                name: col.to_string(),
+                pg_type: PgType::Text,
+                rust_type: None,
+                nullable: false,
+                default: None,
+                primary_key: col == "id",
+                unique: false,
+                auto_generated: false,
+                long: false,
+                label: false,
+                enum_variants: vec![],
+                doc: None,
+                icon: None,
+                lang: None,
+                subtype: None,
+            })
+            .collect(),
+        check_constraints: vec![],
+        trigger_checks: vec![],
+        foreign_keys: fks,
+        indices: vec![],
+        source: SourceLocation::default(),
+        doc: None,
+        icon: None,
+    }
+}
+
+fn make_test_schema(tables: Vec<Table>) -> Schema {
+    Schema {
+        tables: tables.into_iter().map(|t| (t.name.clone(), t)).collect(),
+    }
+}
 
 // FIXME: All those tests are garbage and should just be using snapshots instead.
 
@@ -12,7 +58,7 @@ AllProducts @select{
   select { id, handle, status }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(code.code.contains("pub struct AllProductsResult"));
@@ -33,7 +79,7 @@ ProductByHandle @select{
   select { id, handle }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(code.code.contains("handle: &String"));
@@ -55,7 +101,7 @@ ProductListing @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(
@@ -77,7 +123,7 @@ TrendingProducts @select{
   returns { id @int, title @string }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(code.code.contains("locale: &String"));
@@ -102,8 +148,6 @@ fn test_pascal_case() {
 
 #[test]
 fn test_generate_join_query() {
-    use crate::planner::{ForeignKey, Schema, Table};
-
     let source = r#"
 ProductWithTranslation @select{
   params { handle @string }
@@ -119,7 +163,7 @@ ProductWithTranslation @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
 
     let mut schema = SchemaInfo::default();
     let mut product_cols = HashMap::new();
@@ -166,32 +210,18 @@ ProductWithTranslation @select{
         },
     );
 
-    let mut planner_schema = Schema::default();
-    planner_schema.tables.insert(
-        "product".to_string(),
-        Table {
-            name: "product".to_string(),
-            columns: vec!["id".to_string(), "handle".to_string()],
-            foreign_keys: vec![],
-        },
-    );
-    planner_schema.tables.insert(
-        "product_translation".to_string(),
-        Table {
-            name: "product_translation".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "product_id".to_string(),
-                "title".to_string(),
-                "description".to_string(),
-            ],
-            foreign_keys: vec![ForeignKey {
+    let planner_schema = make_test_schema(vec![
+        make_test_table("product", &["id", "handle"], vec![]),
+        make_test_table(
+            "product_translation",
+            &["id", "product_id", "title", "description"],
+            vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
             }],
-        },
-    );
+        ),
+    ]);
 
     let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
 
@@ -233,8 +263,6 @@ ProductWithTranslation @select{
 
 #[test]
 fn test_generate_vec_relation_query() {
-    use crate::planner::{ForeignKey, Schema, Table};
-
     let source = r#"
 ProductWithVariants @select{
   from product
@@ -246,7 +274,7 @@ ProductWithVariants @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
 
     let mut schema = SchemaInfo::default();
     let mut product_cols = HashMap::new();
@@ -293,31 +321,18 @@ ProductWithVariants @select{
         },
     );
 
-    let mut planner_schema = Schema::default();
-    planner_schema.tables.insert(
-        "product".to_string(),
-        Table {
-            name: "product".to_string(),
-            columns: vec!["id".to_string(), "handle".to_string()],
-            foreign_keys: vec![],
-        },
-    );
-    planner_schema.tables.insert(
-        "product_variant".to_string(),
-        Table {
-            name: "product_variant".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "product_id".to_string(),
-                "sku".to_string(),
-            ],
-            foreign_keys: vec![ForeignKey {
+    let planner_schema = make_test_schema(vec![
+        make_test_table("product", &["id", "handle"], vec![]),
+        make_test_table(
+            "product_variant",
+            &["id", "product_id", "sku"],
+            vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
             }],
-        },
-    );
+        ),
+    ]);
 
     let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
 
@@ -367,15 +382,13 @@ ProductWithVariants @select{
 
 #[test]
 fn test_generate_count_query() {
-    use crate::planner::{ForeignKey, Schema, Table};
-
     let source = r#"
 ProductWithVariantCount @select{
   from product
   select { id, handle, variant_count @count(product_variant) }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
 
     let mut schema = SchemaInfo::default();
     let mut product_cols = HashMap::new();
@@ -400,31 +413,18 @@ ProductWithVariantCount @select{
         },
     );
 
-    let mut planner_schema = Schema::default();
-    planner_schema.tables.insert(
-        "product".to_string(),
-        Table {
-            name: "product".to_string(),
-            columns: vec!["id".to_string(), "handle".to_string()],
-            foreign_keys: vec![],
-        },
-    );
-    planner_schema.tables.insert(
-        "product_variant".to_string(),
-        Table {
-            name: "product_variant".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "product_id".to_string(),
-                "sku".to_string(),
-            ],
-            foreign_keys: vec![ForeignKey {
+    let planner_schema = make_test_schema(vec![
+        make_test_table("product", &["id", "handle"], vec![]),
+        make_test_table(
+            "product_variant",
+            &["id", "product_id", "sku"],
+            vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
             }],
-        },
-    );
+        ),
+    ]);
 
     let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
 
@@ -455,8 +455,6 @@ ProductWithVariantCount @select{
 
 #[test]
 fn test_generate_nested_vec_relation_query() {
-    use crate::planner::{ForeignKey, Schema, Table};
-
     let source = r#"
 ProductWithVariantsAndPrices @select{
   from product
@@ -471,7 +469,7 @@ ProductWithVariantsAndPrices @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
 
     let mut schema = SchemaInfo::default();
     let mut product_cols = HashMap::new();
@@ -547,48 +545,27 @@ ProductWithVariantsAndPrices @select{
         },
     );
 
-    let mut planner_schema = Schema::default();
-    planner_schema.tables.insert(
-        "product".to_string(),
-        Table {
-            name: "product".to_string(),
-            columns: vec!["id".to_string(), "handle".to_string()],
-            foreign_keys: vec![],
-        },
-    );
-    planner_schema.tables.insert(
-        "product_variant".to_string(),
-        Table {
-            name: "product_variant".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "product_id".to_string(),
-                "sku".to_string(),
-            ],
-            foreign_keys: vec![ForeignKey {
+    let planner_schema = make_test_schema(vec![
+        make_test_table("product", &["id", "handle"], vec![]),
+        make_test_table(
+            "product_variant",
+            &["id", "product_id", "sku"],
+            vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
             }],
-        },
-    );
-    planner_schema.tables.insert(
-        "variant_price".to_string(),
-        Table {
-            name: "variant_price".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "variant_id".to_string(),
-                "currency_code".to_string(),
-                "amount".to_string(),
-            ],
-            foreign_keys: vec![ForeignKey {
+        ),
+        make_test_table(
+            "variant_price",
+            &["id", "variant_id", "currency_code", "amount"],
+            vec![ForeignKey {
                 columns: vec!["variant_id".to_string()],
                 references_table: "product_variant".to_string(),
                 references_columns: vec!["id".to_string()],
             }],
-        },
-    );
+        ),
+    ]);
 
     let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
 
@@ -665,7 +642,7 @@ CreateUser @insert{
   returning { id, name, email, created_at }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(code.code.contains("pub struct CreateUserResult"));
@@ -694,7 +671,7 @@ UpsertProduct @upsert{
   returning { id, name, price, updated_at }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(code.code.contains("pub struct UpsertProductResult"));
@@ -715,7 +692,7 @@ UpdateUserEmail @update{
   returning { id, email, updated_at }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(code.code.contains("pub struct UpdateUserEmailResult"));
@@ -735,7 +712,7 @@ DeleteUser @delete{
   returning { id }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     assert!(code.code.contains("pub struct DeleteUserResult"));
@@ -753,7 +730,7 @@ InsertLog @insert{
   values { message $message, created_at @now }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     // Should NOT generate a result struct
@@ -774,7 +751,7 @@ BulkCreateProducts @insert-many{
   returning { id, handle, status }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     // Should generate params struct
@@ -842,7 +819,7 @@ BulkUpsertProducts @upsert-many{
   returning { id, handle, status }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     // Should generate params struct
@@ -887,7 +864,7 @@ BulkInsertLogs @insert-many{
   values { message $message, created_at @now }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
+    let file = parse_test(source);
     let code = generate_rust_code(&file);
 
     // Should NOT generate result struct

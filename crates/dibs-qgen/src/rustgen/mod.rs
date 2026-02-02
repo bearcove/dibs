@@ -12,6 +12,8 @@ use std::sync::Arc;
 use crate::sqlgen::GeneratedSql;
 use crate::{QError, QErrorKind, QSource, QueryPlan};
 
+// TODO: do not use `&str` everywhere here, use `&ColumnNameRef` etc.
+
 // ============================================================================
 // Code Generation Contexts
 // ============================================================================

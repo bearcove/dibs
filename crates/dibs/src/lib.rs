@@ -72,8 +72,12 @@ pub use pool::ConnectionProvider;
 pub use service::{DibsServiceImpl, run_service};
 pub use traced::{Connection, ConnectionExt, TracedConn, TracedObject, TracedPool};
 
-// Re-export attr grammar
-pub use dibs_db_schema::{__attr, __parse_attr, Attr};
+// Re-export schema types from dibs_db_schema
+pub use dibs_db_schema::{
+    __attr, __parse_attr, Attr, Check, CheckConstraint, Column, CompositeIndex, CompositeUnique,
+    ForeignKey, Index, IndexColumn, NullsOrder, PgType, Schema, SortOrder, SourceLocation, Table,
+    TableDef, TriggerCheck, TriggerCheckConstraint,
+};
 
 // Re-export proto types for convenience
 pub use dibs_proto::*;
@@ -83,6 +87,165 @@ pub use inventory;
 
 // Re-export the proc macro
 pub use dibs_macros::migration;
+
+// Re-export query DSL codegen types
+pub use dibs_qgen::{
+    ColumnInfo, GeneratedCode, QueryFile, SchemaInfo, TableInfo, generate_rust_code,
+    generate_rust_code_with_planner, generate_rust_code_with_schema, parse_query_file,
+};
+
+/// Quote a PostgreSQL identifier.
+///
+/// Always quotes identifiers to avoid issues with reserved keywords like
+/// `user`, `order`, `table`, `group`, etc. Doubles any embedded quotes.
+pub fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// Generate a standard index name for a table and columns.
+///
+/// Uses the convention `idx_{table}_{columns}` where columns are joined by underscore.
+pub fn index_name(table: &str, columns: &[impl AsRef<str>]) -> String {
+    let cols: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
+    format!("idx_{}_{}", table, cols.join("_"))
+}
+
+/// Generate a standard unique index name for a table and columns.
+///
+/// Uses the convention `uq_{table}_{columns}` where columns are joined by underscore.
+pub fn unique_index_name(table: &str, columns: &[impl AsRef<str>]) -> String {
+    let cols: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
+    format!("uq_{}_{}", table, cols.join("_"))
+}
+
+/// Generate a deterministic CHECK constraint name for a table and expression.
+///
+/// Constraint names must be unique within a schema, so we include the table name
+/// and a stable hash of the expression (after whitespace normalization).
+pub fn check_constraint_name(table: &str, expr: &str) -> String {
+    let normalized = normalize_sql_expr_for_hash(expr);
+    let hex = blake3::hash(normalized.as_bytes()).to_hex().to_string();
+    let suffix = &hex[..16];
+
+    const PG_IDENT_MAX: usize = 63;
+    let prefix_overhead = "ck__".len(); // "ck_" + "_" between table and suffix
+    let suffix_len = suffix.len();
+    let max_table_len = PG_IDENT_MAX.saturating_sub(prefix_overhead + suffix_len);
+
+    let table_part = if table.len() <= max_table_len {
+        table
+    } else {
+        let mut len = max_table_len.min(table.len());
+        while len > 0 && !table.is_char_boundary(len) {
+            len -= 1;
+        }
+        &table[..len]
+    };
+
+    format!("ck_{}_{}", table_part, suffix)
+}
+
+/// Generate a deterministic trigger name for a trigger-enforced check.
+///
+/// Trigger names are scoped to a table in Postgres, but we still include the table name
+/// and a stable hash of the expression for readability and determinism.
+pub fn trigger_check_name(table: &str, expr: &str) -> String {
+    let normalized = normalize_sql_expr_for_hash(expr);
+    let hex = blake3::hash(normalized.as_bytes()).to_hex().to_string();
+    let suffix = &hex[..16];
+
+    const PG_IDENT_MAX: usize = 63;
+    let prefix_overhead = "trgck__".len(); // "trgck_" + "_" between table and suffix
+    let suffix_len = suffix.len();
+    let max_table_len = PG_IDENT_MAX.saturating_sub(prefix_overhead + suffix_len);
+
+    let table_part = if table.len() <= max_table_len {
+        table
+    } else {
+        let mut len = max_table_len.min(table.len());
+        while len > 0 && !table.is_char_boundary(len) {
+            len -= 1;
+        }
+        &table[..len]
+    };
+
+    format!("trgck_{}_{}", table_part, suffix)
+}
+
+/// Derive the trigger function name for a trigger-enforced check.
+///
+/// The function name is derived from the trigger name (hashed) so we don't
+/// accidentally exceed Postgres' identifier length limit.
+pub fn trigger_check_function_name(trigger_name: &str) -> String {
+    let hex = blake3::hash(trigger_name.as_bytes()).to_hex().to_string();
+    format!("trgfn_{}", &hex[..20])
+}
+
+fn normalize_sql_expr_for_hash(expr: &str) -> String {
+    let mut out = String::with_capacity(expr.len());
+    let mut pending_space = false;
+
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+
+    let mut chars = expr.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if in_single_quote {
+            out.push(ch);
+            if ch == '\'' {
+                if matches!(chars.peek(), Some('\'')) {
+                    out.push(chars.next().expect("peeked"));
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            continue;
+        }
+
+        if in_double_quote {
+            out.push(ch);
+            if ch == '"' {
+                if matches!(chars.peek(), Some('"')) {
+                    out.push(chars.next().expect("peeked"));
+                } else {
+                    in_double_quote = false;
+                }
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' => {
+                if pending_space && !out.is_empty() {
+                    out.push(' ');
+                }
+                pending_space = false;
+                out.push('\'');
+                in_single_quote = true;
+            }
+            '"' => {
+                if pending_space && !out.is_empty() {
+                    out.push(' ');
+                }
+                pending_space = false;
+                out.push('"');
+                in_double_quote = true;
+            }
+            c if c.is_whitespace() => {
+                pending_space = true;
+            }
+            c => {
+                if pending_space && !out.is_empty() {
+                    out.push(' ');
+                }
+                pending_space = false;
+                out.push(c);
+            }
+        }
+    }
+
+    out.trim().to_string()
+}
 
 /// Derive migration version from filename.
 ///
@@ -167,14 +330,14 @@ pub fn build_queries(queries_path: impl AsRef<std::path::Path>) {
     println!("cargo::rerun-if-changed={}", queries_path.display());
 
     // Collect schema from registered tables via inventory
-    let dibs_schema = Schema::collect();
+    let dibs_schema = schema::collect_schema();
 
     eprintln!(
         "cargo::warning=dibs: found {} tables in schema",
         dibs_schema.tables.len()
     );
 
-    for table in &dibs_schema.tables {
+    for table in dibs_schema.tables.values() {
         eprintln!(
             "cargo::warning=dibs: table '{}' with {} columns, {} FKs",
             table.name,
@@ -183,15 +346,15 @@ pub fn build_queries(queries_path: impl AsRef<std::path::Path>) {
         );
     }
 
-    let (schema, planner_schema) = dibs_schema.to_query_schema();
+    let schema_info = schema::schema_to_schema_info(&dibs_schema);
 
     let source = std::fs::read_to_string(queries_path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", queries_path.display(), e));
 
-    let filename = queries_path.display().to_string();
-    let file = parse_query_file(&filename, &source).unwrap();
+    let filename = camino::Utf8Path::new(queries_path.to_str().expect("path must be UTF-8"));
+    let file = parse_query_file(filename, &source).unwrap();
 
-    let generated = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
+    let generated = generate_rust_code_with_planner(&file, &schema_info, Some(&dibs_schema));
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = std::path::Path::new(&out_dir).join("queries.rs");

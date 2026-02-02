@@ -32,6 +32,8 @@ roam.workspace = true
 roam-stream.workspace = true
 blake3.workspace = true
 tracing.workspace = true
+camino.workspace = true
+indexmap.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

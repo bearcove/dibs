@@ -28,6 +28,10 @@ pub use sqlgen::{
 
 // Rust code generation
 mod rustgen;
+pub use rustgen::{
+    ColumnInfo, GeneratedCode, SchemaInfo, TableInfo, generate_rust_code,
+    generate_rust_code_with_planner, generate_rust_code_with_schema,
+};
 
 // Internal stuff
 mod filter_spec;

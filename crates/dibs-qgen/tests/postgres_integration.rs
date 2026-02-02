@@ -9,14 +9,92 @@
 //!
 //! Note: Requires Docker to be running.
 
+use camino::Utf8Path;
+use dibs_db_schema::{Column, ForeignKey, PgType, Schema, SourceLocation, Table};
 use dibs_qgen::{
-    ColumnInfo, PlannerForeignKey, PlannerSchema, PlannerTable, SchemaInfo, TableInfo,
-    generate_rust_code_with_planner, generate_sql, parse_query_file,
+    ColumnInfo, Decl, QueryFile, SchemaInfo, Select, TableInfo, generate_rust_code_with_planner,
+    generate_select_sql, parse_query_file,
 };
 use dockside::{Container, containers};
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio_postgres::{Client, NoTls, Row};
+
+/// Helper to parse a query file from a string source
+fn parse_test_query(source: &str) -> QueryFile {
+    parse_query_file(Utf8Path::new("<test>"), source).unwrap()
+}
+
+/// Helper to get the first Select query from a QueryFile
+fn first_select(file: &QueryFile) -> &Select {
+    for decl in file.0.values() {
+        if let Decl::Select(select) = decl {
+            return select;
+        }
+    }
+    panic!("No Select query found in file")
+}
+
+/// Helper to get the first Insert from a QueryFile
+fn first_insert(file: &QueryFile) -> &dibs_qgen::Insert {
+    for decl in file.0.values() {
+        if let Decl::Insert(insert) = decl {
+            return insert;
+        }
+    }
+    panic!("No Insert found in file")
+}
+
+/// Helper to get the first InsertMany from a QueryFile
+fn first_insert_many(file: &QueryFile) -> &dibs_qgen::InsertMany {
+    for decl in file.0.values() {
+        if let Decl::InsertMany(insert_many) = decl {
+            return insert_many;
+        }
+    }
+    panic!("No InsertMany found in file")
+}
+
+/// Helper to get the first Update from a QueryFile
+fn first_update(file: &QueryFile) -> &dibs_qgen::Update {
+    for decl in file.0.values() {
+        if let Decl::Update(update) = decl {
+            return update;
+        }
+    }
+    panic!("No Update found in file")
+}
+
+/// Helper to get the first Delete from a QueryFile
+fn first_delete(file: &QueryFile) -> &dibs_qgen::Delete {
+    for decl in file.0.values() {
+        if let Decl::Delete(delete) = decl {
+            return delete;
+        }
+    }
+    panic!("No Delete found in file")
+}
+
+/// Helper to get the first Upsert from a QueryFile
+fn first_upsert(file: &QueryFile) -> &dibs_qgen::Upsert {
+    for decl in file.0.values() {
+        if let Decl::Upsert(upsert) = decl {
+            return upsert;
+        }
+    }
+    panic!("No Upsert found in file")
+}
+
+/// Helper to get the first UpsertMany from a QueryFile
+fn first_upsert_many(file: &QueryFile) -> &dibs_qgen::UpsertMany {
+    for decl in file.0.values() {
+        if let Decl::UpsertMany(upsert_many) = decl {
+            return upsert_many;
+        }
+    }
+    panic!("No UpsertMany found in file")
+}
 
 /// Set up a PostgreSQL container and return a connected client.
 async fn setup_postgres() -> (Container, Client) {
@@ -253,8 +331,45 @@ async fn insert_test_data(client: &Client) {
     // Product 3 has no translations
 }
 
-fn build_test_schema() -> (SchemaInfo, PlannerSchema) {
-    let mut schema = SchemaInfo::default();
+/// Helper to create a simple column
+fn col(name: &str, pg_type: PgType, rust_type: &str, nullable: bool) -> Column {
+    Column {
+        name: name.to_string(),
+        pg_type,
+        rust_type: Some(rust_type.to_string()),
+        nullable,
+        default: None,
+        primary_key: name == "id",
+        unique: false,
+        auto_generated: name == "id",
+        long: false,
+        label: false,
+        enum_variants: vec![],
+        doc: None,
+        lang: None,
+        icon: None,
+        subtype: None,
+    }
+}
+
+/// Helper to create a table
+fn table(name: &str, columns: Vec<Column>, foreign_keys: Vec<ForeignKey>) -> Table {
+    Table {
+        name: name.to_string(),
+        columns,
+        check_constraints: vec![],
+        trigger_checks: vec![],
+        foreign_keys,
+        indices: vec![],
+        source: SourceLocation::default(),
+        doc: None,
+        icon: None,
+    }
+}
+
+fn build_test_schema() -> (SchemaInfo, Schema) {
+    // Build SchemaInfo for rustgen
+    let mut schema_info = SchemaInfo::default();
 
     // Product table
     let mut product_cols = HashMap::new();
@@ -279,7 +394,7 @@ fn build_test_schema() -> (SchemaInfo, PlannerSchema) {
             nullable: false,
         },
     );
-    schema.tables.insert(
+    schema_info.tables.insert(
         "product".to_string(),
         TableInfo {
             columns: product_cols,
@@ -316,7 +431,7 @@ fn build_test_schema() -> (SchemaInfo, PlannerSchema) {
             nullable: false,
         },
     );
-    schema.tables.insert(
+    schema_info.tables.insert(
         "product_variant".to_string(),
         TableInfo {
             columns: variant_cols,
@@ -360,60 +475,67 @@ fn build_test_schema() -> (SchemaInfo, PlannerSchema) {
             nullable: true,
         },
     );
-    schema.tables.insert(
+    schema_info.tables.insert(
         "product_translation".to_string(),
         TableInfo {
             columns: translation_cols,
         },
     );
 
-    // Planner schema with FK relationships
-    let mut planner_schema = PlannerSchema::default();
-    planner_schema.tables.insert(
+    // Build dibs_db_schema::Schema for the planner
+    let mut tables = IndexMap::new();
+
+    tables.insert(
         "product".to_string(),
-        PlannerTable {
-            name: "product".to_string(),
-            columns: vec!["id".to_string(), "handle".to_string(), "status".to_string()],
-            foreign_keys: vec![],
-        },
-    );
-    planner_schema.tables.insert(
-        "product_variant".to_string(),
-        PlannerTable {
-            name: "product_variant".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "product_id".to_string(),
-                "sku".to_string(),
-                "price_cents".to_string(),
+        table(
+            "product",
+            vec![
+                col("id", PgType::BigInt, "i64", false),
+                col("handle", PgType::Text, "String", false),
+                col("status", PgType::Text, "String", false),
             ],
-            foreign_keys: vec![PlannerForeignKey {
-                columns: vec!["product_id".to_string()],
-                references_table: "product".to_string(),
-                references_columns: vec!["id".to_string()],
-            }],
-        },
-    );
-    planner_schema.tables.insert(
-        "product_translation".to_string(),
-        PlannerTable {
-            name: "product_translation".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "product_id".to_string(),
-                "locale".to_string(),
-                "title".to_string(),
-                "description".to_string(),
-            ],
-            foreign_keys: vec![PlannerForeignKey {
-                columns: vec!["product_id".to_string()],
-                references_table: "product".to_string(),
-                references_columns: vec!["id".to_string()],
-            }],
-        },
+            vec![],
+        ),
     );
 
-    (schema, planner_schema)
+    tables.insert(
+        "product_variant".to_string(),
+        table(
+            "product_variant",
+            vec![
+                col("id", PgType::BigInt, "i64", false),
+                col("product_id", PgType::BigInt, "i64", false),
+                col("sku", PgType::Text, "String", false),
+                col("price_cents", PgType::BigInt, "i64", false),
+            ],
+            vec![ForeignKey {
+                columns: vec!["product_id".to_string()],
+                references_table: "product".to_string(),
+                references_columns: vec!["id".to_string()],
+            }],
+        ),
+    );
+
+    tables.insert(
+        "product_translation".to_string(),
+        table(
+            "product_translation",
+            vec![
+                col("id", PgType::BigInt, "i64", false),
+                col("product_id", PgType::BigInt, "i64", false),
+                col("locale", PgType::Text, "String", false),
+                col("title", PgType::Text, "String", false),
+                col("description", PgType::Text, "String", true),
+            ],
+            vec![ForeignKey {
+                columns: vec!["product_id".to_string()],
+                references_table: "product".to_string(),
+                references_columns: vec!["id".to_string()],
+            }],
+        ),
+    );
+
+    (schema_info, Schema { tables })
 }
 
 #[tokio::test]
@@ -429,8 +551,8 @@ AllProducts @select{
   select { id, handle, status }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let _query = &file.queries[0];
+    let file = parse_test_query(source);
+    let _query = first_select(&file);
 
     // Generate SQL
     let sql = "SELECT id, handle, status FROM product";
@@ -468,11 +590,11 @@ ProductWithTranslation @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     // Generate SQL with JOINs
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -516,11 +638,11 @@ ProductWithVariants @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     // Generate SQL with JOINs
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -605,11 +727,11 @@ ProductByHandle @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     // Generate SQL with JOINs
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Query for widget
@@ -659,11 +781,11 @@ ProductWithVariantCount @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     // Generate SQL
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -723,10 +845,10 @@ ProductWithEnglishTranslation @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Verify the SQL contains the relation filter in ON clause
@@ -799,10 +921,10 @@ ProductWithTranslationByLocale @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Verify the SQL contains the relation filter with param placeholder
@@ -868,10 +990,10 @@ ActiveProductWithTranslation @select{
   }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
     tracing::info!("Param order: {:?}", generated.param_order);
 
@@ -889,8 +1011,9 @@ ActiveProductWithTranslation @select{
     );
 
     // Param order should be: locale (from ON clause), then status (from WHERE)
+    let param_names: Vec<&str> = generated.param_order.iter().map(|p| p.as_str()).collect();
     assert_eq!(
-        generated.param_order,
+        param_names,
         vec!["locale", "status"],
         "Param order should be [locale, status]"
     );
@@ -938,8 +1061,8 @@ CreateProduct @insert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let insert = &file.inserts[0];
+    let file = parse_test_query(source);
+    let insert = first_insert(&file);
 
     // Generate SQL
     let generated = dibs_qgen::generate_insert_sql(insert);
@@ -1000,8 +1123,8 @@ CreateProductWithDefault @insert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let insert = &file.inserts[0];
+    let file = parse_test_query(source);
+    let insert = first_insert(&file);
 
     let generated = dibs_qgen::generate_insert_sql(insert);
     tracing::info!("Generated INSERT SQL: {}", generated.sql);
@@ -1036,8 +1159,8 @@ UpdateProductStatus @update{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let update = &file.updates[0];
+    let file = parse_test_query(source);
+    let update = first_update(&file);
 
     let generated = dibs_qgen::generate_update_sql(update);
     tracing::info!("Generated UPDATE SQL: {}", generated.sql);
@@ -1095,8 +1218,8 @@ DeleteProduct @delete{
     returning {id, handle}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let delete = &file.deletes[0];
+    let file = parse_test_query(source);
+    let delete = first_delete(&file);
 
     let generated = dibs_qgen::generate_delete_sql(delete);
     tracing::info!("Generated DELETE SQL: {}", generated.sql);
@@ -1157,8 +1280,8 @@ UpsertProduct @upsert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let upsert = &file.upserts[0];
+    let file = parse_test_query(source);
+    let upsert = first_upsert(&file);
 
     let generated = dibs_qgen::generate_upsert_sql(upsert);
     tracing::info!("Generated UPSERT SQL: {}", generated.sql);
@@ -1217,8 +1340,8 @@ UpsertProduct @upsert{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let upsert = &file.upserts[0];
+    let file = parse_test_query(source);
+    let upsert = first_upsert(&file);
 
     let generated = dibs_qgen::generate_upsert_sql(upsert);
 
@@ -1259,8 +1382,8 @@ CreateProductNoReturn @insert{
     values {handle $handle, status $status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let insert = &file.inserts[0];
+    let file = parse_test_query(source);
+    let insert = first_insert(&file);
 
     let generated = dibs_qgen::generate_insert_sql(insert);
     tracing::info!("Generated INSERT SQL: {}", generated.sql);
@@ -1306,9 +1429,8 @@ BulkCreateProducts @insert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    assert_eq!(file.insert_manys.len(), 1);
-    let insert_many = &file.insert_manys[0];
+    let file = parse_test_query(source);
+    let insert_many = first_insert_many(&file);
 
     // Generate SQL
     let generated = dibs_qgen::generate_insert_many_sql(insert_many);
@@ -1386,8 +1508,8 @@ BulkCreateProductsNoReturn @insert-many{
     values {handle $handle, status $status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let insert_many = &file.insert_manys[0];
+    let file = parse_test_query(source);
+    let insert_many = first_insert_many(&file);
 
     let generated = dibs_qgen::generate_insert_many_sql(insert_many);
     tracing::info!(
@@ -1434,9 +1556,8 @@ BulkUpsertProducts @upsert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    assert_eq!(file.upsert_manys.len(), 1);
-    let upsert_many = &file.upsert_manys[0];
+    let file = parse_test_query(source);
+    let upsert_many = first_upsert_many(&file);
 
     let generated = dibs_qgen::generate_upsert_many_sql(upsert_many);
     tracing::info!("Generated UPSERT MANY SQL: {}", generated.sql);
@@ -1513,8 +1634,8 @@ BulkUpsertProducts @upsert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let upsert_many = &file.upsert_manys[0];
+    let file = parse_test_query(source);
+    let upsert_many = first_upsert_many(&file);
     let generated = dibs_qgen::generate_upsert_many_sql(upsert_many);
 
     // Upsert with mix of existing and new
@@ -1575,8 +1696,8 @@ BulkCreateProducts @insert-many{
     returning {id, handle, status}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let insert_many = &file.insert_manys[0];
+    let file = parse_test_query(source);
+    let insert_many = first_insert_many(&file);
     let generated = dibs_qgen::generate_insert_many_sql(insert_many);
 
     // Execute with empty arrays
@@ -1612,11 +1733,11 @@ GetProductWithSpecs @select{
     where {metadata @json-get($key)}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1649,11 +1770,11 @@ GetProductBrand @select{
     where {metadata @json-get-text($key)}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1688,13 +1809,13 @@ FindByBrand @select{
     where {metadata @json-get-text("brand")}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
-    let (_schema_info, _planner_schema) = build_jsonb_test_schema();
+    let (_schema_info, planner_schema) = build_jsonb_test_schema();
 
     // For this test, we'll use simple SQL generation since we're testing the operator
-    let generated = dibs_qgen::generate_simple_sql(query);
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1721,11 +1842,11 @@ FindPremiumProducts @select{
     where {metadata @contains("{\"premium\": true}")}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1758,11 +1879,11 @@ FindProductsByMetadata @select{
     where {metadata @contains("{\"brand\": \"Acme\"}")}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1792,11 +1913,11 @@ FindByNestedSpec @select{
     where {metadata @contains("{\"specs\": {\"color\": \"blue\"}}")}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1826,11 +1947,11 @@ FindWithPremiumKey @select{
     where {metadata @key-exists("premium")}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1865,11 +1986,11 @@ FindWithKey @select{
     where {metadata @key-exists($key)}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1906,11 +2027,11 @@ ComplexJsonQuery @select{
     }
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1951,11 +2072,11 @@ FindWithMetadata @select{
     where {metadata @key-exists("brand")}
 }
 "#;
-    let file = parse_query_file("<test>", source).unwrap();
-    let query = &file.queries[0];
+    let file = parse_test_query(source);
+    let query = first_select(&file);
 
     let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_sql(query, Some(&planner_schema)).unwrap();
+    let generated = generate_select_sql(query, &planner_schema).unwrap();
 
     // Execute query - should not return products with NULL metadata
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -1974,8 +2095,8 @@ FindWithMetadata @select{
 }
 
 /// Build test schema for JSONB tests.
-fn build_jsonb_test_schema() -> (SchemaInfo, PlannerSchema) {
-    let mut schema = SchemaInfo::default();
+fn build_jsonb_test_schema() -> (SchemaInfo, Schema) {
+    let mut schema_info = SchemaInfo::default();
 
     // Product with metadata table
     let mut product_cols = HashMap::new();
@@ -2008,33 +2129,29 @@ fn build_jsonb_test_schema() -> (SchemaInfo, PlannerSchema) {
         },
     );
 
-    schema.tables.insert(
+    schema_info.tables.insert(
         "product_with_metadata".to_string(),
         TableInfo {
             columns: product_cols,
         },
     );
 
-    // Build planner schema
-    let mut planner_tables = HashMap::new();
+    // Build dibs_db_schema::Schema for the planner
+    let mut tables = IndexMap::new();
 
-    planner_tables.insert(
+    tables.insert(
         "product_with_metadata".to_string(),
-        PlannerTable {
-            name: "product_with_metadata".to_string(),
-            columns: vec![
-                "id".to_string(),
-                "handle".to_string(),
-                "status".to_string(),
-                "metadata".to_string(),
+        table(
+            "product_with_metadata",
+            vec![
+                col("id", PgType::BigInt, "i64", false),
+                col("handle", PgType::Text, "String", false),
+                col("status", PgType::Text, "String", false),
+                col("metadata", PgType::Jsonb, "serde_json::Value", true),
             ],
-            foreign_keys: vec![],
-        },
+            vec![],
+        ),
     );
 
-    let planner_schema = PlannerSchema {
-        tables: planner_tables,
-    };
-
-    (schema, planner_schema)
+    (schema_info, Schema { tables })
 }
