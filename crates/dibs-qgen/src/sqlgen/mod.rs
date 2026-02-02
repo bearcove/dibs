@@ -957,33 +957,37 @@ fn value_expr_to_unnest_select(_col: &str, expr: &ValueExpr, param_names: &[&str
 ///
 /// For params, use EXCLUDED.column. For other expressions, render as SQL.
 fn value_expr_to_excluded(col: &str, expr: &ValueExpr, param_names: &[&str]) -> String {
+    use dibs_query_schema::Payload;
     match expr {
-        ValueExpr::Param(name) if param_names.contains(&name.as_str()) => {
-            // Use EXCLUDED.column to reference the value that would have been inserted
-            format!("EXCLUDED.\"{}\"", col)
-        }
-        ValueExpr::Param(name) => {
-            format!("${}", name)
-        }
-        ValueExpr::String(s) => {
-            let escaped = s.replace('\'', "''");
-            format!("'{}'", escaped)
-        }
-        ValueExpr::Int(n) => n.to_string(),
-        ValueExpr::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
-        ValueExpr::Null => "NULL".to_string(),
-        ValueExpr::FunctionCall { name, args } => {
-            if args.is_empty() {
-                format!("{}()", name.to_uppercase())
-            } else {
+        ValueExpr::Default => "DEFAULT".to_string(),
+        ValueExpr::Other { tag, content } => match (tag, content) {
+            // Bare scalar (param reference like $name)
+            (None, Some(Payload::Scalar(s))) => {
+                let s = s.value();
+                if let Some(name) = s.strip_prefix('$') {
+                    if param_names.contains(&name) {
+                        format!("EXCLUDED.\"{}\"", col)
+                    } else {
+                        format!("${}", name)
+                    }
+                } else {
+                    // Literal value, pass through
+                    s.to_string()
+                }
+            }
+            // Nullary function like @now
+            (Some(name), None) => format!("{}()", name.to_uppercase()),
+            // Function with args like @coalesce($a, $b)
+            (Some(name), Some(Payload::Seq(args))) => {
                 let arg_strs: Vec<String> = args
                     .iter()
                     .map(|a| value_expr_to_excluded(col, a, param_names))
                     .collect();
                 format!("{}({})", name.to_uppercase(), arg_strs.join(", "))
             }
-        }
-        ValueExpr::Default => "DEFAULT".to_string(),
+            // Other cases shouldn't happen but handle gracefully
+            _ => "NULL".to_string(),
+        },
     }
 }
 
