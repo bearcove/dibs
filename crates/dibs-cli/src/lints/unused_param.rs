@@ -103,7 +103,7 @@ fn collect_param_refs_from_payload(payload: &Payload, refs: &mut Vec<String>) {
     }
 }
 
-pub fn lint_unused_params_query(query: &Query, ctx: &mut LintContext<'_>) {
+pub fn lint_unused_params_query(query: &SelectFields, ctx: &mut LintContext<'_>) {
     let Some(params) = &query.params else { return };
 
     let mut used = Vec::new();

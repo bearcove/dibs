@@ -1,160 +1,32 @@
 //! SQL generation from query schema types.
 
-use crate::{QError, QueryPlan, QueryPlanner};
-use dibs_db_schema::Schema;
+mod delete;
+mod select;
+
+pub use delete::{GeneratedDelete, generate_delete_sql};
+use indexmap::IndexMap;
+pub use select::{GeneratedSelect, generate_select_sql};
+
 #[allow(unused_imports)]
-use dibs_query_schema::{
-    OptionMetaCopyExt as _, OptionMetaDerefExt as _, OptionMetaExt as _, ParamType, Query,
-    ValueExpr,
-};
-use dibs_sql::{
-    BinOp as SqlBinOp, ConflictAction, DeleteStmt, Expr as SqlExpr, InsertStmt, OnConflict,
-    UpdateAssignment, UpdateStmt, render,
-};
+use dibs_query_schema::{ParamType, ValueExpr};
+
+use crate::QueryPlan;
 
 /// Generated SQL with parameter placeholders.
 #[derive(Debug, Clone)]
 pub struct GeneratedSql {
     /// The SQL string with $1, $2, etc. placeholders.
     pub sql: String,
+
     /// Parameter names in order (maps to $1, $2, etc.).
     pub param_order: Vec<String>,
+
     /// Query plan (if JOINs are involved).
     pub plan: Option<QueryPlan>,
+
     /// Column names in SELECT order (for index-based access).
     /// Maps column names to their index in the result set.
-    pub column_order: std::collections::HashMap<String, usize>,
-}
-
-/// Generate SQL for a query with optional JOINs using the planner.
-///
-/// If schema is None or the query has no relations/COUNT fields, falls back to simple SQL generation.
-pub fn generate_sql(
-    query: &Query,
-    schema: Option<&Schema>,
-) -> Result<GeneratedSql, crate::planner::PlanError> {
-    // Plan the query
-    let planner = QueryPlanner::new(schema.unwrap());
-    let plan = planner.plan(query)?;
-
-    let mut sql = String::new();
-    let mut param_order = Vec::new();
-    let mut param_idx = 1;
-    let mut column_order = std::collections::HashMap::new();
-
-    // Build column_order from plan's select_columns and count_subqueries
-    let mut col_idx = 0;
-    for col in &plan.select_columns {
-        column_order.insert(col.result_alias.clone(), col_idx);
-        col_idx += 1;
-    }
-    for count in &plan.count_subqueries {
-        column_order.insert(count.result_alias.clone(), col_idx);
-        col_idx += 1;
-    }
-
-    // SELECT with aliased columns
-    sql.push_str("SELECT ");
-
-    // DISTINCT or DISTINCT ON
-    if let Some(distinct_on) = &query.distinct_on {
-        if !distinct_on.0.is_empty() {
-            sql.push_str("DISTINCT ON (");
-            let distinct_cols: Vec<_> = distinct_on
-                .0
-                .iter()
-                .map(|col| format!("\"t0\".\"{}\"", col.value))
-                .collect();
-            sql.push_str(&distinct_cols.join(", "));
-            sql.push_str(") ");
-        }
-    } else if query.distinct.as_ref().map(|m| m.value).unwrap_or(false) {
-        sql.push_str("DISTINCT ");
-    }
-
-    sql.push_str(&plan.select_sql());
-
-    // FROM with JOINs (including relation filters in ON clauses)
-    sql.push_str(" FROM ");
-    sql.push_str(&plan.from_sql_with_params(&mut param_order, &mut param_idx));
-
-    // WHERE
-    if let Some(where_clause) = &query.where_clause {
-        if !where_clause.filters.is_empty() {
-            sql.push_str(" WHERE ");
-            let conditions: Vec<_> = where_clause
-                .filters
-                .iter()
-                .map(|(col_meta, filter_value)| {
-                    // Prefix column with base table alias
-                    let column = format!("t0.{}", col_meta.value);
-                    let (cond, new_idx) =
-                        format_filter(&column, filter_value, param_idx, &mut param_order);
-                    param_idx = new_idx;
-                    cond
-                })
-                .collect();
-            sql.push_str(&conditions.join(" AND "));
-        }
-    }
-
-    // ORDER BY
-    if let Some(order_by) = &query.order_by {
-        if !order_by.columns.is_empty() {
-            sql.push_str(" ORDER BY ");
-            let orders: Vec<_> = order_by
-                .columns
-                .iter()
-                .map(|(col_meta, dir_opt)| {
-                    let dir = dir_opt.as_ref().map(|d| d.value.as_str()).unwrap_or("asc");
-                    let dir_sql = if dir.eq_ignore_ascii_case("desc") {
-                        "DESC"
-                    } else {
-                        "ASC"
-                    };
-                    format!("\"t0\".\"{}\" {}", col_meta.value, dir_sql)
-                })
-                .collect();
-            sql.push_str(&orders.join(", "));
-        }
-    }
-
-    // LIMIT
-    if let Some(limit) = &query.limit {
-        sql.push_str(" LIMIT ");
-        let limit_str = limit.value.as_str();
-        if let Some(param_name) = limit_str.strip_prefix('$') {
-            param_order.push(param_name.to_string());
-            sql.push_str(&format!("${}", param_idx));
-            param_idx += 1;
-        } else {
-            // Literal number
-            sql.push_str(limit_str);
-        }
-    }
-
-    // OFFSET
-    if let Some(offset) = &query.offset {
-        sql.push_str(" OFFSET ");
-        let offset_str = offset.value.as_str();
-        if let Some(param_name) = offset_str.strip_prefix('$') {
-            param_order.push(param_name.to_string());
-            sql.push_str(&format!("${}", param_idx));
-            param_idx += 1;
-        } else {
-            // Literal number
-            sql.push_str(offset_str);
-        }
-    }
-
-    let _ = param_idx;
-
-    Ok(GeneratedSql {
-        sql,
-        param_order,
-        plan: Some(plan),
-        column_order,
-    })
+    pub column_order: IndexMap<String, usize>,
 }
 
 /// Format a single filter condition from a column name and FilterValue.
@@ -379,7 +251,7 @@ pub fn generate_insert_sql(insert: &InsertMutation) -> GeneratedSql {
         stmt = stmt.column(col, value_expr_to_sql(expr));
     }
 
-    let mut column_order = std::collections::HashMap::new();
+    let mut column_order = HashMap::new();
     if !insert.returning.is_empty() {
         stmt = stmt.returning(insert.returning.iter().map(|s| s.as_str()));
         // Build column_order for RETURNING clause
@@ -419,7 +291,7 @@ pub fn generate_upsert_sql(upsert: &UpsertMutation) -> GeneratedSql {
         action: ConflictAction::DoUpdate(update_assignments),
     });
 
-    let mut column_order = std::collections::HashMap::new();
+    let mut column_order = HashMap::new();
     if !upsert.returning.is_empty() {
         stmt = stmt.returning(upsert.returning.iter().map(|s| s.as_str()));
         // Build column_order for RETURNING clause
@@ -452,7 +324,7 @@ pub fn generate_update_sql(update: &UpdateMutation) -> GeneratedSql {
     }
 
     // RETURNING
-    let mut column_order = std::collections::HashMap::new();
+    let mut column_order = HashMap::new();
     if !update.returning.is_empty() {
         stmt = stmt.returning(update.returning.iter().map(|s| s.as_str()));
         // Build column_order for RETURNING clause
@@ -480,7 +352,7 @@ pub fn generate_delete_sql(delete: &DeleteMutation) -> GeneratedSql {
     }
 
     // RETURNING
-    let mut column_order = std::collections::HashMap::new();
+    let mut column_order = HashMap::new();
     if !delete.returning.is_empty() {
         stmt = stmt.returning(delete.returning.iter().map(|s| s.as_str()));
         // Build column_order for RETURNING clause
@@ -510,7 +382,7 @@ pub fn generate_delete_sql(delete: &DeleteMutation) -> GeneratedSql {
 pub fn generate_insert_many_sql(insert: &InsertManyMutation) -> GeneratedSql {
     let mut sql = String::new();
     let mut param_order = Vec::new();
-    let mut column_order = std::collections::HashMap::new();
+    let mut column_order = HashMap::new();
 
     // Collect param names for UNNEST
     let param_names: Vec<&str> = insert.params.iter().map(|p| p.name.as_str()).collect();
@@ -596,7 +468,7 @@ pub fn generate_insert_many_sql(insert: &InsertManyMutation) -> GeneratedSql {
 pub fn generate_upsert_many_sql(upsert: &UpsertManyMutation) -> GeneratedSql {
     let mut sql = String::new();
     let mut param_order = Vec::new();
-    let mut column_order = std::collections::HashMap::new();
+    let mut column_order = HashMap::new();
 
     // Collect param names for UNNEST
     let param_names: Vec<&str> = upsert.params.iter().map(|p| p.name.as_str()).collect();

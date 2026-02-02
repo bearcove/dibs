@@ -18,6 +18,7 @@ thiserror.workspace = true
 codegen.workspace = true
 ariadne.workspace = true
 camino = "1.2.2"
+indexmap.workspace = true
 
 [dev-dependencies]
 tracing.workspace = true

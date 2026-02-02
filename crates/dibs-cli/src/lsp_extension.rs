@@ -265,7 +265,7 @@ impl DibsExtension {
 
         for (_name, decl) in &query_file.0 {
             match decl {
-                Decl::Query(query) => {
+                Decl::Select(query) => {
                     lints::lint_unknown_table_query(query, &mut ctx);
                     lints::lint_pagination_query(query, &mut ctx);
                     lints::lint_unused_params_query(query, &mut ctx);

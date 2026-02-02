@@ -11,7 +11,7 @@ mod types;
 use dibs_db_schema::Schema;
 pub use types::*;
 
-use crate::{Query, Select};
+use crate::{SelectFields, SelectFields};
 use std::collections::HashMap;
 
 impl std::fmt::Display for PlanError {
@@ -41,7 +41,7 @@ impl<'a> QueryPlanner<'a> {
     }
 
     /// Plan a query, resolving all relations to JOINs.
-    pub fn plan(&self, query: &Query) -> Result<QueryPlan, PlanError> {
+    pub fn plan(&self, query: &SelectFields) -> Result<QueryPlan, PlanError> {
         let from_table_meta = query
             .from
             .as_ref()
@@ -69,7 +69,7 @@ impl<'a> QueryPlanner<'a> {
     /// Process select fields recursively, handling nested relations.
     fn process_select(
         &self,
-        select: &Select,
+        select: &SelectFields,
         parent_table: &str,
         parent_alias: &str,
         path: &[String], // path to this relation (e.g., ["variants", "prices"])
@@ -112,7 +112,7 @@ impl<'a> QueryPlanner<'a> {
 
             // Collect column names for the join (only direct columns, not nested relations)
             let join_select_columns: Vec<String> = relation
-                .select
+                .fields
                 .as_ref()
                 .map(|sel| sel.columns().map(|(n, _)| n.value.clone()).collect())
                 .unwrap_or_default();
@@ -132,7 +132,7 @@ impl<'a> QueryPlanner<'a> {
             let mut relation_columns = HashMap::new();
             let mut nested_relations = HashMap::new();
 
-            if let Some(nested_select) = &relation.select {
+            if let Some(nested_select) = &relation.fields {
                 self.process_select_nested(
                     nested_select,
                     &relation_table,
@@ -184,7 +184,7 @@ impl<'a> QueryPlanner<'a> {
     /// Process nested select fields (used for relations).
     fn process_select_nested(
         &self,
-        select: &Select,
+        select: &SelectFields,
         parent_table: &str,
         parent_alias: &str,
         path: &[String],
@@ -222,7 +222,7 @@ impl<'a> QueryPlanner<'a> {
                 self.resolve_fk(parent_table, &relation_table, &relation_alias, parent_alias)?;
 
             let join_select_columns: Vec<String> = relation
-                .select
+                .fields
                 .as_ref()
                 .map(|sel| sel.columns().map(|(n, _)| n.value.clone()).collect())
                 .unwrap_or_default();
@@ -239,7 +239,7 @@ impl<'a> QueryPlanner<'a> {
             let mut relation_columns = HashMap::new();
             let mut nested_relations = HashMap::new();
 
-            if let Some(nested_select) = &relation.select {
+            if let Some(nested_select) = &relation.fields {
                 self.process_select_nested(
                     nested_select,
                     &relation_table,
