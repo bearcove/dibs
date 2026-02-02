@@ -2,7 +2,11 @@
 
 use crate::{QError, QueryPlan, QueryPlanner};
 use dibs_db_schema::Schema;
-use dibs_query_schema::{ParamType, Query, ValueExpr};
+#[allow(unused_imports)]
+use dibs_query_schema::{
+    OptionMetaCopyExt as _, OptionMetaDerefExt as _, OptionMetaExt as _, ParamType, Query,
+    ValueExpr,
+};
 use dibs_sql::{
     BinOp as SqlBinOp, ConflictAction, DeleteStmt, Expr as SqlExpr, InsertStmt, OnConflict,
     UpdateAssignment, UpdateStmt, render,
@@ -922,34 +926,39 @@ pub fn generate_upsert_many_sql(upsert: &UpsertManyMutation) -> GeneratedSql {
 /// For params that are in the UNNEST, reference them as column names.
 /// For other expressions (like @now), render as SQL.
 fn value_expr_to_unnest_select(_col: &str, expr: &ValueExpr, param_names: &[&str]) -> String {
+    use dibs_query_schema::Payload;
     match expr {
-        ValueExpr::Param(name) if param_names.contains(&name.as_str()) => {
-            // Reference the UNNEST column directly
-            name.clone()
-        }
-        ValueExpr::Param(name) => {
-            // This shouldn't happen for well-formed bulk inserts, but handle it
-            format!("${}", name)
-        }
-        ValueExpr::String(s) => {
-            let escaped = s.replace('\'', "''");
-            format!("'{}'", escaped)
-        }
-        ValueExpr::Int(n) => n.to_string(),
-        ValueExpr::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
-        ValueExpr::Null => "NULL".to_string(),
-        ValueExpr::FunctionCall { name, args } => {
-            if args.is_empty() {
-                format!("{}()", name.to_uppercase())
-            } else {
+        ValueExpr::Default => "DEFAULT".to_string(),
+        ValueExpr::Other { tag, content } => match (tag, content) {
+            // Bare scalar (param reference like $name)
+            (None, Some(Payload::Scalar(s))) => {
+                let s = s.value();
+                if let Some(name) = s.strip_prefix('$') {
+                    if param_names.contains(&name) {
+                        // Reference the UNNEST column directly
+                        name.to_string()
+                    } else {
+                        // This shouldn't happen for well-formed bulk inserts, but handle it
+                        format!("${}", name)
+                    }
+                } else {
+                    // Literal value, pass through
+                    s.to_string()
+                }
+            }
+            // Nullary function like @now
+            (Some(name), None) => format!("{}()", name.to_uppercase()),
+            // Function with args like @coalesce($a, $b)
+            (Some(name), Some(Payload::Seq(args))) => {
                 let arg_strs: Vec<String> = args
                     .iter()
                     .map(|a| value_expr_to_unnest_select(_col, a, param_names))
                     .collect();
                 format!("{}({})", name.to_uppercase(), arg_strs.join(", "))
             }
-        }
-        ValueExpr::Default => "DEFAULT".to_string(),
+            // Other cases shouldn't happen but handle gracefully
+            _ => "NULL".to_string(),
+        },
     }
 }
 
