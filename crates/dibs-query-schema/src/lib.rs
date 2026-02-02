@@ -714,6 +714,26 @@ impl SelectFields {
             }
         })
     }
+
+    /// Get the first column name (first simple column, not a relation).
+    /// Returns None if there are no simple columns.
+    pub fn first_column(&self) -> Option<&ColumnName> {
+        self.fields
+            .iter()
+            .find(|(_, field_def)| field_def.is_none())
+            .map(|(name, _)| &name.value)
+    }
+
+    /// Get the ID column name (column named "id", or first column as fallback).
+    /// Returns None if there are no simple columns.
+    pub fn id_column(&self) -> Option<&ColumnName> {
+        // First try to find a column named "id"
+        self.fields
+            .iter()
+            .find(|(name, field_def)| field_def.is_none() && name.value.as_str() == "id")
+            .map(|(name, _)| &name.value)
+            .or_else(|| self.first_column())
+    }
 }
 
 impl Relation {

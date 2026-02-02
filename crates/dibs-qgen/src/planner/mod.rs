@@ -13,7 +13,7 @@ use dibs_sql::{ColumnName, TableName};
 pub use types::*;
 
 use crate::{Select, SelectFields};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 impl std::fmt::Display for PlanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -129,8 +129,8 @@ impl<'a> QueryPlanner<'a> {
             nested_path.push(name.clone());
 
             // Process nested columns and relations
-            let mut relation_columns = HashMap::new();
-            let mut nested_relations = HashMap::new();
+            let mut relation_columns = IndexMap::new();
+            let mut nested_relations = IndexMap::new();
 
             if let Some(nested_select) = &relation.fields {
                 self.process_select_nested(
@@ -193,8 +193,8 @@ impl<'a> QueryPlanner<'a> {
         parent_alias: &str,
         path: &[ColumnName],
         plan: &mut QueryPlan,
-        column_mappings: &mut HashMap<ColumnName, ColumnName>,
-        relation_mappings: &mut HashMap<ColumnName, RelationMapping>,
+        column_mappings: &mut IndexMap<ColumnName, ColumnName>,
+        relation_mappings: &mut IndexMap<ColumnName, RelationMapping>,
     ) -> Result<(), PlanError> {
         // Process simple columns in nested select
         for (name_meta, _field_def) in select.columns() {
@@ -239,8 +239,8 @@ impl<'a> QueryPlanner<'a> {
             let mut nested_path = path.to_vec();
             nested_path.push(name.clone());
 
-            let mut relation_columns = HashMap::new();
-            let mut nested_relations = HashMap::new();
+            let mut relation_columns = IndexMap::new();
+            let mut nested_relations = IndexMap::new();
 
             if let Some(nested_select) = &relation.fields {
                 self.process_select_nested(

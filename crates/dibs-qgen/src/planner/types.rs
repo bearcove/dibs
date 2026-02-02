@@ -1,6 +1,6 @@
 //! Types for query planning.
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use dibs_sql::{ColumnName, TableName};
 
@@ -134,9 +134,9 @@ pub struct CountSubquery {
 #[derive(Debug, Clone, Default)]
 pub struct ResultMapping {
     /// Map from result alias to struct path (e.g., "t_title" -> ["translation", "title"])
-    pub columns: HashMap<ColumnName, Vec<ColumnName>>,
+    pub columns: IndexMap<ColumnName, Vec<ColumnName>>,
     /// Nested relations and their mappings
-    pub relations: HashMap<ColumnName, RelationMapping>,
+    pub relations: IndexMap<ColumnName, RelationMapping>,
 }
 
 /// Mapping for a single relation.
@@ -147,13 +147,13 @@ pub struct RelationMapping {
     /// Whether it's first (`Option<T>`) or many (`Vec<T>`)
     pub first: bool,
     /// Column mappings within this relation
-    pub columns: HashMap<ColumnName, ColumnName>,
+    pub columns: IndexMap<ColumnName, ColumnName>,
     /// Parent's primary key column name (used for grouping Vec relations)
     pub parent_key_column: Option<ColumnName>,
     /// Table alias for this relation (e.g., "t1", "t2")
     pub table_alias: String,
     /// Nested relations within this relation
-    pub nested_relations: HashMap<ColumnName, RelationMapping>,
+    pub nested_relations: IndexMap<ColumnName, RelationMapping>,
 }
 
 /// Error type for query planning.
