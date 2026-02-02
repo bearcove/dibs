@@ -6,14 +6,13 @@
 //! - Column aliasing to avoid collisions
 //! - Result assembly mapping
 
-use crate::schema::{Query, Select};
-use std::collections::HashMap;
+use crate::{Query, Select};
 
 /// Schema information needed for query planning.
 /// This mirrors dibs::Schema but avoids the dependency.
 #[derive(Debug, Clone, Default)]
 pub struct PlannerSchema {
-    pub tables: HashMap<String, PlannerTable>,
+    pub tables: IndexMap<String, PlannerTable>,
 }
 
 /// Table information for planning.

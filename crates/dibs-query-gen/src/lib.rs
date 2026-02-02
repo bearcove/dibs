@@ -2,10 +2,20 @@
 //!
 //! Parses `.styx` query files and generates Rust code + SQL.
 
-mod codegen;
+// Error types
 mod error;
+
+// Happy types;
+pub use dibs_query_schema::*;
+
+// Rust code generation
+mod rustgen;
+
+// SQL code generation
+mod sqlgen;
+
+// Happy types
 mod filter_spec;
-mod parse;
+
+// Query planner
 mod planner;
-mod schema;
-mod sql;

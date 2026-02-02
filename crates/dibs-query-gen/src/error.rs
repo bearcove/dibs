@@ -57,6 +57,12 @@ pub enum ErrorKind {
         /// Why the plan could not be generated.
         reason: String,
     },
+
+    /// Failed to parse the styx source file.
+    Parse {
+        /// The parse error message.
+        message: String,
+    },
 }
 
 impl fmt::Display for ErrorKind {
@@ -77,6 +83,9 @@ impl fmt::Display for ErrorKind {
             }
             ErrorKind::PlanMissing { reason } => {
                 write!(f, "query plan missing: {}", reason)
+            }
+            ErrorKind::Parse { message } => {
+                write!(f, "{}", message)
             }
         }
     }
