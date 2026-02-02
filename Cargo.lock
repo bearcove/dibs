@@ -1051,6 +1051,7 @@ dependencies = [
  "ariadne 0.6.0",
  "camino",
  "codegen",
+ "dibs-db-schema",
  "dibs-query-schema",
  "dibs-sql",
  "dockside",

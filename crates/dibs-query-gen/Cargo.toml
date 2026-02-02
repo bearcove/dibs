@@ -9,6 +9,7 @@ edition = "2024"
 rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [dependencies]
+dibs-db-schema = { path = "../dibs-db-schema" }
 dibs-query-schema.workspace = true
 dibs-sql = { path = "../dibs-sql" }
 facet-styx = { workspace = true, features = ["tracing"] }

@@ -2,7 +2,7 @@
 
 use crate::error::QueryGenError;
 use crate::filter_spec::{FilterArg, *};
-use crate::planner::{PlannerSchema, QueryPlan, QueryPlanner};
+use crate::planner::{QueryPlan, QueryPlanner, Schema};
 use crate::schema::*;
 use dibs_sql::{
     BinOp as SqlBinOp, ConflictAction, DeleteStmt, Expr as SqlExpr, InsertStmt, OnConflict,
@@ -33,7 +33,7 @@ fn escape_sql_string(s: &str) -> String {
 /// If schema is None or the query has no relations/COUNT fields, falls back to simple SQL generation.
 pub fn generate_sql(
     query: &Query,
-    schema: Option<&PlannerSchema>,
+    schema: Option<&Schema>,
 ) -> Result<GeneratedSql, crate::planner::PlanError> {
     // Check if query needs the planner (has relations or COUNT fields)
     let needs_planner = query

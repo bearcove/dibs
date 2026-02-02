@@ -7,32 +7,12 @@
 //! - Result assembly mapping
 
 use crate::{Query, Select};
+pub use dibs_db_schema::{ForeignKey, Schema, Table};
 
-/// Schema information needed for query planning.
-/// This mirrors dibs::Schema but avoids the dependency.
-#[derive(Debug, Clone, Default)]
-pub struct PlannerSchema {
-    pub tables: IndexMap<String, PlannerTable>,
-}
-
-/// Table information for planning.
-#[derive(Debug, Clone, Default)]
-pub struct PlannerTable {
-    pub name: String,
-    pub columns: Vec<String>,
-    pub foreign_keys: Vec<PlannerForeignKey>,
-}
-
-/// FK information for planning.
-#[derive(Debug, Clone)]
-pub struct PlannerForeignKey {
-    /// Column(s) in this table (e.g., "product_id")
-    pub columns: Vec<String>,
-    /// Referenced table (e.g., "product")
-    pub references_table: String,
-    /// Referenced column(s) (e.g., "id")
-    pub references_columns: Vec<String>,
-}
+// Type aliases for backwards compatibility
+pub type PlannerSchema = Schema;
+pub type PlannerTable = Table;
+pub type PlannerForeignKey = ForeignKey;
 
 /// A planned query with JOINs resolved.
 #[derive(Debug, Clone)]
@@ -156,11 +136,11 @@ impl std::error::Error for PlanError {}
 
 /// Query planner that resolves JOINs.
 pub struct QueryPlanner<'a> {
-    schema: &'a PlannerSchema,
+    schema: &'a Schema,
 }
 
 impl<'a> QueryPlanner<'a> {
-    pub fn new(schema: &'a PlannerSchema) -> Self {
+    pub fn new(schema: &'a Schema) -> Self {
         Self { schema }
     }
 

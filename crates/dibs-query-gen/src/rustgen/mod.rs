@@ -1,11 +1,7 @@
 //! Rust code generation from query schema types using the `codegen` crate.
 
-use crate::planner::PlannerSchema;
-use crate::schema::*;
-use crate::sql::{GeneratedSql, generate_sql};
 use codegen::{Block, Function, Scope, Struct};
 use std::collections::HashMap;
-use std::fmt;
 
 // ============================================================================
 // Code Generation Contexts
@@ -246,7 +242,7 @@ impl SchemaInfo {
 /// Context for code generation.
 struct CodegenContext<'a> {
     schema: &'a SchemaInfo,
-    planner_schema: Option<&'a PlannerSchema>,
+    planner_schema: Option<&'a crate::planner::Schema>,
     scope: Scope,
 }
 
@@ -267,7 +263,7 @@ pub fn generate_rust_code_with_schema(file: &QueryFile, schema: &SchemaInfo) -> 
 pub fn generate_rust_code_with_planner(
     file: &QueryFile,
     schema: &SchemaInfo,
-    planner_schema: Option<&PlannerSchema>,
+    planner_schema: Option<&crate::planner::Schema>,
 ) -> GeneratedCode {
     let mut scope = Scope::new();
 
