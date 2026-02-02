@@ -66,11 +66,11 @@ mod tests {
     #[test]
     fn test_simple_insert() {
         let source = r#"
-CreateUser @insert {
-    params { name @string, email @string }
+CreateUser @insert{
+    params {name @string, email @string}
     into users
-    values { name $name, email $email }
-    returning { id }
+    values {name $name, email $email}
+    returning {id}
 }
 "#;
         let insert = get_first_insert(source);
@@ -81,11 +81,11 @@ CreateUser @insert {
     #[test]
     fn test_insert_with_function() {
         let source = r#"
-CreateUser @insert {
-    params { name @string, email @string }
+CreateUser @insert{
+    params {name @string, email @string}
     into users
-    values { name $name, email $email, created_at @now }
-    returning { id, name, email, created_at }
+    values {name $name, email $email, created_at @now}
+    returning {id, name, email, created_at}
 }
 "#;
         let insert = get_first_insert(source);
@@ -96,11 +96,11 @@ CreateUser @insert {
     #[test]
     fn test_insert_with_default() {
         let source = r#"
-CreateProduct @insert {
-    params { name @string }
+CreateProduct @insert{
+    params {name @string}
     into products
-    values { name $name, status @default }
-    returning { id, name, status }
+    values {name $name, status @default}
+    returning {id, name, status}
 }
 "#;
         let insert = get_first_insert(source);
@@ -111,11 +111,11 @@ CreateProduct @insert {
     #[test]
     fn test_insert_shorthand_params() {
         let source = r#"
-CreateUser @insert {
-    params { name @string, email @string }
+CreateUser @insert{
+    params {name @string, email @string}
     into users
-    values { name, email }
-    returning { id }
+    values {name, email}
+    returning {id}
 }
 "#;
         let insert = get_first_insert(source);

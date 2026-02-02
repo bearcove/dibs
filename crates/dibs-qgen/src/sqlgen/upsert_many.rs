@@ -308,15 +308,15 @@ mod tests {
     #[test]
     fn test_simple_upsert_many() {
         let source = r#"
-BulkUpsertProducts @upsert-many {
-    params { handle @string, status @string }
+BulkUpsertProducts @upsert-many{
+    params {handle @string, status @string}
     into products
     on-conflict {
-        target { handle }
-        update { status }
+        target {handle}
+        update {status}
     }
-    values { handle $handle, status $status }
-    returning { id, handle, status }
+    values {handle $handle, status $status}
+    returning {id, handle, status}
 }
 "#;
         let upsert_many = get_first_upsert_many(source);
@@ -327,15 +327,15 @@ BulkUpsertProducts @upsert-many {
     #[test]
     fn test_upsert_many_with_functions() {
         let source = r#"
-BulkUpsertProducts @upsert-many {
-    params { handle @string, status @string }
+BulkUpsertProducts @upsert-many{
+    params {handle @string, status @string}
     into products
     on-conflict {
-        target { handle }
-        update { status, updated_at @now }
+        target {handle}
+        update {status, updated_at @now}
     }
-    values { handle $handle, status $status, created_at @now }
-    returning { id, handle, status }
+    values {handle $handle, status $status, created_at @now}
+    returning {id, handle, status}
 }
 "#;
         let upsert_many = get_first_upsert_many(source);
@@ -346,15 +346,15 @@ BulkUpsertProducts @upsert-many {
     #[test]
     fn test_upsert_many_multiple_conflict_columns() {
         let source = r#"
-BulkUpsertTranslations @upsert-many {
-    params { product_id @uuid, locale @string, title @string }
+BulkUpsertTranslations @upsert-many{
+    params {product_id @uuid, locale @string, title @string}
     into product_translations
     on-conflict {
-        target { product_id, locale }
-        update { title }
+        target {product_id, locale}
+        update {title}
     }
-    values { product_id $product_id, locale $locale, title $title }
-    returning { id }
+    values {product_id $product_id, locale $locale, title $title}
+    returning {id}
 }
 "#;
         let upsert_many = get_first_upsert_many(source);

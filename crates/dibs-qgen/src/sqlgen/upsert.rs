@@ -95,15 +95,15 @@ mod tests {
     #[test]
     fn test_simple_upsert() {
         let source = r#"
-UpsertProduct @upsert {
-    params { id @uuid, name @string, price @decimal }
+UpsertProduct @upsert{
+    params {id @uuid, name @string, price @decimal}
     into products
     on-conflict {
-        target { id }
-        update { name, price }
+        target {id}
+        update {name, price}
     }
-    values { id $id, name $name, price $price }
-    returning { id, name, price }
+    values {id $id, name $name, price $price}
+    returning {id, name, price}
 }
 "#;
         let upsert = get_first_upsert(source);
@@ -114,15 +114,15 @@ UpsertProduct @upsert {
     #[test]
     fn test_upsert_with_function_in_update() {
         let source = r#"
-UpsertProduct @upsert {
-    params { handle @string, name @string }
+UpsertProduct @upsert{
+    params {handle @string, name @string}
     into products
     on-conflict {
-        target { handle }
-        update { name, updated_at @now }
+        target {handle}
+        update {name, updated_at @now}
     }
-    values { handle $handle, name $name, created_at @now }
-    returning { id, handle, name, updated_at }
+    values {handle $handle, name $name, created_at @now}
+    returning {id, handle, name, updated_at}
 }
 "#;
         let upsert = get_first_upsert(source);
@@ -133,15 +133,15 @@ UpsertProduct @upsert {
     #[test]
     fn test_upsert_multiple_conflict_columns() {
         let source = r#"
-UpsertTranslation @upsert {
-    params { product_id @uuid, locale @string, title @string }
+UpsertTranslation @upsert{
+    params {product_id @uuid, locale @string, title @string}
     into product_translations
     on-conflict {
-        target { product_id, locale }
-        update { title }
+        target {product_id, locale}
+        update {title}
     }
-    values { product_id $product_id, locale $locale, title $title }
-    returning { id }
+    values {product_id $product_id, locale $locale, title $title}
+    returning {id}
 }
 "#;
         let upsert = get_first_upsert(source);

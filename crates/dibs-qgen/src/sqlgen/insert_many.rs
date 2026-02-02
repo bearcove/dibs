@@ -218,11 +218,11 @@ mod tests {
     #[test]
     fn test_simple_insert_many() {
         let source = r#"
-BulkCreateProducts @insert-many {
-    params { handle @string, status @string }
+BulkCreateProducts @insert-many{
+    params {handle @string, status @string}
     into products
-    values { handle $handle, status $status }
-    returning { id, handle, status }
+    values {handle $handle, status $status}
+    returning {id, handle, status}
 }
 "#;
         let insert_many = get_first_insert_many(source);
@@ -233,11 +233,11 @@ BulkCreateProducts @insert-many {
     #[test]
     fn test_insert_many_with_function() {
         let source = r#"
-BulkCreateProducts @insert-many {
-    params { handle @string, status @string }
+BulkCreateProducts @insert-many{
+    params {handle @string, status @string}
     into products
-    values { handle $handle, status $status, created_at @now }
-    returning { id, handle, status, created_at }
+    values {handle $handle, status $status, created_at @now}
+    returning {id, handle, status, created_at}
 }
 "#;
         let insert_many = get_first_insert_many(source);
@@ -248,11 +248,11 @@ BulkCreateProducts @insert-many {
     #[test]
     fn test_insert_many_shorthand() {
         let source = r#"
-BulkCreateUsers @insert-many {
-    params { name @string, email @string }
+BulkCreateUsers @insert-many{
+    params {name @string, email @string}
     into users
-    values { name, email }
-    returning { id }
+    values {name, email}
+    returning {id}
 }
 "#;
         let insert_many = get_first_insert_many(source);

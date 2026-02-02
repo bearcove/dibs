@@ -83,11 +83,11 @@ mod tests {
     #[test]
     fn test_simple_delete() {
         let source = r#"
-DeleteUser @delete {
-    params { id @int }
+DeleteUser @delete{
+    params {id @int}
     from users
-    where { id $id }
-    returning { id }
+    where {id $id}
+    returning {id}
 }
 "#;
         let delete = get_first_delete(source);
@@ -98,9 +98,9 @@ DeleteUser @delete {
     #[test]
     fn test_delete_no_returning() {
         let source = r#"
-DeleteOldSessions @delete {
+DeleteOldSessions @delete{
     from sessions
-    where { expired_at @lt($now) }
+    where {expired_at @lt($now)}
 }
 "#;
         let delete = get_first_delete(source);
@@ -111,11 +111,11 @@ DeleteOldSessions @delete {
     #[test]
     fn test_delete_multiple_conditions() {
         let source = r#"
-DeleteUserPosts @delete {
-    params { user_id @int, status @string }
+DeleteUserPosts @delete{
+    params {user_id @int, status @string}
     from posts
-    where { user_id $user_id, status $status, deleted_at @null }
-    returning { id, title }
+    where {user_id $user_id, status $status, deleted_at @null}
+    returning {id, title}
 }
 "#;
         let delete = get_first_delete(source);

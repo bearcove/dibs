@@ -73,12 +73,12 @@ mod tests {
     #[test]
     fn test_simple_update() {
         let source = r#"
-UpdateUserEmail @update {
-    params { id @uuid, email @string }
+UpdateUserEmail @update{
+    params {id @uuid, email @string}
     table users
-    set { email $email }
-    where { id $id }
-    returning { id, email }
+    set {email $email}
+    where {id $id}
+    returning {id, email}
 }
 "#;
         let update = get_first_update(source);
@@ -89,12 +89,12 @@ UpdateUserEmail @update {
     #[test]
     fn test_update_with_function() {
         let source = r#"
-UpdateUser @update {
-    params { id @uuid, name @string }
+UpdateUser @update{
+    params {id @uuid, name @string}
     table users
-    set { name $name, updated_at @now }
-    where { id $id }
-    returning { id, name, updated_at }
+    set {name $name, updated_at @now}
+    where {id $id}
+    returning {id, name, updated_at}
 }
 "#;
         let update = get_first_update(source);
@@ -105,12 +105,12 @@ UpdateUser @update {
     #[test]
     fn test_update_multiple_conditions() {
         let source = r#"
-UpdateProductStatus @update {
-    params { user_id @uuid, old_status @string, new_status @string }
+UpdateProductStatus @update{
+    params {user_id @uuid, old_status @string, new_status @string}
     table products
-    set { status $new_status, updated_at @now }
-    where { user_id $user_id, status $old_status }
-    returning { id, status }
+    set {status $new_status, updated_at @now}
+    where {user_id $user_id, status $old_status}
+    returning {id, status}
 }
 "#;
         let update = get_first_update(source);
@@ -121,12 +121,12 @@ UpdateProductStatus @update {
     #[test]
     fn test_update_shorthand_params() {
         let source = r#"
-UpdateUser @update {
-    params { id @uuid, name @string, email @string }
+UpdateUser @update{
+    params {id @uuid, name @string, email @string}
     table users
-    set { name, email }
-    where { id }
-    returning { id }
+    set {name, email}
+    where {id}
+    returning {id}
 }
 "#;
         let update = get_first_update(source);
