@@ -156,6 +156,14 @@ impl Render for Expr {
                 let key = Fmt(ctx, key.as_ref());
                 write!(f, "{expr} ? {key}")
             }
+            Expr::Cast { expr, pg_type } => {
+                let expr = Fmt(ctx, expr.as_ref());
+                write!(f, "{expr}::{}", pg_type.as_str())
+            }
+            Expr::Excluded(column) => {
+                let column = Ident(column.as_str());
+                write!(f, "EXCLUDED.{column}")
+            }
             Expr::FnCall { name, args } => {
                 write!(f, "{name}(")?;
                 for (i, arg) in args.iter().enumerate() {
@@ -189,6 +197,20 @@ impl Render for ColumnRef {
 impl Render for SelectStmt {
     fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SELECT")?;
+
+        // DISTINCT ON (takes precedence over DISTINCT)
+        if !self.distinct_on.is_empty() {
+            write!(f, " DISTINCT ON (")?;
+            for (i, expr) in self.distinct_on.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", Fmt(ctx, expr))?;
+            }
+            write!(f, ")")?;
+        } else if self.distinct {
+            write!(f, " DISTINCT")?;
+        }
 
         // Columns
         if self.columns.is_empty() {
@@ -426,11 +448,101 @@ impl Render for DeleteStmt {
     }
 }
 
+impl Render for InsertSelectStmt {
+    fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let table = Ident(self.table.as_str());
+        write!(f, "INSERT INTO {table} (")?;
+
+        // Columns
+        for (i, col) in self.columns.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            let col = Ident(col.as_str());
+            write!(f, "{col}")?;
+        }
+        write!(f, ")")?;
+
+        // SELECT
+        write!(f, "\nSELECT ")?;
+        for (i, expr) in self.select_exprs.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", Fmt(ctx, expr))?;
+        }
+
+        // FROM UNNEST
+        write!(f, "\nFROM UNNEST(")?;
+        for (i, param) in self.unnest.params.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            let idx = ctx.param_idx(&param.name.as_str().into());
+            write!(f, "${}::{}", idx, param.pg_type.as_str())?;
+        }
+        let alias = Ident(self.unnest.alias.as_str());
+        write!(f, ") AS {alias}(")?;
+        for (i, param) in self.unnest.params.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", param.name.as_str())?;
+        }
+        write!(f, ")")?;
+
+        // ON CONFLICT
+        if let Some(conflict) = &self.on_conflict {
+            write!(f, "\nON CONFLICT (")?;
+            for (i, col) in conflict.columns.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                let col = Ident(col.as_str());
+                write!(f, "{col}")?;
+            }
+            write!(f, ")")?;
+
+            match &conflict.action {
+                ConflictAction::DoNothing => {
+                    write!(f, " DO NOTHING")?;
+                }
+                ConflictAction::DoUpdate(assignments) => {
+                    write!(f, " DO UPDATE SET ")?;
+                    for (i, assign) in assignments.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        let col = Ident(assign.column.as_str());
+                        let val = Fmt(ctx, &assign.value);
+                        write!(f, "{col} = {val}")?;
+                    }
+                }
+            }
+        }
+
+        // RETURNING
+        if !self.returning.is_empty() {
+            write!(f, "\nRETURNING ")?;
+            for (i, col) in self.returning.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                let col = Ident(col.as_str());
+                write!(f, "{col}")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl Render for Stmt {
     fn render(&self, ctx: &RenderContext, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Stmt::Select(s) => s.render(ctx, f),
             Stmt::Insert(s) => s.render(ctx, f),
+            Stmt::InsertSelect(s) => s.render(ctx, f),
             Stmt::Update(s) => s.render(ctx, f),
             Stmt::Delete(s) => s.render(ctx, f),
         }

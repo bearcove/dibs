@@ -1,7 +1,7 @@
 //! SQL statements.
 
 use crate::expr::Expr;
-use crate::{ColumnName, TableName};
+use crate::{ColumnName, PgType, TableName};
 
 /// A SQL statement.
 #[derive(Debug, Clone)]
@@ -10,6 +10,8 @@ pub enum Stmt {
     Select(SelectStmt),
     /// An INSERT statement.
     Insert(InsertStmt),
+    /// An INSERT ... SELECT statement (for bulk inserts with UNNEST).
+    InsertSelect(InsertSelectStmt),
     /// An UPDATE statement.
     Update(UpdateStmt),
     /// A DELETE statement.
@@ -19,6 +21,10 @@ pub enum Stmt {
 /// A SELECT statement.
 #[derive(Debug, Clone, Default)]
 pub struct SelectStmt {
+    /// Whether to use DISTINCT (eliminates duplicate rows).
+    pub distinct: bool,
+    /// DISTINCT ON columns (PostgreSQL-specific, returns first row of each group).
+    pub distinct_on: Vec<Expr>,
     /// Columns to select (empty means `SELECT *`).
     pub columns: Vec<SelectColumn>,
     /// The FROM clause specifying the primary table.
@@ -89,6 +95,51 @@ impl FromClause {
             table: name,
             alias: Some(alias),
         }
+    }
+}
+
+/// An UNNEST clause for bulk operations.
+///
+/// Generates SQL like: `UNNEST($1::text[], $2::bigint[]) AS t(col1, col2)`
+#[derive(Debug, Clone)]
+pub struct Unnest {
+    /// Parameters with their PostgreSQL array types.
+    pub params: Vec<UnnestParam>,
+    /// Alias for the UNNEST result (e.g., "t").
+    pub alias: TableName,
+}
+
+/// A parameter in an UNNEST clause.
+#[derive(Debug, Clone)]
+pub struct UnnestParam {
+    /// The parameter name.
+    pub name: ColumnName,
+    /// The PostgreSQL array type (e.g., "text[]", "bigint[]").
+    pub pg_type: PgType,
+}
+
+impl UnnestParam {
+    pub fn new(name: ColumnName, pg_type: PgType) -> Self {
+        Self { name, pg_type }
+    }
+}
+
+impl Unnest {
+    pub fn new(alias: TableName) -> Self {
+        Self {
+            params: Vec::new(),
+            alias,
+        }
+    }
+
+    pub fn param(mut self, name: ColumnName, pg_type: PgType) -> Self {
+        self.params.push(UnnestParam::new(name, pg_type));
+        self
+    }
+
+    pub fn params(mut self, params: impl IntoIterator<Item = UnnestParam>) -> Self {
+        self.params.extend(params);
+        self
     }
 }
 
@@ -204,6 +255,31 @@ pub enum ConflictAction {
     DoUpdate(Vec<UpdateAssignment>),
 }
 
+/// An INSERT ... SELECT statement for bulk inserts.
+///
+/// Used with UNNEST for efficient bulk operations:
+/// ```sql
+/// INSERT INTO products (handle, status, created_at)
+/// SELECT handle, status, NOW()
+/// FROM UNNEST($1::text[], $2::text[]) AS t(handle, status)
+/// RETURNING id, handle, status
+/// ```
+#[derive(Debug, Clone)]
+pub struct InsertSelectStmt {
+    /// The table to insert into.
+    pub table: TableName,
+    /// Column names for the insert.
+    pub columns: Vec<ColumnName>,
+    /// Expressions to select (parallel to columns).
+    pub select_exprs: Vec<Expr>,
+    /// The UNNEST source.
+    pub unnest: Unnest,
+    /// Optional ON CONFLICT clause for upsert behavior.
+    pub on_conflict: Option<OnConflict>,
+    /// Columns to return after insert (RETURNING clause).
+    pub returning: Vec<ColumnName>,
+}
+
 /// A column assignment for UPDATE SET or ON CONFLICT DO UPDATE SET.
 #[derive(Debug, Clone)]
 pub struct UpdateAssignment {
@@ -258,6 +334,19 @@ pub struct DeleteStmt {
 impl SelectStmt {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set DISTINCT to eliminate duplicate rows.
+    pub fn distinct(mut self) -> Self {
+        self.distinct = true;
+        self
+    }
+
+    /// Set DISTINCT ON columns (PostgreSQL-specific).
+    /// Returns the first row of each group defined by these columns.
+    pub fn distinct_on(mut self, cols: impl IntoIterator<Item = Expr>) -> Self {
+        self.distinct_on.extend(cols);
+        self
     }
 
     pub fn column(mut self, col: SelectColumn) -> Self {
@@ -390,6 +479,36 @@ impl DeleteStmt {
             Some(existing) => existing.and(expr),
             None => expr,
         });
+        self
+    }
+
+    pub fn returning(mut self, cols: impl IntoIterator<Item = ColumnName>) -> Self {
+        self.returning.extend(cols);
+        self
+    }
+}
+
+impl InsertSelectStmt {
+    pub fn new(table: TableName, unnest: Unnest) -> Self {
+        Self {
+            table,
+            columns: Vec::new(),
+            select_exprs: Vec::new(),
+            unnest,
+            on_conflict: None,
+            returning: Vec::new(),
+        }
+    }
+
+    /// Add a column with its select expression.
+    pub fn column(mut self, name: ColumnName, expr: Expr) -> Self {
+        self.columns.push(name);
+        self.select_exprs.push(expr);
+        self
+    }
+
+    pub fn on_conflict(mut self, conflict: OnConflict) -> Self {
+        self.on_conflict = Some(conflict);
         self
     }
 

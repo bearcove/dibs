@@ -1,6 +1,6 @@
 //! SQL expressions.
 
-use crate::{ColumnName, ParamName, TableName};
+use crate::{ColumnName, ParamName, PgType, TableName};
 
 /// A SQL expression.
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +43,10 @@ pub enum Expr {
     Contains { expr: Box<Expr>, value: Box<Expr> },
     /// ? operator (key exists, typically for JSONB)
     KeyExists { expr: Box<Expr>, key: Box<Expr> },
+    /// Type cast (e.g., $1::text[], value::integer)
+    Cast { expr: Box<Expr>, pg_type: PgType },
+    /// EXCLUDED.column reference for ON CONFLICT DO UPDATE
+    Excluded(ColumnName),
     /// Function call
     FnCall { name: String, args: Vec<Expr> },
     /// COUNT(table.*) for counting related rows
@@ -245,5 +249,18 @@ impl Expr {
             expr: Box::new(self),
             key: Box::new(key),
         }
+    }
+
+    /// Create a type cast expression (e.g., `$1::text[]`)
+    pub fn cast(self, pg_type: PgType) -> Self {
+        Expr::Cast {
+            expr: Box::new(self),
+            pg_type,
+        }
+    }
+
+    /// Create an EXCLUDED.column reference for ON CONFLICT DO UPDATE
+    pub fn excluded(column: ColumnName) -> Self {
+        Expr::Excluded(column)
     }
 }

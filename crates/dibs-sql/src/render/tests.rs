@@ -425,3 +425,137 @@ fn test_jsonb_key_exists() {
     let result = render(&stmt);
     insta::assert_snapshot!(result.sql);
 }
+
+#[test]
+fn test_select_distinct() {
+    let stmt = SelectStmt::new()
+        .distinct()
+        .columns([
+            SelectColumn::expr(Expr::column("category".into())),
+            SelectColumn::expr(Expr::column("status".into())),
+        ])
+        .from(FromClause::table("products".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_select_distinct_on() {
+    let stmt = SelectStmt::new()
+        .distinct_on([Expr::qualified_column("t0".into(), "user_id".into())])
+        .columns([
+            SelectColumn::expr(Expr::qualified_column("t0".into(), "id".into())),
+            SelectColumn::expr(Expr::qualified_column("t0".into(), "user_id".into())),
+            SelectColumn::expr(Expr::qualified_column("t0".into(), "created_at".into())),
+        ])
+        .from(FromClause::aliased("orders".into(), "t0".into()))
+        .order_by(OrderBy::asc(Expr::qualified_column(
+            "t0".into(),
+            "user_id".into(),
+        )))
+        .order_by(OrderBy::desc(Expr::qualified_column(
+            "t0".into(),
+            "created_at".into(),
+        )));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_select_distinct_on_multiple() {
+    let stmt = SelectStmt::new()
+        .distinct_on([
+            Expr::column("shop_id".into()),
+            Expr::column("category_id".into()),
+        ])
+        .columns([
+            SelectColumn::expr(Expr::column("id".into())),
+            SelectColumn::expr(Expr::column("shop_id".into())),
+            SelectColumn::expr(Expr::column("category_id".into())),
+            SelectColumn::expr(Expr::column("name".into())),
+        ])
+        .from(FromClause::table("products".into()))
+        .order_by(OrderBy::asc(Expr::column("shop_id".into())))
+        .order_by(OrderBy::asc(Expr::column("category_id".into())))
+        .order_by(OrderBy::desc(Expr::column("created_at".into())));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_type_cast() {
+    let stmt = SelectStmt::new()
+        .columns([SelectColumn::expr(
+            Expr::param("ids".into()).cast("bigint[]".into()),
+        )])
+        .from(FromClause::table("products".into()));
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(result.params, vec![ParamName::from("ids")]);
+}
+
+#[test]
+fn test_excluded_reference() {
+    let stmt = InsertStmt::new("products".into())
+        .column("handle".into(), Expr::param("handle".into()))
+        .column("status".into(), Expr::param("status".into()))
+        .column("updated_at".into(), Expr::Now)
+        .on_conflict(OnConflict {
+            columns: vec!["handle".into()],
+            action: ConflictAction::DoUpdate(vec![
+                UpdateAssignment::new("status".into(), Expr::excluded("status".into())),
+                UpdateAssignment::new("updated_at".into(), Expr::Now),
+            ]),
+        })
+        .returning(["id".into(), "handle".into()]);
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
+
+#[test]
+fn test_insert_select_unnest() {
+    let unnest = Unnest::new("t".into())
+        .param("handle".into(), "text[]".into())
+        .param("status".into(), "text[]".into());
+
+    let stmt = InsertSelectStmt::new("products".into(), unnest)
+        .column("handle".into(), Expr::column("handle".into()))
+        .column("status".into(), Expr::column("status".into()))
+        .column("created_at".into(), Expr::Now)
+        .returning(["id".into(), "handle".into(), "status".into()]);
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(
+        result.params,
+        vec![ParamName::from("handle"), ParamName::from("status")]
+    );
+}
+
+#[test]
+fn test_upsert_many_unnest() {
+    let unnest = Unnest::new("t".into())
+        .param("handle".into(), "text[]".into())
+        .param("status".into(), "text[]".into());
+
+    let stmt = InsertSelectStmt::new("products".into(), unnest)
+        .column("handle".into(), Expr::column("handle".into()))
+        .column("status".into(), Expr::column("status".into()))
+        .column("created_at".into(), Expr::Now)
+        .on_conflict(OnConflict {
+            columns: vec!["handle".into()],
+            action: ConflictAction::DoUpdate(vec![
+                UpdateAssignment::new("status".into(), Expr::excluded("status".into())),
+                UpdateAssignment::new("updated_at".into(), Expr::Now),
+            ]),
+        })
+        .returning(["id".into(), "handle".into(), "status".into()]);
+
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}

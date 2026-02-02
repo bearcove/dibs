@@ -43,6 +43,12 @@ pub struct ColumnName;
 #[braid]
 pub struct ParamName;
 
+/// A PostgreSQL type name for casts.
+///
+/// Used in type cast expressions like `$1::text[]` or `value::integer`.
+#[braid]
+pub struct PgType;
+
 /// A PostgreSQL string literal wrapper.
 ///
 /// Display writes the value escaped and quoted with single quotes.
