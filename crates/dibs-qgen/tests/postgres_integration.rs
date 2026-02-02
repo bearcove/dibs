@@ -577,7 +577,7 @@ ProductWithVariants @select{
         "Should use HashMap for grouping"
     );
     assert!(
-        code.code.contains("variants: vec![]"),
+        code.code.contains("variants: Vec::new()"),
         "Should initialize empty Vec"
     );
     assert!(

@@ -236,6 +236,8 @@ ProductWithTranslation @select{
 
     let code = generate_rust_code(&file, &schema);
 
+    tracing::info!("Generated code:\n{}", code.code);
+
     assert!(
         code.code
             .contains("pub struct ProductWithTranslationResult")
@@ -255,20 +257,16 @@ ProductWithTranslation @select{
     assert!(code.code.contains("translation_title"));
     assert!(code.code.contains("translation_description"));
     // Check that translation struct construction happens inside a .map() call
-    // The exact variable name depends on HashMap iteration order
+    // The flat row approach uses .as_ref().map(|_|
     assert!(
         code.code
-            .contains(".map(|translation_description_val| ProductWithTranslationTranslation")
-            || code
-                .code
-                .contains(".map(|translation_title_val| ProductWithTranslationTranslation"),
+            .contains(".map(|_| ProductWithTranslationTranslation"),
         "Expected relation construction inside .map() call"
     );
-    // Check that title field is populated
+    // Check that title field is populated from the flat row
     assert!(
-        code.code.contains("title: translation_title")
-            || code.code.contains("title: translation_title_val"),
-        "Expected title field assignment"
+        code.code.contains("title: flat_row.translation_title"),
+        "Expected title field assignment from flat row"
     );
 }
 
@@ -348,7 +346,7 @@ ProductWithVariants @select{
     );
     assert!(code.code.contains(".push("), "Should push to Vec relation");
     assert!(
-        code.code.contains("variants: vec![]"),
+        code.code.contains("variants: Vec::new()"),
         "Should initialize Vec as empty"
     );
     assert!(
