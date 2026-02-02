@@ -330,9 +330,9 @@ impl UpdateStmt {
 }
 
 impl DeleteStmt {
-    pub fn new(table: impl Into<String>) -> Self {
+    pub fn new(table: TableName) -> Self {
         Self {
-            table: table.into(),
+            table,
             where_: None,
             returning: Vec::new(),
         }
@@ -351,8 +351,8 @@ impl DeleteStmt {
         self
     }
 
-    pub fn returning(mut self, cols: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.returning.extend(cols.into_iter().map(Into::into));
+    pub fn returning(mut self, cols: impl IntoIterator<Item = ColumnName>) -> Self {
+        self.returning.extend(cols);
         self
     }
 }

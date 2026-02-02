@@ -4,12 +4,12 @@ use indexmap::IndexMap;
 
 use crate::expr::{ColumnRef, Expr};
 use crate::stmt::*;
-use crate::{RenderedSql, escape_string, quote_ident};
+use crate::{ColumnName, Ident, ParamName, RenderedSql, TableName, escape_string};
 
 /// Rendering context that tracks parameters and formatting.
 pub struct RenderContext {
     /// Named parameters -> their assigned index
-    params: IndexMap<String, usize>,
+    params: IndexMap<ParamName, usize>,
     /// Next parameter index to assign
     next_param_idx: usize,
     /// The SQL being built
@@ -42,8 +42,8 @@ impl RenderContext {
     }
 
     /// Get or create a parameter placeholder.
-    fn param(&mut self, name: &str) -> String {
-        let idx = *self.params.entry(name.to_string()).or_insert_with(|| {
+    fn param(&mut self, name: &ParamName) -> String {
+        let idx = *self.params.entry(name.clone()).or_insert_with(|| {
             let idx = self.next_param_idx;
             self.next_param_idx += 1;
             idx
@@ -152,9 +152,7 @@ impl Render for Expr {
                 ctx.write(")");
             }
             Expr::Count { table } => {
-                ctx.write("COUNT(");
-                ctx.write(&quote_ident(table));
-                ctx.write(".*)");
+                ctx.write(&format!("COUNT({}.*)", &Ident(table.as_str())));
             }
             Expr::Raw(s) => ctx.write(s),
         }
@@ -164,10 +162,10 @@ impl Render for Expr {
 impl Render for ColumnRef {
     fn render(&self, ctx: &mut RenderContext) {
         if let Some(table) = &self.table {
-            ctx.write(&quote_ident(table));
+            ctx.write(&format!("{}", Ident(table.as_str())));
             ctx.write(".");
         }
-        ctx.write(&quote_ident(&self.column));
+        ctx.write(&format!("{}", Ident(self.column.as_str())));
     }
 }
 
@@ -191,11 +189,9 @@ impl Render for SelectStmt {
         // FROM
         if let Some(from) = &self.from {
             ctx.newline();
-            ctx.write("FROM ");
-            ctx.write(&quote_ident(&from.table));
+            ctx.write(&format!("FROM {}", Ident(from.table.as_str())));
             if let Some(alias) = &from.alias {
-                ctx.write(" ");
-                ctx.write(&quote_ident(alias));
+                ctx.write(&format!(" {}", Ident(alias.as_str())));
             }
         }
 
@@ -203,11 +199,9 @@ impl Render for SelectStmt {
         for join in &self.joins {
             ctx.newline();
             ctx.write(join.kind.as_str());
-            ctx.write(" ");
-            ctx.write(&quote_ident(&join.table));
+            ctx.write(&format!(" {}", Ident(join.table.as_str())));
             if let Some(alias) = &join.alias {
-                ctx.write(" ");
-                ctx.write(&quote_ident(alias));
+                ctx.write(&format!(" {}", Ident(alias.as_str())));
             }
             ctx.write(" ON ");
             join.on.render(ctx);
@@ -261,13 +255,11 @@ impl Render for SelectColumn {
             SelectColumn::Expr { expr, alias } => {
                 expr.render(ctx);
                 if let Some(alias) = alias {
-                    ctx.write(" AS ");
-                    ctx.write(&quote_ident(alias));
+                    ctx.write(&format!(" AS {}", Ident(alias.as_str())));
                 }
             }
             SelectColumn::AllFrom(table) => {
-                ctx.write(&quote_ident(table));
-                ctx.write(".*");
+                ctx.write(&format!("{}.*", Ident(table.as_str())));
             }
         }
     }
@@ -275,8 +267,7 @@ impl Render for SelectColumn {
 
 impl Render for InsertStmt {
     fn render(&self, ctx: &mut RenderContext) {
-        ctx.write("INSERT INTO ");
-        ctx.write(&quote_ident(&self.table));
+        ctx.write(&format!("INSERT INTO {}", Ident(self.table.as_str())));
 
         // Columns
         ctx.write(" (");
@@ -284,7 +275,7 @@ impl Render for InsertStmt {
             if i > 0 {
                 ctx.write(", ");
             }
-            ctx.write(&quote_ident(col));
+            ctx.write(&format!("{}", Ident(col.as_str())));
         }
         ctx.write(")");
 
@@ -307,7 +298,7 @@ impl Render for InsertStmt {
                 if i > 0 {
                     ctx.write(", ");
                 }
-                ctx.write(&quote_ident(col));
+                ctx.write(&format!("{}", Ident(col.as_str())));
             }
             ctx.write(")");
 
@@ -321,7 +312,7 @@ impl Render for InsertStmt {
                         if i > 0 {
                             ctx.write(", ");
                         }
-                        ctx.write(&quote_ident(&assign.column));
+                        ctx.write(&format!("{}", Ident(assign.column.as_str())));
                         ctx.write(" = ");
                         assign.value.render(ctx);
                     }
@@ -337,7 +328,7 @@ impl Render for InsertStmt {
                 if i > 0 {
                     ctx.write(", ");
                 }
-                ctx.write(&quote_ident(col));
+                ctx.write(&format!("{}", Ident(col.as_str())));
             }
         }
     }
@@ -345,8 +336,7 @@ impl Render for InsertStmt {
 
 impl Render for UpdateStmt {
     fn render(&self, ctx: &mut RenderContext) {
-        ctx.write("UPDATE ");
-        ctx.write(&quote_ident(&self.table));
+        ctx.write(&format!("UPDATE {}", Ident(self.table.as_str())));
 
         // SET
         ctx.newline();
@@ -355,7 +345,7 @@ impl Render for UpdateStmt {
             if i > 0 {
                 ctx.write(", ");
             }
-            ctx.write(&quote_ident(&assign.column));
+            ctx.write(&format!("{}", Ident(assign.column.as_str())));
             ctx.write(" = ");
             assign.value.render(ctx);
         }
@@ -375,7 +365,7 @@ impl Render for UpdateStmt {
                 if i > 0 {
                     ctx.write(", ");
                 }
-                ctx.write(&quote_ident(col));
+                ctx.write(&format!("{}", Ident(col.as_str())));
             }
         }
     }
@@ -383,8 +373,7 @@ impl Render for UpdateStmt {
 
 impl Render for DeleteStmt {
     fn render(&self, ctx: &mut RenderContext) {
-        ctx.write("DELETE FROM ");
-        ctx.write(&quote_ident(&self.table));
+        ctx.write(&format!("DELETE FROM {}", Ident(self.table.as_str())));
 
         // WHERE
         if let Some(where_) = &self.where_ {
@@ -401,7 +390,7 @@ impl Render for DeleteStmt {
                 if i > 0 {
                     ctx.write(", ");
                 }
-                ctx.write(&quote_ident(col));
+                ctx.write(&format!("{}", Ident(col.as_str())));
             }
         }
     }

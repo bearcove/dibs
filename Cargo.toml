@@ -35,6 +35,8 @@ facet-testhelpers = { git = "https://github.com/facet-rs/facet", branch = "main"
 facet-format = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres" }
 
+strid = { git = "https://github.com/bearcove/strid", version = "8.0.0" }
+
 # styx ecosystem
 facet-styx = { git = "https://github.com/bearcove/styx", branch = "main" }
 styx-embed = { git = "https://github.com/bearcove/styx", branch = "main" }
@@ -99,6 +101,9 @@ testcontainers = "0.26"
 testcontainers-modules = { version = "0.14", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[patch.crates-io]
+facet = { git = "https://github.com/facet-rs/facet", branch = "main" }
 
 # Note: Mutations require facet-rs/facet#1844 to be merged for IndexMap<String, ()> support
 # [patch."https://github.com/facet-rs/facet"]

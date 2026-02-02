@@ -40,9 +40,21 @@ pub enum Expr {
 }
 
 /// A column reference, optionally qualified with table/alias.
+///
+/// Examples:
+/// - `"id"` (unqualified)
+/// - `"users"."id"` (qualified with table name)
+/// - `"t0"."id"` (qualified with table alias)
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnRef {
+    /// Table name or alias qualifier. Renders as `"table".` prefix.
+    ///
+    /// Example: `"users"` in `"users"."id"`, or `"t0"` in `"t0"."id"`
     pub table: Option<TableName>,
+
+    /// The column name. Renders as `"column"`.
+    ///
+    /// Example: `"id"` in `"users"."id"`
     pub column: ColumnName,
 }
 

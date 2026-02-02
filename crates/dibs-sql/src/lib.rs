@@ -3,7 +3,7 @@
 //! Build SQL as a typed AST, then render to a string with automatic
 //! parameter numbering and formatting.
 
-use strid::braid;
+use strid::*;
 
 mod expr;
 pub use expr::*;
@@ -21,7 +21,7 @@ pub struct RenderedSql {
     pub sql: String,
 
     /// Parameter names in order (maps to $1, $2, etc.).
-    pub params: Vec<String>,
+    pub params: Vec<ParamName>,
 }
 
 /// The name of a table (or table alias).

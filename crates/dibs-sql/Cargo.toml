@@ -11,7 +11,8 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 [dependencies]
 blake3.workspace = true
 indexmap = "2"
-strid = { git = "https://github.com/bearcove/strid", version = "8.0.0" }
+strid.workspace = true
+facet.workspace = true
 
 [dev-dependencies]
 insta = "1"
