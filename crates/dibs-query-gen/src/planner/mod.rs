@@ -7,14 +7,8 @@
 //! - Result assembly mapping
 
 use crate::{Query, Select};
-pub use dibs_db_schema::{ForeignKey, Schema, Table};
 
-// Type aliases for backwards compatibility
-pub type PlannerSchema = Schema;
-pub type PlannerTable = Table;
-pub type PlannerForeignKey = ForeignKey;
-
-/// A planned query with JOINs resolved.
+// A planned query with JOINs resolved.
 #[derive(Debug, Clone)]
 pub struct QueryPlan {
     /// The base table

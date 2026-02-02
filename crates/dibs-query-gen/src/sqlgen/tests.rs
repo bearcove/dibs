@@ -502,7 +502,7 @@ PaginatedProducts @query{
 
 #[test]
 fn test_sql_with_joins() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Table};, Schema
 
     let source = r#"
 ProductWithTranslation @query{
@@ -523,10 +523,10 @@ ProductWithTranslation @query{
     let file = parse_query_file("<test>", source).unwrap();
 
     // Build test schema
-    let mut schema = PlannerSchema::default();
+    let mut schema = Schema::default();
     schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string(), "handle".to_string()],
             foreign_keys: vec![],
@@ -534,7 +534,7 @@ ProductWithTranslation @query{
     );
     schema.tables.insert(
         "product_translation".to_string(),
-        PlannerTable {
+        Table {
             name: "product_translation".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -542,7 +542,7 @@ ProductWithTranslation @query{
                 "title".to_string(),
                 "description".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -578,7 +578,7 @@ ProductWithTranslation @query{
 
 #[test]
 fn test_sql_with_relation_where_literal() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Table};, Schema
 
     let source = r#"
 ProductWithEnglishTranslation @query{
@@ -596,10 +596,10 @@ ProductWithEnglishTranslation @query{
 "#;
     let file = parse_query_file("<test>", source).unwrap();
 
-    let mut schema = PlannerSchema::default();
+    let mut schema = Schema::default();
     schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string()],
             foreign_keys: vec![],
@@ -607,7 +607,7 @@ ProductWithEnglishTranslation @query{
     );
     schema.tables.insert(
         "product_translation".to_string(),
-        PlannerTable {
+        Table {
             name: "product_translation".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -615,7 +615,7 @@ ProductWithEnglishTranslation @query{
                 "locale".to_string(),
                 "title".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -636,7 +636,7 @@ ProductWithEnglishTranslation @query{
 
 #[test]
 fn test_sql_with_relation_where_param() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Table};, Schema
 
     let source = r#"
 ProductWithTranslation @query{
@@ -655,10 +655,10 @@ ProductWithTranslation @query{
 "#;
     let file = parse_query_file("<test>", source).unwrap();
 
-    let mut schema = PlannerSchema::default();
+    let mut schema = Schema::default();
     schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string()],
             foreign_keys: vec![],
@@ -666,7 +666,7 @@ ProductWithTranslation @query{
     );
     schema.tables.insert(
         "product_translation".to_string(),
-        PlannerTable {
+        Table {
             name: "product_translation".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -674,7 +674,7 @@ ProductWithTranslation @query{
                 "locale".to_string(),
                 "title".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -698,7 +698,7 @@ ProductWithTranslation @query{
 
 #[test]
 fn test_sql_with_relation_where_and_base_where() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Table};, Schema
 
     let source = r#"
 ProductWithTranslation @query{
@@ -718,10 +718,10 @@ ProductWithTranslation @query{
 "#;
     let file = parse_query_file("<test>", source).unwrap();
 
-    let mut schema = PlannerSchema::default();
+    let mut schema = Schema::default();
     schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string(), "handle".to_string()],
             foreign_keys: vec![],
@@ -729,7 +729,7 @@ ProductWithTranslation @query{
     );
     schema.tables.insert(
         "product_translation".to_string(),
-        PlannerTable {
+        Table {
             name: "product_translation".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -737,7 +737,7 @@ ProductWithTranslation @query{
                 "locale".to_string(),
                 "title".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -880,7 +880,7 @@ DeleteUser @delete{
 
 #[test]
 fn test_relation_order_by_lateral() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Table};, Schema
 
     let source = r#"
 ProductWithLatestTranslation @query{
@@ -898,10 +898,10 @@ ProductWithLatestTranslation @query{
 "#;
     let file = parse_query_file("<test>", source).unwrap();
 
-    let mut schema = PlannerSchema::default();
+    let mut schema = Schema::default();
     schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string()],
             foreign_keys: vec![],
@@ -909,7 +909,7 @@ ProductWithLatestTranslation @query{
     );
     schema.tables.insert(
         "product_translation".to_string(),
-        PlannerTable {
+        Table {
             name: "product_translation".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -918,7 +918,7 @@ ProductWithLatestTranslation @query{
                 "description".to_string(),
                 "updated_at".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -959,7 +959,7 @@ ProductWithLatestTranslation @query{
 
 #[test]
 fn test_relation_order_by_with_filter() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Table};, Schema
 
     let source = r#"
 ProductWithLatestEnglishTranslation @query{
@@ -979,10 +979,10 @@ ProductWithLatestEnglishTranslation @query{
 "#;
     let file = parse_query_file("<test>", source).unwrap();
 
-    let mut schema = PlannerSchema::default();
+    let mut schema = Schema::default();
     schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string()],
             foreign_keys: vec![],
@@ -990,7 +990,7 @@ ProductWithLatestEnglishTranslation @query{
     );
     schema.tables.insert(
         "product_translation".to_string(),
-        PlannerTable {
+        Table {
             name: "product_translation".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -999,7 +999,7 @@ ProductWithLatestEnglishTranslation @query{
                 "title".to_string(),
                 "updated_at".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],

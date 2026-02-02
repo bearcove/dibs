@@ -8,14 +8,15 @@ mod error;
 // Happy types;
 pub use dibs_query_schema::*;
 
-// Rust code generation
-mod rustgen;
+// Query planner
+mod planner;
+pub use planner::QueryPlan;
 
 // SQL code generation
 mod sqlgen;
 
-// Happy types
-mod filter_spec;
+// Rust code generation
+mod rustgen;
 
-// Query planner
-mod planner;
+// Internal stuff
+mod filter_spec;

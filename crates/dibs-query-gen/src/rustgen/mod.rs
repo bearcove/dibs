@@ -1,7 +1,10 @@
 //! Rust code generation from query schema types using the `codegen` crate.
 
 use codegen::{Block, Function, Scope, Struct};
+use dibs_query_schema::{Meta, Select};
 use std::collections::HashMap;
+
+use crate::planner::QueryPlan;
 
 // ============================================================================
 // Code Generation Contexts
@@ -11,16 +14,22 @@ use std::collections::HashMap;
 struct QueryGenerationContext<'a> {
     /// Code generation context with schema info.
     codegen: &'a CodegenContext<'a>,
+
     /// Maps column aliases to their indices in the result row.
     column_order: &'a HashMap<String, usize>,
+
     /// The query plan with JOIN and result mapping info.
-    plan: &'a crate::planner::QueryPlan,
+    plan: &'a QueryPlan,
+
     /// The root table being queried.
     root_table: &'a str,
+
     /// Whether this query returns only the first result.
     is_first: bool,
+
     /// The name of the result struct being built.
     struct_name: &'a str,
+
     /// The original source code - used for error reporting.
     source: &'a str,
 }
@@ -693,7 +702,7 @@ fn generate_vec_relation_assembly(
     codegen_ctx: &CodegenContext,
     select: &Select,
     struct_name: &str,
-    plan: &crate::planner::QueryPlan,
+    plan: &QueryPlan,
     column_order: &HashMap<String, usize>,
     root_table: &str,
     is_first: bool,
@@ -878,7 +887,7 @@ fn generate_nested_vec_relation_assembly(
     codegen_ctx: &CodegenContext,
     select: &Select,
     struct_name: &str,
-    plan: &crate::planner::QueryPlan,
+    plan: &QueryPlan,
     column_order: &HashMap<String, usize>,
     root_table: &str,
     is_first: bool,

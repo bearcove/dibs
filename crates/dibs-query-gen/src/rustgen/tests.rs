@@ -101,7 +101,7 @@ fn test_pascal_case() {
 
 #[test]
 fn test_generate_join_query() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
 ProductWithTranslation @query{
@@ -165,10 +165,10 @@ ProductWithTranslation @query{
         },
     );
 
-    let mut planner_schema = PlannerSchema::default();
+    let mut planner_schema = Schema::default();
     planner_schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string(), "handle".to_string()],
             foreign_keys: vec![],
@@ -176,7 +176,7 @@ ProductWithTranslation @query{
     );
     planner_schema.tables.insert(
         "product_translation".to_string(),
-        PlannerTable {
+        Table {
             name: "product_translation".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -184,7 +184,7 @@ ProductWithTranslation @query{
                 "title".to_string(),
                 "description".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -232,7 +232,7 @@ ProductWithTranslation @query{
 
 #[facet_testhelpers::test]
 fn test_generate_vec_relation_query() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
 ProductWithVariants @query{
@@ -292,10 +292,10 @@ ProductWithVariants @query{
         },
     );
 
-    let mut planner_schema = PlannerSchema::default();
+    let mut planner_schema = Schema::default();
     planner_schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string(), "handle".to_string()],
             foreign_keys: vec![],
@@ -303,14 +303,14 @@ ProductWithVariants @query{
     );
     planner_schema.tables.insert(
         "product_variant".to_string(),
-        PlannerTable {
+        Table {
             name: "product_variant".to_string(),
             columns: vec![
                 "id".to_string(),
                 "product_id".to_string(),
                 "sku".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -366,7 +366,7 @@ ProductWithVariants @query{
 
 #[facet_testhelpers::test]
 fn test_generate_count_query() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
 ProductWithVariantCount @query{
@@ -399,10 +399,10 @@ ProductWithVariantCount @query{
         },
     );
 
-    let mut planner_schema = PlannerSchema::default();
+    let mut planner_schema = Schema::default();
     planner_schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string(), "handle".to_string()],
             foreign_keys: vec![],
@@ -410,14 +410,14 @@ ProductWithVariantCount @query{
     );
     planner_schema.tables.insert(
         "product_variant".to_string(),
-        PlannerTable {
+        Table {
             name: "product_variant".to_string(),
             columns: vec![
                 "id".to_string(),
                 "product_id".to_string(),
                 "sku".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -454,7 +454,7 @@ ProductWithVariantCount @query{
 
 #[facet_testhelpers::test]
 fn test_generate_nested_vec_relation_query() {
-    use crate::planner::{PlannerForeignKey, PlannerSchema, PlannerTable};
+    use crate::planner::{ForeignKey, Schema, Table};
 
     let source = r#"
 ProductWithVariantsAndPrices @query{
@@ -546,10 +546,10 @@ ProductWithVariantsAndPrices @query{
         },
     );
 
-    let mut planner_schema = PlannerSchema::default();
+    let mut planner_schema = Schema::default();
     planner_schema.tables.insert(
         "product".to_string(),
-        PlannerTable {
+        Table {
             name: "product".to_string(),
             columns: vec!["id".to_string(), "handle".to_string()],
             foreign_keys: vec![],
@@ -557,14 +557,14 @@ ProductWithVariantsAndPrices @query{
     );
     planner_schema.tables.insert(
         "product_variant".to_string(),
-        PlannerTable {
+        Table {
             name: "product_variant".to_string(),
             columns: vec![
                 "id".to_string(),
                 "product_id".to_string(),
                 "sku".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
                 references_columns: vec!["id".to_string()],
@@ -573,7 +573,7 @@ ProductWithVariantsAndPrices @query{
     );
     planner_schema.tables.insert(
         "variant_price".to_string(),
-        PlannerTable {
+        Table {
             name: "variant_price".to_string(),
             columns: vec![
                 "id".to_string(),
@@ -581,7 +581,7 @@ ProductWithVariantsAndPrices @query{
                 "currency_code".to_string(),
                 "amount".to_string(),
             ],
-            foreign_keys: vec![PlannerForeignKey {
+            foreign_keys: vec![ForeignKey {
                 columns: vec!["variant_id".to_string()],
                 references_table: "product_variant".to_string(),
                 references_columns: vec!["id".to_string()],
