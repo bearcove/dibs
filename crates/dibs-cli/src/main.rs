@@ -319,6 +319,7 @@ fn schema_info_to_schema(info: dibs_proto::SchemaInfo) -> dibs::Schema {
             doc: t.doc,
             icon: t.icon,
         })
+        .map(|t| (t.name.clone(), t))
         .collect();
 
     dibs::Schema { tables }
@@ -326,7 +327,7 @@ fn schema_info_to_schema(info: dibs_proto::SchemaInfo) -> dibs::Schema {
 
 /// Print schema as plain text (for piping)
 fn print_schema_plain(schema: &dibs::Schema) {
-    for table in &schema.tables {
+    for table in schema.tables.values() {
         println!("TABLE {}", table.name);
         for col in &table.columns {
             let mut attrs = Vec::new();

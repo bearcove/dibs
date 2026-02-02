@@ -969,6 +969,7 @@ impl SchemaDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diff::SchemaExt;
     use crate::{Column, ForeignKey, PgType, Schema, SourceLocation, Table};
 
     fn make_column(name: &str, pg_type: PgType, nullable: bool) -> Column {
@@ -3000,6 +3001,7 @@ mod tests {
 #[cfg(test)]
 mod proptests {
     use super::*;
+    use crate::diff::SchemaExt;
     use crate::{Column, ForeignKey, Index, PgType, Schema, SourceLocation, Table};
     use proptest::prelude::*;
     use std::collections::HashSet;
@@ -3217,7 +3219,9 @@ mod proptests {
                 }
             }
 
-            Schema { tables }
+            Schema {
+                tables: tables.into_iter().map(|t| (t.name.clone(), t)).collect(),
+            }
         })
     }
 

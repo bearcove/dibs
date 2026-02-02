@@ -46,9 +46,9 @@ use std::pin::Pin;
 
 // TODO: clean up public interface
 pub mod backoffice;
-mod diff;
+pub mod diff;
 mod error;
-mod introspect;
+pub mod introspect;
 mod jsonb;
 pub mod meta;
 mod migrate;
@@ -89,10 +89,7 @@ pub use inventory;
 pub use dibs_macros::migration;
 
 // Re-export query DSL codegen types
-pub use dibs_qgen::{
-    ColumnInfo, GeneratedCode, QueryFile, SchemaInfo, TableInfo, generate_rust_code,
-    generate_rust_code_with_planner, generate_rust_code_with_schema, parse_query_file,
-};
+pub use dibs_qgen::{GeneratedCode, QueryFile, generate_rust_code, parse_query_file};
 
 /// Quote a PostgreSQL identifier.
 ///
@@ -346,15 +343,13 @@ pub fn build_queries(queries_path: impl AsRef<std::path::Path>) {
         );
     }
 
-    let schema_info = schema::schema_to_schema_info(&dibs_schema);
-
     let source = std::fs::read_to_string(queries_path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", queries_path.display(), e));
 
     let filename = camino::Utf8Path::new(queries_path.to_str().expect("path must be UTF-8"));
     let file = parse_query_file(filename, &source).unwrap();
 
-    let generated = generate_rust_code_with_planner(&file, &schema_info, Some(&dibs_schema));
+    let generated = generate_rust_code(&file, &dibs_schema);
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = std::path::Path::new(&out_dir).join("queries.rs");

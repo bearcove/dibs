@@ -20,6 +20,7 @@ facet = { workspace = true, features = ["uuid", "chrono", "rust_decimal", "jiff0
 # could shed this dep if we put the `Jsonb` type elsewhere but shrug
 facet-tokio-postgres.workspace = true
 indexmap.workspace = true
+inventory.workspace = true
 jiff.workspace = true
 rust_decimal.workspace = true
 uuid.workspace = true

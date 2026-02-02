@@ -274,10 +274,10 @@ impl DibsExtension {
                     if let Some(from) = &query.from
                         && let Some(table) = ctx.find_table(from.as_str())
                     {
-                        if let Some(select) = &query.select {
-                            lints::lint_empty_select(select, &mut ctx);
-                            lints::lint_unknown_columns_select(select, table, &mut ctx);
-                            lints::lint_relations_in_select(select, Some(from.as_str()), &mut ctx);
+                        if let Some(fields) = &query.fields {
+                            lints::lint_empty_select(fields, &mut ctx);
+                            lints::lint_unknown_columns_select(fields, table, &mut ctx);
+                            lints::lint_relations_in_select(fields, Some(from.as_str()), &mut ctx);
                         }
                         if let Some(where_clause) = &query.where_clause {
                             lints::lint_unknown_columns_where(where_clause, table, &mut ctx);

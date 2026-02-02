@@ -3,24 +3,26 @@ use crate::parse_query_file;
 use camino::Utf8Path;
 use dibs_db_schema::{Column, ForeignKey, PgType, Schema, SourceLocation, Table};
 use facet_testhelpers::test;
-use indexmap::IndexMap;
 
 fn parse_test(source: &str) -> crate::QueryFile {
     parse_query_file(Utf8Path::new("<test>"), source).unwrap()
 }
 
-fn make_test_table(name: &str, columns: &[&str], fks: Vec<ForeignKey>) -> Table {
+/// Column definition for test tables: (name, pg_type, nullable)
+type ColDef = (&'static str, PgType, bool);
+
+fn make_test_table(name: &str, columns: &[ColDef], fks: Vec<ForeignKey>) -> Table {
     Table {
         name: name.to_string(),
         columns: columns
             .iter()
-            .map(|&col| Column {
-                name: col.to_string(),
-                pg_type: PgType::Text,
-                rust_type: None,
-                nullable: false,
+            .map(|(col_name, pg_type, nullable)| Column {
+                name: col_name.to_string(),
+                pg_type: *pg_type,
+                rust_type: Some(pg_type.to_rust_type().to_string()),
+                nullable: *nullable,
                 default: None,
-                primary_key: col == "id",
+                primary_key: *col_name == "id",
                 unique: false,
                 auto_generated: false,
                 long: false,
@@ -48,6 +50,11 @@ fn make_test_schema(tables: Vec<Table>) -> Schema {
     }
 }
 
+/// Create an empty schema for tests that don't need type info
+fn empty_schema() -> Schema {
+    Schema::default()
+}
+
 // FIXME: All those tests are garbage and should just be using snapshots instead.
 
 #[test]
@@ -59,11 +66,20 @@ AllProducts @select{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let schema = make_test_schema(vec![make_test_table(
+        "product",
+        &[
+            ("id", PgType::BigInt, false),
+            ("handle", PgType::Text, false),
+            ("status", PgType::Text, false),
+        ],
+        vec![],
+    )]);
+    let code = generate_rust_code(&file, &schema);
 
     assert!(code.code.contains("pub struct AllProductsResult"));
     assert!(code.code.contains("pub async fn all_products"));
-    assert!(code.code.contains("pub id: String"));
+    assert!(code.code.contains("pub id: i64"));
     assert!(code.code.contains("pub handle: String"));
     assert!(code.code.contains("#[derive(Debug, Clone, Facet)]"));
 }
@@ -80,7 +96,15 @@ ProductByHandle @select{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let schema = make_test_schema(vec![make_test_table(
+        "product",
+        &[
+            ("id", PgType::BigInt, false),
+            ("handle", PgType::Text, false),
+        ],
+        vec![],
+    )]);
+    let code = generate_rust_code(&file, &schema);
 
     assert!(code.code.contains("handle: &String"));
     assert!(code.code.contains("from_row"));
@@ -95,6 +119,7 @@ ProductListing @select{
   select {
     id
     translation @rel{
+      from product_translation
       first true
       select { title, description }
     }
@@ -102,7 +127,24 @@ ProductListing @select{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let schema = make_test_schema(vec![
+        make_test_table("product", &[("id", PgType::BigInt, false)], vec![]),
+        make_test_table(
+            "product_translation",
+            &[
+                ("id", PgType::BigInt, false),
+                ("product_id", PgType::BigInt, false),
+                ("title", PgType::Text, false),
+                ("description", PgType::Text, true),
+            ],
+            vec![ForeignKey {
+                columns: vec!["product_id".to_string()],
+                references_table: "product".to_string(),
+                references_columns: vec!["id".to_string()],
+            }],
+        ),
+    ]);
+    let code = generate_rust_code(&file, &schema);
 
     assert!(
         code.code
@@ -124,7 +166,8 @@ TrendingProducts @select{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    // Raw SQL queries don't need schema - types come from explicit `returns` clause
+    let code = generate_rust_code(&file, &empty_schema());
 
     assert!(code.code.contains("locale: &String"));
     assert!(code.code.contains("days: &i64"));
@@ -165,56 +208,23 @@ ProductWithTranslation @select{
 "#;
     let file = parse_test(source);
 
-    let mut schema = SchemaInfo::default();
-    let mut product_cols = HashMap::new();
-    product_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "handle".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    schema.tables.insert(
-        "product".to_string(),
-        TableInfo {
-            columns: product_cols,
-        },
-    );
-
-    let mut translation_cols = HashMap::new();
-    translation_cols.insert(
-        "title".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    translation_cols.insert(
-        "description".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: true,
-        },
-    );
-    schema.tables.insert(
-        "product_translation".to_string(),
-        TableInfo {
-            columns: translation_cols,
-        },
-    );
-
-    let planner_schema = make_test_schema(vec![
-        make_test_table("product", &["id", "handle"], vec![]),
+    let schema = make_test_schema(vec![
+        make_test_table(
+            "product",
+            &[
+                ("id", PgType::BigInt, false),
+                ("handle", PgType::Text, false),
+            ],
+            vec![],
+        ),
         make_test_table(
             "product_translation",
-            &["id", "product_id", "title", "description"],
+            &[
+                ("id", PgType::BigInt, false),
+                ("product_id", PgType::BigInt, false),
+                ("title", PgType::Text, false),
+                ("description", PgType::Text, true),
+            ],
             vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
@@ -223,7 +233,7 @@ ProductWithTranslation @select{
         ),
     ]);
 
-    let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
+    let code = generate_rust_code(&file, &schema);
 
     assert!(
         code.code
@@ -276,56 +286,22 @@ ProductWithVariants @select{
 "#;
     let file = parse_test(source);
 
-    let mut schema = SchemaInfo::default();
-    let mut product_cols = HashMap::new();
-    product_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "handle".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    schema.tables.insert(
-        "product".to_string(),
-        TableInfo {
-            columns: product_cols,
-        },
-    );
-
-    let mut variant_cols = HashMap::new();
-    variant_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    variant_cols.insert(
-        "sku".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    schema.tables.insert(
-        "product_variant".to_string(),
-        TableInfo {
-            columns: variant_cols,
-        },
-    );
-
-    let planner_schema = make_test_schema(vec![
-        make_test_table("product", &["id", "handle"], vec![]),
+    let schema = make_test_schema(vec![
+        make_test_table(
+            "product",
+            &[
+                ("id", PgType::BigInt, false),
+                ("handle", PgType::Text, false),
+            ],
+            vec![],
+        ),
         make_test_table(
             "product_variant",
-            &["id", "product_id", "sku"],
+            &[
+                ("id", PgType::BigInt, false),
+                ("product_id", PgType::BigInt, false),
+                ("sku", PgType::Text, false),
+            ],
             vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
@@ -334,7 +310,7 @@ ProductWithVariants @select{
         ),
     ]);
 
-    let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
+    let code = generate_rust_code(&file, &schema);
 
     tracing::info!("Generated code:\n{}", code.code);
 
@@ -390,34 +366,22 @@ ProductWithVariantCount @select{
 "#;
     let file = parse_test(source);
 
-    let mut schema = SchemaInfo::default();
-    let mut product_cols = HashMap::new();
-    product_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "handle".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    schema.tables.insert(
-        "product".to_string(),
-        TableInfo {
-            columns: product_cols,
-        },
-    );
-
-    let planner_schema = make_test_schema(vec![
-        make_test_table("product", &["id", "handle"], vec![]),
+    let schema = make_test_schema(vec![
+        make_test_table(
+            "product",
+            &[
+                ("id", PgType::BigInt, false),
+                ("handle", PgType::Text, false),
+            ],
+            vec![],
+        ),
         make_test_table(
             "product_variant",
-            &["id", "product_id", "sku"],
+            &[
+                ("id", PgType::BigInt, false),
+                ("product_id", PgType::BigInt, false),
+                ("sku", PgType::Text, false),
+            ],
             vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
@@ -426,7 +390,7 @@ ProductWithVariantCount @select{
         ),
     ]);
 
-    let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
+    let code = generate_rust_code(&file, &schema);
 
     tracing::info!("Generated code:\n{}", code.code);
 
@@ -471,85 +435,22 @@ ProductWithVariantsAndPrices @select{
 "#;
     let file = parse_test(source);
 
-    let mut schema = SchemaInfo::default();
-    let mut product_cols = HashMap::new();
-    product_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "handle".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    schema.tables.insert(
-        "product".to_string(),
-        TableInfo {
-            columns: product_cols,
-        },
-    );
-
-    let mut variant_cols = HashMap::new();
-    variant_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    variant_cols.insert(
-        "sku".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    schema.tables.insert(
-        "product_variant".to_string(),
-        TableInfo {
-            columns: variant_cols,
-        },
-    );
-
-    let mut price_cols = HashMap::new();
-    price_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    price_cols.insert(
-        "currency_code".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    price_cols.insert(
-        "amount".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    schema.tables.insert(
-        "variant_price".to_string(),
-        TableInfo {
-            columns: price_cols,
-        },
-    );
-
-    let planner_schema = make_test_schema(vec![
-        make_test_table("product", &["id", "handle"], vec![]),
+    let schema = make_test_schema(vec![
+        make_test_table(
+            "product",
+            &[
+                ("id", PgType::BigInt, false),
+                ("handle", PgType::Text, false),
+            ],
+            vec![],
+        ),
         make_test_table(
             "product_variant",
-            &["id", "product_id", "sku"],
+            &[
+                ("id", PgType::BigInt, false),
+                ("product_id", PgType::BigInt, false),
+                ("sku", PgType::Text, false),
+            ],
             vec![ForeignKey {
                 columns: vec!["product_id".to_string()],
                 references_table: "product".to_string(),
@@ -558,7 +459,12 @@ ProductWithVariantsAndPrices @select{
         ),
         make_test_table(
             "variant_price",
-            &["id", "variant_id", "currency_code", "amount"],
+            &[
+                ("id", PgType::BigInt, false),
+                ("variant_id", PgType::BigInt, false),
+                ("currency_code", PgType::Text, false),
+                ("amount", PgType::BigInt, false),
+            ],
             vec![ForeignKey {
                 columns: vec!["variant_id".to_string()],
                 references_table: "product_variant".to_string(),
@@ -567,7 +473,7 @@ ProductWithVariantsAndPrices @select{
         ),
     ]);
 
-    let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
+    let code = generate_rust_code(&file, &schema);
 
     tracing::info!("Generated code:\n{}", code.code);
 
@@ -643,7 +549,7 @@ CreateUser @insert{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     assert!(code.code.contains("pub struct CreateUserResult"));
     assert!(code.code.contains("pub async fn create_user"));
@@ -672,7 +578,7 @@ UpsertProduct @upsert{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     assert!(code.code.contains("pub struct UpsertProductResult"));
     assert!(code.code.contains("pub async fn upsert_product"));
@@ -693,7 +599,7 @@ UpdateUserEmail @update{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     assert!(code.code.contains("pub struct UpdateUserEmailResult"));
     assert!(code.code.contains("pub async fn update_user_email"));
@@ -713,7 +619,7 @@ DeleteUser @delete{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     assert!(code.code.contains("pub struct DeleteUserResult"));
     assert!(code.code.contains("pub async fn delete_user"));
@@ -731,7 +637,7 @@ InsertLog @insert{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     // Should NOT generate a result struct
     assert!(!code.code.contains("pub struct InsertLogResult"));
@@ -752,7 +658,7 @@ BulkCreateProducts @insert-many{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     // Should generate params struct
     assert!(
@@ -820,7 +726,7 @@ BulkUpsertProducts @upsert-many{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     // Should generate params struct
     assert!(
@@ -865,7 +771,7 @@ BulkInsertLogs @insert-many{
 }
 "#;
     let file = parse_test(source);
-    let code = generate_rust_code(&file);
+    let code = generate_rust_code(&file, &empty_schema());
 
     // Should NOT generate result struct
     assert!(

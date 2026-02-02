@@ -1133,5 +1133,8 @@ pub fn rust_type_to_pg(shape: &Shape) -> Option<PgType> {
     }
 }
 
+// Register TableDef with inventory so it can be collected across crates
+inventory::collect!(TableDef);
+
 #[cfg(test)]
 mod tests;

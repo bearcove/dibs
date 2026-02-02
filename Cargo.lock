@@ -1007,6 +1007,7 @@ dependencies = [
  "facet",
  "facet-tokio-postgres",
  "indexmap 2.13.0",
+ "inventory",
  "jiff",
  "rust_decimal",
  "uuid",

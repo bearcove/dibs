@@ -1,6 +1,7 @@
 //! Rust code generation from query schema types using the `codegen` crate.
 
 use codegen::{Block, Function, Scope, Struct};
+use dibs_db_schema::Schema;
 use dibs_query_schema::{
     Decl, Delete, FieldDef, Insert, InsertMany, Meta, Params, QueryFile, Returning, Select,
     SelectFields, Update, Upsert, UpsertMany,
@@ -45,14 +46,13 @@ struct QueryGenerationContext<'a> {
 impl<'a> QueryGenerationContext<'a> {
     /// Get the type of a column in the root table.
     fn root_column_type(&self, col_name: &str) -> Option<String> {
-        self.codegen.schema.column_type(self.root_table, col_name)
+        self.codegen.column_type(self.root_table, col_name)
     }
 
     /// Get the type of a column with error reporting.
     /// Takes the Meta wrapper so we have span for error reporting.
     fn root_column_type_with_span(&self, col_name_meta: &Meta<String>) -> Result<String, QError> {
         self.codegen
-            .schema
             .column_type(self.root_table, &col_name_meta.value)
             .ok_or_else(|| QError {
                 span: col_name_meta.span,
@@ -93,7 +93,6 @@ impl<'a> RelationGenerationContext<'a> {
     fn column_type(&self, col_name: &str) -> String {
         self.query
             .codegen
-            .schema
             .column_type(self.relation_table, col_name)
             .unwrap_or_else(|| {
                 panic!(
@@ -217,76 +216,37 @@ pub struct GeneratedCode {
     pub code: String,
 }
 
-/// Schema information for code generation.
-///
-/// This provides type information for columns, allowing the codegen
-/// to emit correctly-typed result structs.
-#[derive(Debug, Clone, Default)]
-pub struct SchemaInfo {
-    /// Map of table name -> column info.
-    pub tables: HashMap<String, TableInfo>,
-}
-
-/// Information about a single table.
-#[derive(Debug, Clone, Default)]
-pub struct TableInfo {
-    /// Map of column name -> Rust type string.
-    pub columns: HashMap<String, ColumnInfo>,
-}
-
-/// Information about a single column.
-#[derive(Debug, Clone)]
-pub struct ColumnInfo {
-    /// Rust type name (e.g., "i64", "String", "bool").
-    pub rust_type: String,
-    /// Whether the column is nullable (`Option<T>`).
-    pub nullable: bool,
-}
-
-impl SchemaInfo {
-    /// Create a new empty schema.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Look up the Rust type for a column.
-    pub fn column_type(&self, table: &str, column: &str) -> Option<String> {
-        let table_info = self.tables.get(table)?;
-        let col_info = table_info.columns.get(column)?;
-        if col_info.nullable {
-            Some(format!("Option<{}>", col_info.rust_type))
-        } else {
-            Some(col_info.rust_type.clone())
-        }
+/// Look up the Rust type for a column in a schema.
+fn schema_column_type(schema: &Schema, table: &str, column: &str) -> Option<String> {
+    let table_info = schema.get_table(table)?;
+    let col = table_info.columns.iter().find(|c| c.name == column)?;
+    let rust_type = col
+        .rust_type
+        .clone()
+        .unwrap_or_else(|| col.pg_type.to_rust_type().to_string());
+    if col.nullable {
+        Some(format!("Option<{}>", rust_type))
+    } else {
+        Some(rust_type)
     }
 }
 
 /// Context for code generation.
 struct CodegenContext<'a> {
-    schema: &'a SchemaInfo,
-    planner_schema: &'a dibs_db_schema::Schema,
+    schema: &'a Schema,
+    #[allow(dead_code)]
     scope: Scope,
 }
 
+impl CodegenContext<'_> {
+    /// Look up the Rust type for a column.
+    fn column_type(&self, table: &str, column: &str) -> Option<String> {
+        schema_column_type(self.schema, table, column)
+    }
+}
+
 /// Generate Rust code for a query file.
-pub fn generate_rust_code(file: &QueryFile) -> GeneratedCode {
-    generate_rust_code_with_schema(file, &SchemaInfo::default())
-}
-
-/// Generate Rust code for a query file with schema information.
-pub fn generate_rust_code_with_schema(file: &QueryFile, schema: &SchemaInfo) -> GeneratedCode {
-    generate_rust_code_with_planner(file, schema, None)
-}
-
-/// Generate Rust code for a query file with full schema and planner info.
-///
-/// When `planner_schema` is provided, queries with relations will generate
-/// JOINs and proper result assembly code.
-pub fn generate_rust_code_with_planner(
-    file: &QueryFile,
-    schema: &SchemaInfo,
-    planner_schema: &dibs_db_schema::Schema,
-) -> GeneratedCode {
+pub fn generate_rust_code(file: &QueryFile, schema: &Schema) -> GeneratedCode {
     let mut scope = Scope::new();
 
     // Add file header as raw code
@@ -299,7 +259,6 @@ pub fn generate_rust_code_with_planner(
 
     let ctx = CodegenContext {
         schema,
-        planner_schema,
         scope: Scope::new(),
     };
 
@@ -381,7 +340,6 @@ fn generate_result_struct(
                 None => {
                     // Simple column
                     let rust_ty = ctx
-                        .schema
                         .column_type(table_name, field_name)
                         .unwrap_or_else(|| "String".to_string());
                     st.field(format!("pub {}", field_name), &rust_ty);
@@ -440,7 +398,6 @@ fn generate_nested_structs(
                         None => {
                             // Simple column
                             let rust_ty = ctx
-                                .schema
                                 .column_type(rel_table, rel_field_name)
                                 .unwrap_or_else(|| "String".to_string());
                             nested_st.field(format!("pub {}", rel_field_name), &rust_ty);
@@ -528,19 +485,11 @@ fn generate_select_function(
 
 /// Generate query body for all queries (with or without JOINs).
 fn generate_query_body(ctx: &CodegenContext, query: &Select, struct_name: &str) -> String {
-    let Some(schema) = ctx.planner_schema else {
-        // No schema available - generate simple from_row() body
-        return "// Warning: No schema available for query planning\nrows.iter().map(|row| Ok(from_row(row)?)).collect()".to_string();
-    };
-
-    let generated = match crate::sqlgen::generate_select_sql(query, schema) {
+    let generated = match crate::sqlgen::generate_select_sql(query, ctx.schema) {
         Ok(g) => g,
         Err(e) => {
-            // Fallback: generate a simple error message
-            return format!(
-                "// Warning: SELECT planning failed: {}\nrows.iter().map(|row| Ok(from_row(row)?)).collect()",
-                e
-            );
+            // SQL generation failed - this is a bug, panic with context
+            panic!("SELECT SQL generation failed: {}", e);
         }
     };
 
@@ -704,7 +653,6 @@ fn generate_vec_relation_assembly(
         .unwrap_or_else(|| "id".into());
 
     let parent_key_type = codegen_ctx
-        .schema
         .column_type(root_table, parent_key_column.as_str())
         .unwrap_or_else(|| "i64".to_string());
 
@@ -892,7 +840,6 @@ fn generate_nested_vec_relation_assembly(
         .unwrap_or_else(|| "id".into());
 
     let parent_key_type = codegen_ctx
-        .schema
         .column_type(root_table, parent_key_column.as_str())
         .unwrap_or_else(|| "i64".to_string());
 
@@ -917,7 +864,6 @@ fn generate_nested_vec_relation_assembly(
                     // Get the ID column of this relation for deduplication
                     if let Some(id_col) = rel_select.id_column() {
                         let id_type = codegen_ctx
-                            .schema
                             .column_type(rel_table, id_col.as_str())
                             .unwrap_or_else(|| "i64".to_string());
                         block.line(format!(
@@ -935,7 +881,6 @@ fn generate_nested_vec_relation_assembly(
                                             inner_rel.table_name().unwrap_or(inner_field_name);
                                         if let Some(inner_id_col) = inner_rel_select.id_column() {
                                             let inner_id_type = codegen_ctx
-                                                .schema
                                                 .column_type(inner_table, inner_id_col.as_str())
                                                 .unwrap_or_else(|| "i64".to_string());
                                             block.line(format!(
@@ -1146,7 +1091,6 @@ fn generate_nested_vec_with_dedup(
         .unwrap_or(first_col);
     let id_alias = format!("{field_name}_{id_col}");
     let id_type = codegen_ctx
-        .schema
         .column_type(rel_table, id_col)
         .unwrap_or_else(|| "i64".to_string());
 
@@ -1247,7 +1191,6 @@ fn generate_nested_vec_with_dedup(
                             let inner_col_name = inner_col_meta.value.as_str();
                             let alias = format!("{field_name}_{inner_field_name}_{inner_col_name}");
                             let rust_ty = codegen_ctx
-                                .schema
                                 .column_type(inner_table, inner_col_name)
                                 .unwrap_or_else(|| "String".to_string());
 
@@ -1274,7 +1217,6 @@ fn generate_nested_vec_with_dedup(
                         .unwrap_or(inner_first_col);
                     let inner_id_alias = format!("{field_name}_{inner_field_name}_{inner_id_col}");
                     let inner_id_type = codegen_ctx
-                        .schema
                         .column_type(inner_table, inner_id_col)
                         .unwrap_or_else(|| "i64".to_string());
 
@@ -1301,7 +1243,6 @@ fn generate_nested_vec_with_dedup(
                             let inner_col_name = inner_col_meta.value.as_str();
                             let alias = format!("{field_name}_{inner_field_name}_{inner_col_name}");
                             let rust_ty = codegen_ctx
-                                .schema
                                 .column_type(inner_table, inner_col_name)
                                 .unwrap_or_else(|| "String".to_string());
 
@@ -1398,7 +1339,6 @@ fn generate_option_relation_assembly(
                                 let inner_col_name = inner_col_meta.value.as_str();
                                 let alias = format!("{field_name}_{inner_col_name}");
                                 let rust_ty = codegen_ctx
-                                    .schema
                                     .column_type(rel_table, inner_col_name)
                                     .unwrap_or_else(|| "String".to_string());
 
@@ -1811,7 +1751,6 @@ fn generate_bulk_params_struct(
     for (param_name_meta, param_type) in &params.params {
         let param_name = param_name_meta.value.as_str();
         let rust_ty = ctx
-            .schema
             .column_type(table, param_name)
             .unwrap_or_else(|| param_type_to_rust(param_type));
         st.field(format!("pub {}", param_name), &rust_ty);
@@ -1993,7 +1932,6 @@ fn generate_mutation_result_struct(
     for (col_name_meta, _) in &returning.columns {
         let col_name = col_name_meta.value.as_str();
         let rust_ty = ctx
-            .schema
             .column_type(table, col_name)
             .unwrap_or_else(|| "String".to_string());
         st.field(format!("pub {col_name}"), &rust_ty);

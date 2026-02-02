@@ -33,38 +33,15 @@ pub use dibs_db_schema::{
     SourceLocation, Table, TableDef, TriggerCheckConstraint,
 };
 
-/// Convert a schema to the SchemaInfo needed for query code generation.
-///
-/// The planner uses `dibs_db_schema::Schema` directly for foreign key resolution.
-pub fn schema_to_schema_info(schema: &Schema) -> dibs_qgen::SchemaInfo {
-    use dibs_qgen::{ColumnInfo, SchemaInfo, TableInfo};
-    use std::collections::HashMap;
+/// Extension trait for Schema to add SQL generation.
+pub trait SchemaCodegen {
+    /// Generate SQL to create all tables, foreign keys, and indices.
+    fn to_sql(&self) -> String;
+}
 
-    let mut schema_tables = HashMap::new();
-
-    for table in schema.tables.values() {
-        let mut columns = HashMap::new();
-
-        for col in &table.columns {
-            let rust_type = col
-                .rust_type
-                .clone()
-                .unwrap_or_else(|| col.pg_type.to_rust_type().to_string());
-
-            columns.insert(
-                col.name.clone(),
-                ColumnInfo {
-                    rust_type,
-                    nullable: col.nullable,
-                },
-            );
-        }
-
-        schema_tables.insert(table.name.clone(), TableInfo { columns });
-    }
-
-    SchemaInfo {
-        tables: schema_tables,
+impl SchemaCodegen for Schema {
+    fn to_sql(&self) -> String {
+        codegen::schema_to_sql(self)
     }
 }
 
@@ -206,13 +183,11 @@ pub fn collect_schema() -> Schema {
     let tables = inventory::iter::<TableDef>
         .into_iter()
         .filter_map(|def| def.to_table())
+        .map(|t| (t.name.clone(), t))
         .collect();
 
     Schema { tables }
 }
-
-// Register TableDef with inventory
-inventory::collect!(TableDef);
 
 #[cfg(test)]
 mod tests {

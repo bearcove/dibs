@@ -12,8 +12,7 @@
 use camino::Utf8Path;
 use dibs_db_schema::{Column, ForeignKey, PgType, Schema, SourceLocation, Table};
 use dibs_qgen::{
-    ColumnInfo, Decl, QueryFile, SchemaInfo, Select, TableInfo, generate_rust_code_with_planner,
-    generate_select_sql, parse_query_file,
+    Decl, QueryFile, Select, generate_rust_code, generate_select_sql, parse_query_file,
 };
 use dockside::{Container, containers};
 use indexmap::IndexMap;
@@ -367,122 +366,7 @@ fn table(name: &str, columns: Vec<Column>, foreign_keys: Vec<ForeignKey>) -> Tab
     }
 }
 
-fn build_test_schema() -> (SchemaInfo, Schema) {
-    // Build SchemaInfo for rustgen
-    let mut schema_info = SchemaInfo::default();
-
-    // Product table
-    let mut product_cols = HashMap::new();
-    product_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "handle".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "status".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    schema_info.tables.insert(
-        "product".to_string(),
-        TableInfo {
-            columns: product_cols,
-        },
-    );
-
-    // Product variant table
-    let mut variant_cols = HashMap::new();
-    variant_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    variant_cols.insert(
-        "product_id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    variant_cols.insert(
-        "sku".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    variant_cols.insert(
-        "price_cents".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    schema_info.tables.insert(
-        "product_variant".to_string(),
-        TableInfo {
-            columns: variant_cols,
-        },
-    );
-
-    // Product translation table
-    let mut translation_cols = HashMap::new();
-    translation_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    translation_cols.insert(
-        "product_id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    translation_cols.insert(
-        "locale".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    translation_cols.insert(
-        "title".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    translation_cols.insert(
-        "description".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: true,
-        },
-    );
-    schema_info.tables.insert(
-        "product_translation".to_string(),
-        TableInfo {
-            columns: translation_cols,
-        },
-    );
-
-    // Build dibs_db_schema::Schema for the planner
+fn build_test_schema() -> Schema {
     let mut tables = IndexMap::new();
 
     tables.insert(
@@ -535,7 +419,7 @@ fn build_test_schema() -> (SchemaInfo, Schema) {
         ),
     );
 
-    (schema_info, Schema { tables })
+    Schema { tables }
 }
 
 #[tokio::test]
@@ -573,7 +457,7 @@ async fn test_option_relation_query_against_postgres() {
     create_test_tables(&client).await;
     insert_test_data(&client).await;
 
-    let (_, planner_schema) = build_test_schema();
+    let schema = build_test_schema();
 
     // Query with Option relation (first: true)
     let source = r#"
@@ -594,7 +478,7 @@ ProductWithTranslation @select{
     let query = first_select(&file);
 
     // Generate SQL with JOINs
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -622,7 +506,7 @@ async fn test_vec_relation_query_against_postgres() {
     create_test_tables(&client).await;
     insert_test_data(&client).await;
 
-    let (schema, planner_schema) = build_test_schema();
+    let schema = build_test_schema();
 
     // Query with Vec relation (first: false - has-many)
     let source = r#"
@@ -642,7 +526,7 @@ ProductWithVariants @select{
     let query = first_select(&file);
 
     // Generate SQL with JOINs
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -685,7 +569,7 @@ ProductWithVariants @select{
     assert_eq!(gizmo.1.len(), 0, "Gizmo should have 0 variants");
 
     // Also verify the generated Rust code looks correct
-    let code = generate_rust_code_with_planner(&file, &schema, Some(&planner_schema));
+    let code = generate_rust_code(&file, &schema);
     tracing::info!("Generated code:\n{}", code.code);
 
     assert!(
@@ -708,7 +592,7 @@ async fn test_filtered_query_with_params() {
     create_test_tables(&client).await;
     insert_test_data(&client).await;
 
-    let (_, planner_schema) = build_test_schema();
+    let schema = build_test_schema();
 
     // Query with WHERE clause and parameters
     let source = r#"
@@ -731,7 +615,7 @@ ProductByHandle @select{
     let query = first_select(&file);
 
     // Generate SQL with JOINs
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Query for widget
@@ -768,7 +652,7 @@ async fn test_count_query_against_postgres() {
     create_test_tables(&client).await;
     insert_test_data(&client).await;
 
-    let (_, planner_schema) = build_test_schema();
+    let schema = build_test_schema();
 
     // Query with COUNT aggregate
     let source = r#"
@@ -785,7 +669,7 @@ ProductWithVariantCount @select{
     let query = first_select(&file);
 
     // Generate SQL
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -827,7 +711,7 @@ async fn test_relation_where_literal() {
     create_test_tables(&client).await;
     insert_test_data(&client).await;
 
-    let (_, planner_schema) = build_test_schema();
+    let schema = build_test_schema();
 
     // Query with relation-level WHERE using a literal value
     let source = r#"
@@ -848,7 +732,7 @@ ProductWithEnglishTranslation @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Verify the SQL contains the relation filter in ON clause
@@ -902,7 +786,7 @@ async fn test_relation_where_param() {
     create_test_tables(&client).await;
     insert_test_data(&client).await;
 
-    let (_, planner_schema) = build_test_schema();
+    let schema = build_test_schema();
 
     // Query with relation-level WHERE using a parameter
     let source = r#"
@@ -924,7 +808,7 @@ ProductWithTranslationByLocale @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
 
     // Verify the SQL contains the relation filter with param placeholder
@@ -970,7 +854,7 @@ async fn test_relation_where_with_base_where() {
     create_test_tables(&client).await;
     insert_test_data(&client).await;
 
-    let (_, planner_schema) = build_test_schema();
+    let schema = build_test_schema();
 
     // Query with BOTH base WHERE and relation WHERE
     let source = r#"
@@ -993,7 +877,7 @@ ActiveProductWithTranslation @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
     tracing::info!("Generated SQL: {}", generated.sql);
     tracing::info!("Param order: {:?}", generated.param_order);
 
@@ -1736,8 +1620,8 @@ GetProductWithSpecs @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1773,8 +1657,8 @@ GetProductBrand @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1812,10 +1696,10 @@ FindByBrand @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
+    let schema = build_jsonb_test_schema();
 
     // For this test, we'll use simple SQL generation since we're testing the operator
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1845,8 +1729,8 @@ FindPremiumProducts @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1882,8 +1766,8 @@ FindProductsByMetadata @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1916,8 +1800,8 @@ FindByNestedSpec @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1950,8 +1834,8 @@ FindWithPremiumKey @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -1989,8 +1873,8 @@ FindWithKey @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -2030,8 +1914,8 @@ ComplexJsonQuery @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     tracing::info!("Generated SQL: {}", generated.sql);
 
@@ -2075,8 +1959,8 @@ FindWithMetadata @select{
     let file = parse_test_query(source);
     let query = first_select(&file);
 
-    let (_schema_info, planner_schema) = build_jsonb_test_schema();
-    let generated = generate_select_sql(query, &planner_schema).unwrap();
+    let schema = build_jsonb_test_schema();
+    let generated = generate_select_sql(query, &schema).unwrap();
 
     // Execute query - should not return products with NULL metadata
     let rows: Vec<Row> = client.query(&generated.sql, &[]).await.unwrap();
@@ -2095,48 +1979,7 @@ FindWithMetadata @select{
 }
 
 /// Build test schema for JSONB tests.
-fn build_jsonb_test_schema() -> (SchemaInfo, Schema) {
-    let mut schema_info = SchemaInfo::default();
-
-    // Product with metadata table
-    let mut product_cols = HashMap::new();
-    product_cols.insert(
-        "id".to_string(),
-        ColumnInfo {
-            rust_type: "i64".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "handle".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "status".to_string(),
-        ColumnInfo {
-            rust_type: "String".to_string(),
-            nullable: false,
-        },
-    );
-    product_cols.insert(
-        "metadata".to_string(),
-        ColumnInfo {
-            rust_type: "serde_json::Value".to_string(),
-            nullable: true,
-        },
-    );
-
-    schema_info.tables.insert(
-        "product_with_metadata".to_string(),
-        TableInfo {
-            columns: product_cols,
-        },
-    );
-
-    // Build dibs_db_schema::Schema for the planner
+fn build_jsonb_test_schema() -> Schema {
     let mut tables = IndexMap::new();
 
     tables.insert(
@@ -2153,5 +1996,5 @@ fn build_jsonb_test_schema() -> (SchemaInfo, Schema) {
         ),
     );
 
-    (schema_info, Schema { tables })
+    Schema { tables }
 }
