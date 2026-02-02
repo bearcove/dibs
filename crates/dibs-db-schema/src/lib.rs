@@ -705,7 +705,7 @@ impl TableDef {
                 None => {
                     eprintln!(
                         "dibs: unsupported type '{}' for column '{}' in table '{}' ({})",
-                        inner_shape.type_identifier,
+                        inner_shape,
                         field.name,
                         table_name,
                         self.shape.source_file.unwrap_or("<unknown>")
@@ -757,8 +757,7 @@ impl TableDef {
             // Check for enum variants
             let enum_variants = extract_enum_variants(inner_shape);
 
-            // Use pg_type's rust representation for consistency, especially for
-            // generic types like Vec<u8> where type_identifier is just "Vec"
+            // Use pg_type's rust representation for consistency
             let rust_type = pg_type.to_rust_type().to_string();
 
             columns.push(Column {
@@ -1058,22 +1057,23 @@ pub fn shape_to_pg_type(shape: &Shape) -> Option<PgType> {
     // Check for Vec<T> types - shape.def is List
     if matches!(&shape.def, facet::Def::List(_)) {
         if let Some(inner) = shape.inner {
-            return match inner.type_identifier {
-                "u8" => Some(PgType::Bytea),
-                "String" => Some(PgType::TextArray),
-                "i64" => Some(PgType::BigIntArray),
-                "i32" => Some(PgType::IntegerArray),
-                _ => None,
-            };
+            if inner == u8::SHAPE {
+                return Some(PgType::Bytea);
+            } else if inner == String::SHAPE {
+                return Some(PgType::TextArray);
+            } else if inner == i64::SHAPE {
+                return Some(PgType::BigIntArray);
+            } else if inner == i32::SHAPE {
+                return Some(PgType::IntegerArray);
+            }
         }
         return None;
     }
 
     // Check for slice &[u8] (bytea)
     if matches!(&shape.def, facet::Def::Slice(_)) {
-        if shape
-            .inner
-            .is_some_and(|inner| inner.type_identifier == "u8")
+        if let Some(inner) = shape.inner
+            && inner == u8::SHAPE
         {
             return Some(PgType::Bytea);
         }
@@ -1086,12 +1086,21 @@ pub fn shape_to_pg_type(shape: &Shape) -> Option<PgType> {
 
 /// Map a Rust type name to a Postgres type.
 pub fn rust_type_to_pg(shape: &Shape) -> Option<PgType> {
-    if shape == i16::SHAPE {
+    // Integers: SmallInt (2 bytes)
+    if shape == i8::SHAPE || shape == u8::SHAPE || shape == i16::SHAPE {
         Some(PgType::SmallInt)
-    } else if shape == i32::SHAPE {
+    // Integers: Integer (4 bytes)
+    } else if shape == u16::SHAPE || shape == i32::SHAPE {
         Some(PgType::Integer)
-    } else if shape == i64::SHAPE {
+    // Integers: BigInt (8 bytes)
+    } else if shape == u32::SHAPE
+        || shape == i64::SHAPE
+        || shape == u64::SHAPE
+        || shape == isize::SHAPE
+        || shape == usize::SHAPE
+    {
         Some(PgType::BigInt)
+    // Floats
     } else if shape == f32::SHAPE {
         Some(PgType::Real)
     } else if shape == f64::SHAPE {
@@ -1102,22 +1111,19 @@ pub fn rust_type_to_pg(shape: &Shape) -> Option<PgType> {
         Some(PgType::Text)
     } else if shape == rust_decimal::Decimal::SHAPE {
         Some(PgType::Numeric)
-    } else if shape == jiff::Timestamp::SHAPE {
-        Some(PgType::Timestamptz)
-    } else if shape == jiff::Zoned::SHAPE {
-        Some(PgType::Timestamptz)
-    } else if shape == chrono::DateTime::<chrono::Utc>::SHAPE {
-        Some(PgType::Timestamptz)
-    } else if shape == chrono::DateTime::<chrono::Local>::SHAPE {
-        Some(PgType::Timestamptz)
-    } else if shape == chrono::NaiveDateTime::SHAPE {
+    } else if shape == jiff::Timestamp::SHAPE || shape == jiff::Zoned::SHAPE {
         Some(PgType::Timestamptz)
     } else if shape == jiff::civil::Date::SHAPE {
         Some(PgType::Date)
-    } else if shape == chrono::NaiveDate::SHAPE {
-        Some(PgType::Date)
     } else if shape == jiff::civil::Time::SHAPE {
         Some(PgType::Time)
+    } else if shape == chrono::DateTime::<chrono::Utc>::SHAPE
+        || shape == chrono::DateTime::<chrono::Local>::SHAPE
+        || shape == chrono::NaiveDateTime::SHAPE
+    {
+        Some(PgType::Timestamptz)
+    } else if shape == chrono::NaiveDate::SHAPE {
+        Some(PgType::Date)
     } else if shape == chrono::NaiveTime::SHAPE {
         Some(PgType::Time)
     } else if shape == uuid::Uuid::SHAPE {

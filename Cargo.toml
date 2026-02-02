@@ -20,6 +20,7 @@ dibs-proto = { path = "crates/dibs-proto" }
 dibs-query-gen = { path = "crates/dibs-query-gen" }
 dibs-query-schema = { path = "crates/dibs-query-schema" }
 dibs-db-schema = { path = "crates/dibs-db-schema" }
+dibs-jsonb = { path = "crates/dibs-jsonb" }
 dibs-runtime = { path = "crates/dibs-runtime" }
 dockside = { path = "crates/dockside" }
 

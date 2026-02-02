@@ -1493,6 +1493,7 @@ name = "facet-tokio-postgres"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dibs-jsonb",
  "facet",
  "facet-core",
  "facet-json",

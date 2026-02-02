@@ -95,29 +95,3 @@ fn test_index_column_parse_asc_nulls_first() {
     assert_eq!(col.order, SortOrder::Asc);
     assert_eq!(col.nulls, NullsOrder::First);
 }
-
-#[test]
-fn test_index_column_to_sql() {
-    // Simple column
-    let col = IndexColumn::new("name");
-    assert_eq!(index_column_to_sql(&col), "\"name\"");
-
-    // DESC
-    let col = IndexColumn::desc("created_at");
-    assert_eq!(index_column_to_sql(&col), "\"created_at\" DESC");
-
-    // NULLS FIRST
-    let col = IndexColumn::nulls_first("reminder_sent_at");
-    assert_eq!(
-        index_column_to_sql(&col),
-        "\"reminder_sent_at\" NULLS FIRST"
-    );
-
-    // DESC NULLS LAST
-    let col = IndexColumn {
-        name: "priority".to_string(),
-        order: SortOrder::Desc,
-        nulls: NullsOrder::Last,
-    };
-    assert_eq!(index_column_to_sql(&col), "\"priority\" DESC NULLS LAST");
-}

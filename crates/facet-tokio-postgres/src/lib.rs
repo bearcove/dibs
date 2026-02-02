@@ -21,12 +21,10 @@
 //! let user: User = from_row(&row)?;
 //! ```
 
-#[cfg(feature = "jsonb")]
 mod jsonb;
-#[cfg(feature = "jsonb")]
-pub use jsonb::Jsonb;
-#[cfg(feature = "jsonb")]
 use jsonb::{OptionalRawJsonb, RawJsonb};
+
+pub use dibs_jsonb::Jsonb;
 
 extern crate alloc;
 
@@ -73,7 +71,6 @@ pub enum Error {
         shape: &'static Shape,
     },
     /// JSONB deserialization error
-    #[cfg(feature = "jsonb")]
     Jsonb {
         /// Name of the column
         column: String,
@@ -103,7 +100,6 @@ impl core::fmt::Display for Error {
             Error::UnsupportedType { field, shape } => {
                 write!(f, "unsupported type for field '{field}': {shape}")
             }
-            #[cfg(feature = "jsonb")]
             Error::Jsonb { column, message } => {
                 write!(f, "JSONB error for column '{column}': {message}")
             }
@@ -370,27 +366,26 @@ fn deserialize_column(
 
         // rust_decimal::Decimal for NUMERIC columns
         #[cfg(feature = "rust_decimal")]
-        _ if shape.type_identifier == "Decimal" => {
+        _ if shape == rust_decimal::Decimal::SHAPE => {
             let val: rust_decimal::Decimal = get_column(row, column_idx, column_name, shape)?;
             partial = partial.set(val)?;
         }
 
         // jiff::Timestamp for TIMESTAMPTZ columns
         #[cfg(feature = "jiff02")]
-        _ if shape.type_identifier == "Timestamp" && shape.module_path == Some("jiff") => {
+        _ if shape == jiff::Timestamp::SHAPE => {
             let val: jiff::Timestamp = get_column(row, column_idx, column_name, shape)?;
             partial = partial.set(val)?;
         }
 
         // jiff::civil::DateTime for TIMESTAMP (without timezone) columns
         #[cfg(feature = "jiff02")]
-        _ if shape.type_identifier == "DateTime" && shape.module_path == Some("jiff") => {
+        _ if shape == jiff::civil::DateTime::SHAPE => {
             let val: jiff::civil::DateTime = get_column(row, column_idx, column_name, shape)?;
             partial = partial.set(val)?;
         }
 
         // JSONB columns via Jsonb<T> wrapper
-        #[cfg(feature = "jsonb")]
         _ if shape.decl_id == Jsonb::<()>::SHAPE.decl_id => {
             partial = deserialize_jsonb_column(row, column_idx, column_name, partial, shape)?;
         }
@@ -542,7 +537,6 @@ fn deserialize_option_column(
             try_option!(jiff::civil::DateTime)
         }
         // Option<Jsonb<T>>
-        #[cfg(feature = "jsonb")]
         _ if inner_shape.decl_id == Jsonb::<()>::SHAPE.decl_id => {
             // Read JSONB as optional raw bytes using our custom OptionalRawJsonb type
             let val: OptionalRawJsonb = get_column(row, column_idx, column_name, shape)?;
@@ -597,7 +591,6 @@ where
 }
 
 /// Deserialize a JSONB column into a Jsonb<T> wrapper.
-#[cfg(feature = "jsonb")]
 fn deserialize_jsonb_column(
     row: &Row,
     column_idx: usize,
@@ -611,7 +604,6 @@ fn deserialize_jsonb_column(
 }
 
 /// Deserialize JSONB bytes into a Jsonb<T> wrapper.
-#[cfg(feature = "jsonb")]
 fn deserialize_jsonb_bytes(
     raw_bytes: &[u8],
     mut partial: Partial<'static, false>,
