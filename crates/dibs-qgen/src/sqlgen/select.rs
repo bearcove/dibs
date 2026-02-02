@@ -32,7 +32,7 @@ pub fn generate_select_sql(
     let plan = planner.plan(query)?;
 
     let mut sql = String::new();
-    let mut param_order: Vec<ParamName> = Vec::new();
+    let mut param_order: Vec<String> = Vec::new();
     let mut param_idx = 1;
     let mut column_order: HashMap<ColumnName, usize> = HashMap::new();
 
@@ -145,7 +145,7 @@ pub fn generate_select_sql(
 
     Ok(GeneratedSelect {
         sql,
-        param_order,
+        param_order: param_order.into_iter().map(|s| s.into()).collect(),
         plan,
         column_order,
     })

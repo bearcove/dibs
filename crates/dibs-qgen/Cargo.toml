@@ -26,3 +26,4 @@ facet-testhelpers.workspace = true
 dockside.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
+insta.workspace = true

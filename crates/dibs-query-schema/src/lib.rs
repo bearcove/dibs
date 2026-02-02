@@ -272,7 +272,7 @@ pub struct OrderBy {
 }
 
 /// WHERE clause - filter conditions.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Where {
     #[facet(flatten)]
     pub filters: IndexMap<Meta<ColumnName>, FilterValue>,
@@ -292,7 +292,7 @@ pub struct Where {
 /// - `@key-exists($param)` for `?` operator (key exists, typically JSONB)
 ///
 /// Bare scalars (like `$handle`) are treated as equality filters via `#[facet(other)]`.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "kebab-case")]
 #[repr(u8)]
 pub enum FilterValue {
@@ -333,14 +333,14 @@ pub enum FilterValue {
 }
 
 /// Query parameters.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Params {
     #[facet(flatten)]
     pub params: IndexMap<Meta<ParamName>, ParamType>,
 }
 
 /// Parameter type.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum ParamType {
@@ -401,7 +401,7 @@ pub struct Relation {
 }
 
 /// An INSERT declaration.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Insert {
     /// Query parameters.
     pub params: Option<Params>,
@@ -414,7 +414,7 @@ pub struct Insert {
 }
 
 /// An UPSERT declaration (INSERT ... ON CONFLICT ... DO UPDATE).
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Upsert {
     /// Query parameters.
     pub params: Option<Params>,
@@ -442,7 +442,7 @@ pub struct Upsert {
 ///   returning {id, handle, status}
 /// }
 /// ```
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct InsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
@@ -472,7 +472,7 @@ pub struct InsertMany {
 ///   returning {id, handle, status}
 /// }
 /// ```
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct UpsertMany {
     /// Query parameters - each becomes an array parameter.
     pub params: Option<Params>,
@@ -488,7 +488,7 @@ pub struct UpsertMany {
 }
 
 /// An UPDATE declaration.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Update {
     /// Query parameters.
     pub params: Option<Params>,
@@ -504,7 +504,7 @@ pub struct Update {
 }
 
 /// A DELETE declaration.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Delete {
     /// Query parameters.
     pub params: Option<Params>,
@@ -518,7 +518,7 @@ pub struct Delete {
 }
 
 /// Values clause for INSERT/UPDATE.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Values {
     /// Column name -> value expression. None means use param with same name ($column_name).
     #[facet(flatten)]
@@ -526,7 +526,7 @@ pub struct Values {
 }
 
 /// Payload of a value expression - can be scalar or sequence.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 #[facet(untagged)]
 #[repr(u8)]
 pub enum Payload {
@@ -542,7 +542,7 @@ pub enum Payload {
 /// - `@default` - the DEFAULT keyword
 /// - `@funcname` or `@funcname(args...)` - SQL function calls like NOW(), COALESCE(), etc.
 /// - Bare scalars - parameter references ($name) or literals
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum ValueExpr {
@@ -562,7 +562,7 @@ pub enum ValueExpr {
 }
 
 /// ON CONFLICT clause for UPSERT.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct OnConflict {
     /// Target columns for conflict detection.
     pub target: ConflictTarget,
@@ -571,21 +571,21 @@ pub struct OnConflict {
 }
 
 /// Conflict target columns.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct ConflictTarget {
     #[facet(flatten)]
     pub columns: IndexMap<Meta<ColumnName>, ()>,
 }
 
 /// Columns to update on conflict.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct ConflictUpdate {
     #[facet(flatten)]
     pub columns: IndexMap<Meta<ColumnName>, Option<UpdateValue>>,
 }
 
 /// Value for an update column - mirrors `ValueExpr`.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum UpdateValue {
@@ -602,7 +602,7 @@ pub enum UpdateValue {
 }
 
 /// RETURNING clause.
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct Returning {
     #[facet(flatten)]
     pub columns: IndexMap<Meta<ColumnName>, ()>,
