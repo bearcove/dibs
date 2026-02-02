@@ -28,141 +28,10 @@ fn escape_sql_string(s: &str) -> String {
     s.replace('\'', "''")
 }
 
-/// Generate SQL for a simple single-table query (no relations).
-pub fn generate_simple_sql(query: &Query) -> Result<GeneratedSql, QueryGenError> {
-    let mut sql = String::new();
-    let mut param_order = Vec::new();
-    let mut param_idx = 1;
-    let mut column_order = std::collections::HashMap::new();
-
-    // SELECT
-    sql.push_str("SELECT ");
-
-    // DISTINCT or DISTINCT ON
-    if let Some(distinct_on) = &query.distinct_on {
-        sql.push_str("DISTINCT ON (");
-        let distinct_cols: Vec<_> = distinct_on
-            .0
-            .iter()
-            .map(|col_meta| format!("\"{}\"", col_meta.as_str()))
-            .collect();
-        sql.push_str(&distinct_cols.join(", "));
-        sql.push_str(") ");
-    } else if let Some(distinct_meta) = &query.distinct {
-        if distinct_meta.get() {
-            sql.push_str("DISTINCT ");
-        }
-    }
-
-    // Get columns from select clause
-    let columns: Vec<_> = if let Some(select) = &query.select {
-        select
-            .columns()
-            .map(|(name_meta, _)| name_meta.value.clone())
-            .collect()
-    } else {
-        vec![]
-    };
-
-    // Build column_order map
-    for (idx, col_name) in columns.iter().enumerate() {
-        column_order.insert(col_name.clone(), idx);
-    }
-
-    let formatted_columns: Vec<_> = columns.iter().map(|name| format!("\"{}\"", name)).collect();
-
-    if formatted_columns.is_empty() {
-        sql.push('*');
-    } else {
-        sql.push_str(&formatted_columns.join(", "));
-    }
-
-    // FROM
-    if let Some(from_meta) = &query.from {
-        sql.push_str(" FROM \"");
-        sql.push_str(&from_meta.value);
-        sql.push('"');
-    }
-
-    // WHERE
-    if let Some(where_clause) = &query.where_clause {
-        if !where_clause.filters.is_empty() {
-            sql.push_str(" WHERE ");
-            let mut conditions = Vec::new();
-            for (col_meta, filter_value) in &where_clause.filters {
-                let col = col_meta.as_str();
-                let (cond, new_idx) =
-                    format_filter_value(col, filter_value, param_idx, &mut param_order)?;
-                param_idx = new_idx;
-                conditions.push(cond);
-            }
-            sql.push_str(&conditions.join(" AND "));
-        }
-    }
-
-    // ORDER BY
-    if let Some(order_by) = &query.order_by {
-        if !order_by.columns.is_empty() {
-            sql.push_str(" ORDER BY ");
-            let orders: Vec<_> = order_by
-                .columns
-                .iter()
-                .map(|(col_meta, dir_opt)| {
-                    let dir =
-                        if let Some(dir_str) = dir_opt.as_ref().and_then(|m| m.value_as_deref()) {
-                            if dir_str == "desc" { "DESC" } else { "ASC" }
-                        } else {
-                            "ASC"
-                        };
-                    format!("\"{}\" {}", col_meta.as_str(), dir)
-                })
-                .collect();
-            sql.push_str(&orders.join(", "));
-        }
-    }
-
-    // LIMIT
-    if let Some(limit_meta) = &query.limit {
-        sql.push_str(" LIMIT ");
-        let limit_str = &limit_meta.value;
-        if limit_str.starts_with('$') {
-            // Parameter reference
-            param_order.push(limit_str[1..].to_string());
-            sql.push_str(&format!("${}", param_idx));
-            param_idx += 1;
-        } else {
-            // Literal value
-            sql.push_str(limit_str);
-        }
-    }
-
-    // OFFSET
-    if let Some(offset_meta) = &query.offset {
-        sql.push_str(" OFFSET ");
-        let offset_str = &offset_meta.value;
-        if offset_str.starts_with('$') {
-            // Parameter reference
-            param_order.push(offset_str[1..].to_string());
-            sql.push_str(&format!("${}", param_idx));
-            param_idx += 1;
-        } else {
-            // Literal value
-            sql.push_str(offset_str);
-        }
-    }
-
-    Ok(GeneratedSql {
-        sql,
-        param_order,
-        plan: None,
-        column_order,
-    })
-}
-
 /// Generate SQL for a query with optional JOINs using the planner.
 ///
 /// If schema is None or the query has no relations/COUNT fields, falls back to simple SQL generation.
-pub fn generate_sql_with_joins(
+pub fn generate_sql(
     query: &Query,
     schema: Option<&PlannerSchema>,
 ) -> Result<GeneratedSql, crate::planner::PlanError> {
@@ -172,11 +41,6 @@ pub fn generate_sql_with_joins(
         .as_ref()
         .map(|sel| sel.has_relations() || sel.has_count())
         .unwrap_or(false);
-
-    if !needs_planner || schema.is_none() {
-        // Fall back to simple SQL generation
-        return generate_simple_sql(query);
-    }
 
     // Plan the query
     let planner = QueryPlanner::new(schema.unwrap());

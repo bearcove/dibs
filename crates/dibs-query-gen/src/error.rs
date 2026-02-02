@@ -1,21 +1,47 @@
 //! Query generation errors.
 
+use dibs_query_schema::Span;
 use std::fmt;
 
-/// Error type for query generation.
+// ============================================================================
+// Error Handling Types
+// ============================================================================
+
+/// Error during code generation.
+/// Carries span information for proper error reporting.
+#[derive(Clone)]
+pub struct QueryGenError {
+    /// Location in the source .styx file
+    pub span: Span,
+    /// The original source code (for rendering diagnostics)
+    pub source: String,
+    /// Error classification and details
+    pub kind: ErrorKind,
+}
+
+/// Error classification for query generation.
 #[derive(Debug, Clone)]
-pub enum QueryGenError {
-    /// Missing or invalid filter arguments.
-    InvalidFilterArgs { filter: String, reason: String },
+pub enum ErrorKind {
+    ColumnNotFound {
+        table: String,
+        column: String,
+    },
+    TableNotFound {
+        table: String,
+    },
+    SchemaMismatch {
+        table: String,
+        column: String,
+        reason: String,
+    },
+    PlanMissing {
+        reason: String,
+    },
 }
 
 impl fmt::Display for QueryGenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            QueryGenError::InvalidFilterArgs { filter, reason } => {
-                write!(f, "Invalid arguments for @{}: {}", filter, reason)
-            }
-        }
+        write!(f, "{:?}", self.kind)
     }
 }
 

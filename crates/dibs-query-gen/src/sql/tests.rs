@@ -90,6 +90,10 @@ AllProducts @query{
     let file = parse_query_file("<test>", source).unwrap();
     let sql = generate_simple_sql(get_first_query(&file));
 
+    // TODO: These tests are absolute trash because we use index map, we don't use hash map and also
+    // they're just like checking we contain thing. What we should do in fact is just have snapshot
+    // testing honestly.
+    //
     // Column order is non-deterministic due to HashMap iteration
     assert!(sql.sql.starts_with("SELECT "));
     assert!(sql.sql.contains(r#""id""#));
@@ -546,7 +550,7 @@ ProductWithTranslation @query{
         },
     );
 
-    let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
+    let sql = generate_sql(get_first_query(&file), Some(&schema)).unwrap();
 
     // Check SELECT
     assert!(sql.sql.contains("\"t0\".\"id\""));
@@ -619,7 +623,7 @@ ProductWithEnglishTranslation @query{
         },
     );
 
-    let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
+    let sql = generate_sql(get_first_query(&file), Some(&schema)).unwrap();
 
     // Check that relation filter is in the ON clause
     assert!(
@@ -678,7 +682,7 @@ ProductWithTranslation @query{
         },
     );
 
-    let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
+    let sql = generate_sql(get_first_query(&file), Some(&schema)).unwrap();
 
     // Check that relation filter is in the ON clause with param placeholder
     assert!(
@@ -741,7 +745,7 @@ ProductWithTranslation @query{
         },
     );
 
-    let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
+    let sql = generate_sql(get_first_query(&file), Some(&schema)).unwrap();
 
     // Relation filter should be $1 (comes first in FROM clause)
     assert!(
@@ -922,7 +926,7 @@ ProductWithLatestTranslation @query{
         },
     );
 
-    let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
+    let sql = generate_sql(get_first_query(&file), Some(&schema)).unwrap();
 
     // Should use LATERAL join for first:true with order_by
     assert!(
@@ -1003,7 +1007,7 @@ ProductWithLatestEnglishTranslation @query{
         },
     );
 
-    let sql = generate_sql_with_joins(get_first_query(&file), Some(&schema)).unwrap();
+    let sql = generate_sql(get_first_query(&file), Some(&schema)).unwrap();
 
     // Should use LATERAL
     assert!(
