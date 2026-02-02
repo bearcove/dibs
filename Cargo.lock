@@ -1025,6 +1025,8 @@ dependencies = [
 name = "dibs-query-gen"
 version = "0.1.0"
 dependencies = [
+ "ariadne 0.6.0",
+ "camino",
  "codegen",
  "dibs-query-schema",
  "dibs-sql",
