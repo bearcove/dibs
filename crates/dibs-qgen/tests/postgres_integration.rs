@@ -706,7 +706,6 @@ ProductWithVariantCount @select{
 }
 
 #[tokio::test]
-#[ignore = "relation-level WHERE clauses not yet implemented"]
 async fn test_relation_where_literal() {
     let (_container, client) = setup_postgres().await;
     create_test_tables(&client).await;
@@ -782,7 +781,6 @@ ProductWithEnglishTranslation @select{
 }
 
 #[tokio::test]
-#[ignore = "relation-level WHERE clauses not yet implemented"]
 async fn test_relation_where_param() {
     let (_container, client) = setup_postgres().await;
     create_test_tables(&client).await;
@@ -851,7 +849,6 @@ ProductWithTranslationByLocale @select{
 }
 
 #[tokio::test]
-#[ignore = "relation-level WHERE clauses not yet implemented"]
 async fn test_relation_where_with_base_where() {
     let (_container, client) = setup_postgres().await;
     create_test_tables(&client).await;

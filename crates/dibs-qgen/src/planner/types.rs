@@ -91,10 +91,30 @@ pub struct JoinClause {
     pub alias: String,
     /// ON condition: (left_col, right_col)
     pub on_condition: (String, String),
+    /// Additional conditions for the ON clause (from relation-level WHERE)
+    pub extra_conditions: Vec<JoinCondition>,
     /// Whether this is a first:true relation (affects LATERAL generation)
     pub first: bool,
     /// Columns selected from this join (needed for LATERAL subquery)
     pub select_columns: Vec<ColumnName>,
+}
+
+/// An extra condition in a JOIN ON clause.
+#[derive(Debug, Clone)]
+pub struct JoinCondition {
+    /// The column being filtered
+    pub column: ColumnName,
+    /// The value or parameter (e.g., "'en'" or "$1")
+    pub value: JoinConditionValue,
+}
+
+/// Value for a JOIN condition.
+#[derive(Debug, Clone)]
+pub enum JoinConditionValue {
+    /// A literal string value (will be quoted)
+    Literal(String),
+    /// A parameter reference (e.g., $1)
+    Param(dibs_sql::ParamName),
 }
 
 /// JOIN type.

@@ -48,7 +48,7 @@ fn format_filter(
     column: &str,
     filter_value: &dibs_query_schema::FilterValue,
     mut param_idx: usize,
-    param_order: &mut Vec<String>,
+    param_order: &mut Vec<dibs_sql::ParamName>,
 ) -> (String, usize) {
     use dibs_query_schema::FilterValue;
 
@@ -80,12 +80,12 @@ fn format_filter(
         op: &str,
         args: &[dibs_query_schema::Meta<String>],
         param_idx: &mut usize,
-        param_order: &mut Vec<String>,
+        param_order: &mut Vec<dibs_sql::ParamName>,
     ) -> String {
         if let Some(arg) = args.first() {
             let (is_param, value) = parse_arg(arg);
             if is_param {
-                param_order.push(value.to_string());
+                param_order.push(value.into());
                 let s = format!("{} {} ${}", col, op, *param_idx);
                 *param_idx += 1;
                 s
@@ -106,7 +106,7 @@ fn format_filter(
             if let Some(meta) = opt_meta {
                 let (is_param, value) = parse_arg(meta);
                 if is_param {
-                    param_order.push(value.to_string());
+                    param_order.push(value.into());
                     let s = format!("{} = ${}", col, param_idx);
                     param_idx += 1;
                     s
@@ -133,7 +133,7 @@ fn format_filter(
             if let Some(arg) = args.first() {
                 let (is_param, value) = parse_arg(arg);
                 if is_param {
-                    param_order.push(value.to_string());
+                    param_order.push(value.into());
                     let s = format!("{} = ANY(${})", col, param_idx);
                     param_idx += 1;
                     s

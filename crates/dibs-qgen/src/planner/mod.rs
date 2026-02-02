@@ -122,6 +122,17 @@ impl<'a> QueryPlanner<'a> {
             join.first = relation.is_first();
             join.select_columns = join_select_columns;
 
+            // Add extra conditions from relation-level WHERE clause
+            if let Some(where_clause) = &relation.where_clause {
+                for (col_meta, filter_value) in &where_clause.filters {
+                    if let Some(condition) =
+                        Self::filter_to_join_condition(&col_meta.value, filter_value)
+                    {
+                        join.extra_conditions.push(condition);
+                    }
+                }
+            }
+
             plan.add_join(join);
 
             // Build path for nested fields
@@ -234,6 +245,17 @@ impl<'a> QueryPlanner<'a> {
             join.first = relation.is_first();
             join.select_columns = join_select_columns;
 
+            // Add extra conditions from relation-level WHERE clause
+            if let Some(where_clause) = &relation.where_clause {
+                for (col_meta, filter_value) in &where_clause.filters {
+                    if let Some(condition) =
+                        Self::filter_to_join_condition(&col_meta.value, filter_value)
+                    {
+                        join.extra_conditions.push(condition);
+                    }
+                }
+            }
+
             plan.add_join(join);
 
             let mut nested_path = path.to_vec();
@@ -276,6 +298,34 @@ impl<'a> QueryPlanner<'a> {
         Ok(())
     }
 
+    /// Convert a filter value to a JoinCondition for relation-level WHERE.
+    /// Only supports simple equality filters (bare scalars).
+    fn filter_to_join_condition(
+        column: &ColumnName,
+        filter_value: &crate::FilterValue,
+    ) -> Option<JoinCondition> {
+        use crate::FilterValue;
+
+        match filter_value {
+            FilterValue::EqBare(Some(meta)) => {
+                let value_str = &meta.value;
+                let value = if value_str.starts_with('$') {
+                    // Parameter reference: $locale -> ParamName("locale")
+                    JoinConditionValue::Param(value_str[1..].into())
+                } else {
+                    // Literal value: "en" -> Literal("en")
+                    JoinConditionValue::Literal(value_str.clone())
+                };
+                Some(JoinCondition {
+                    column: column.clone(),
+                    value,
+                })
+            }
+            // TODO: Support other filter types if needed
+            _ => None,
+        }
+    }
+
     /// Resolve FK relationship between two tables.
     /// Returns the FkResolution with JoinClause, direction, and parent key column.
     fn resolve_fk(
@@ -308,6 +358,7 @@ impl<'a> QueryPlanner<'a> {
                             format!("{}.{}", parent_alias, parent_key_column),
                             format!("{}.{}", alias, fk.columns[0]),
                         ),
+                        extra_conditions: vec![],
                         first: false,
                         select_columns: vec![],
                     },
@@ -339,6 +390,7 @@ impl<'a> QueryPlanner<'a> {
                             format!("{}.{}", parent_alias, parent_key_column),
                             format!("{}.{}", alias, fk.references_columns[0]),
                         ),
+                        extra_conditions: vec![],
                         first: false,
                         select_columns: vec![],
                     },
@@ -395,9 +447,11 @@ impl QueryPlan {
     /// `param_idx` is updated to track the next $N placeholder.
     pub fn from_sql_with_params(
         &self,
-        _param_order: &mut Vec<String>,
-        _param_idx: &mut usize,
+        param_order: &mut Vec<dibs_sql::ParamName>,
+        param_idx: &mut usize,
     ) -> String {
+        use types::JoinConditionValue;
+
         let mut sql = format!("\"{}\" AS \"{}\"", self.from_table, self.from_alias);
 
         for join in &self.joins {
@@ -406,9 +460,33 @@ impl QueryPlan {
                 JoinType::Left => "LEFT JOIN",
                 JoinType::Inner => "INNER JOIN",
             };
+
+            // Build ON clause with base condition
+            let mut on_parts = vec![format!("{} = {}", join.on_condition.0, join.on_condition.1)];
+
+            // Add extra conditions from relation-level WHERE
+            for cond in &join.extra_conditions {
+                let value_sql = match &cond.value {
+                    JoinConditionValue::Literal(lit) => format!("'{}'", lit),
+                    JoinConditionValue::Param(param_name) => {
+                        param_order.push(param_name.clone());
+                        let placeholder = format!("${}", *param_idx);
+                        *param_idx += 1;
+                        placeholder
+                    }
+                };
+                on_parts.push(format!(
+                    "\"{}\".\"{}\" = {}",
+                    join.alias, cond.column, value_sql
+                ));
+            }
+
             sql.push_str(&format!(
-                " {} \"{}\" AS \"{}\" ON {} = {}",
-                join_type, join.table, join.alias, join.on_condition.0, join.on_condition.1
+                " {} \"{}\" AS \"{}\" ON {}",
+                join_type,
+                join.table,
+                join.alias,
+                on_parts.join(" AND ")
             ));
         }
 
