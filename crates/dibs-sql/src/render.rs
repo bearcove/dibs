@@ -11,9 +11,9 @@ use crate::{Ident, ParamName, RenderedSql, escape_string};
 
 /// Mutable parameter tracking state.
 struct ParamState {
-    /// Named parameters -> their assigned index
+    /// Named parameters mapped to their assigned positional index.
     params: IndexMap<ParamName, usize>,
-    /// Next parameter index to assign
+    /// Next parameter index to assign (starts at 1 for `$1`).
     next_param_idx: usize,
 }
 
@@ -35,8 +35,12 @@ impl ParamState {
     }
 }
 
-/// Rendering context that tracks parameters.
+/// Rendering context that tracks parameter assignment.
+///
+/// Uses interior mutability (`RefCell`) so that `Render::render` can take `&self`,
+/// enabling the `Fmt` wrapper to implement `Display`.
 pub struct RenderContext {
+    /// Parameter tracking state, wrapped for interior mutability.
     params: RefCell<ParamState>,
 }
 
@@ -64,8 +68,15 @@ impl Default for RenderContext {
     }
 }
 
-/// Wrapper for rendering a value via Display.
-pub struct Fmt<'a, T: Render>(&'a RenderContext, &'a T);
+/// Wrapper for rendering a `Render` type via `Display`.
+///
+/// Allows using `write!(f, "{}", Fmt(ctx, &expr))` in format strings.
+pub struct Fmt<'a, T: Render>(
+    /// The rendering context for parameter tracking.
+    &'a RenderContext,
+    /// The value to render.
+    &'a T,
+);
 
 impl<T: Render> fmt::Display for Fmt<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

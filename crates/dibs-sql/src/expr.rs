@@ -74,16 +74,24 @@ impl ColumnRef {
     }
 }
 
-/// Binary operators.
+/// Binary operators for SQL expressions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
+    /// Equality: `=`
     Eq,
+    /// Inequality: `<>`
     Ne,
+    /// Less than: `<`
     Lt,
+    /// Less than or equal: `<=`
     Le,
+    /// Greater than: `>`
     Gt,
+    /// Greater than or equal: `>=`
     Ge,
+    /// Logical AND
     And,
+    /// Logical OR
     Or,
 }
 

@@ -24,15 +24,22 @@ pub struct RenderedSql {
     pub params: Vec<ParamName>,
 }
 
-/// The name of a table (or table alias).
+/// The name of a table or table alias.
+///
+/// Used in FROM, JOIN, INSERT INTO, UPDATE, and DELETE clauses.
 #[braid]
 pub struct TableName;
 
-/// The name of a column (or column alias).
+/// The name of a column or column alias.
+///
+/// Used in SELECT, INSERT, UPDATE SET, and RETURNING clauses.
 #[braid]
 pub struct ColumnName;
 
 /// The name of a query parameter.
+///
+/// Parameters are named (e.g., `handle`) and automatically assigned
+/// positional placeholders (`$1`, `$2`, etc.) during rendering.
 #[braid]
 pub struct ParamName;
 
