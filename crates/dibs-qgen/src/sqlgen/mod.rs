@@ -50,29 +50,19 @@ fn format_filter(
     mut param_idx: usize,
     param_order: &mut Vec<dibs_sql::ParamName>,
 ) -> (String, usize) {
+    use crate::FilterArg;
     use dibs_query_schema::FilterValue;
 
     // Handle dotted column names (e.g., "t0.column") by quoting each part
     let col = if column.contains('.') {
         column
             .split('.')
-            .map(|part| format!("\"{}\"", part))
+            .map(|part| format!("\"{part}\""))
             .collect::<Vec<_>>()
             .join(".")
     } else {
-        format!("\"{}\"", column)
+        format!("\"{column}\"")
     };
-
-    /// Extract param name or literal from a Meta<String>.
-    /// Returns (is_param, name_or_value).
-    fn parse_arg(arg: &dibs_query_schema::Meta<String>) -> (bool, &str) {
-        let s = arg.value.as_str();
-        if let Some(name) = s.strip_prefix('$') {
-            (true, name)
-        } else {
-            (false, s)
-        }
-    }
 
     /// Format a comparison operator with a single argument.
     fn format_comparison(
@@ -82,40 +72,46 @@ fn format_filter(
         param_idx: &mut usize,
         param_order: &mut Vec<dibs_sql::ParamName>,
     ) -> String {
+        use crate::FilterArg;
+
         if let Some(arg) = args.first() {
-            let (is_param, value) = parse_arg(arg);
-            if is_param {
-                param_order.push(value.into());
-                let s = format!("{} {} ${}", col, op, *param_idx);
-                *param_idx += 1;
-                s
-            } else {
-                let escaped = value.replace('\'', "''");
-                format!("{} {} '{}'", col, op, escaped)
+            match FilterArg::parse(&arg.value) {
+                FilterArg::Variable(name) => {
+                    param_order.push(name.into());
+                    let s = format!("{col} {op} ${}", *param_idx);
+                    *param_idx += 1;
+                    s
+                }
+                FilterArg::Literal(value) => {
+                    let escaped = value.replace('\'', "''");
+                    format!("{col} {op} '{escaped}'")
+                }
             }
         } else {
-            format!("{} {} NULL", col, op)
+            format!("{col} {op} NULL")
         }
     }
 
     let result = match filter_value {
-        FilterValue::Null => format!("{} IS NULL", col),
-        FilterValue::NotNull => format!("{} IS NOT NULL", col),
+        FilterValue::Null => format!("{col} IS NULL"),
+        FilterValue::NotNull => format!("{col} IS NOT NULL"),
         FilterValue::Eq(args) => format_comparison(&col, "=", args, &mut param_idx, param_order),
         FilterValue::EqBare(opt_meta) => {
             if let Some(meta) = opt_meta {
-                let (is_param, value) = parse_arg(meta);
-                if is_param {
-                    param_order.push(value.into());
-                    let s = format!("{} = ${}", col, param_idx);
-                    param_idx += 1;
-                    s
-                } else {
-                    let escaped = value.replace('\'', "''");
-                    format!("{} = '{}'", col, escaped)
+                match FilterArg::parse(&meta.value) {
+                    FilterArg::Variable(name) => {
+                        param_order.push(name.into());
+                        let s = format!("{col} = ${param_idx}");
+                        param_idx += 1;
+                        s
+                    }
+                    FilterArg::Literal(value) => {
+                        let escaped = value.replace('\'', "''");
+                        format!("{col} = '{escaped}'")
+                    }
                 }
             } else {
-                format!("{} IS NULL", col)
+                format!("{col} IS NULL")
             }
         }
         FilterValue::Ne(args) => format_comparison(&col, "!=", args, &mut param_idx, param_order),
@@ -131,17 +127,19 @@ fn format_filter(
         }
         FilterValue::In(args) => {
             if let Some(arg) = args.first() {
-                let (is_param, value) = parse_arg(arg);
-                if is_param {
-                    param_order.push(value.into());
-                    let s = format!("{} = ANY(${})", col, param_idx);
-                    param_idx += 1;
-                    s
-                } else {
-                    format!("{} = ANY(ARRAY[{}])", col, value)
+                match FilterArg::parse(&arg.value) {
+                    FilterArg::Variable(name) => {
+                        param_order.push(name.into());
+                        let s = format!("{col} = ANY(${param_idx})");
+                        param_idx += 1;
+                        s
+                    }
+                    FilterArg::Literal(value) => {
+                        format!("{col} = ANY(ARRAY[{value}])")
+                    }
                 }
             } else {
-                format!("{} = ANY(ARRAY[])", col)
+                format!("{col} = ANY(ARRAY[])")
             }
         }
         FilterValue::JsonGet(args) => {

@@ -76,7 +76,7 @@ pub fn generate_insert_many_sql(insert: &InsertMany) -> GeneratedInsertMany {
             .iter()
             .enumerate()
             .map(|(i, (name_meta, ty))| {
-                params.push(name_meta.value.clone().into());
+                params.push(name_meta.value.clone());
                 let pg_type = param_type_to_pg_array(ty);
                 format!("${}::{}", i + 1, pg_type)
             })

@@ -304,17 +304,13 @@ impl<'a> QueryPlanner<'a> {
         column: &ColumnName,
         filter_value: &crate::FilterValue,
     ) -> Option<JoinCondition> {
-        use crate::FilterValue;
+        use crate::{FilterArg, FilterValue};
 
         match filter_value {
             FilterValue::EqBare(Some(meta)) => {
-                let value_str = &meta.value;
-                let value = if value_str.starts_with('$') {
-                    // Parameter reference: $locale -> ParamName("locale")
-                    JoinConditionValue::Param(value_str[1..].into())
-                } else {
-                    // Literal value: "en" -> Literal("en")
-                    JoinConditionValue::Literal(value_str.clone())
+                let value = match FilterArg::parse(&meta.value) {
+                    FilterArg::Variable(name) => JoinConditionValue::Param(name.into()),
+                    FilterArg::Literal(lit) => JoinConditionValue::Literal(lit),
                 };
                 Some(JoinCondition {
                     column: column.clone(),

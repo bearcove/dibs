@@ -27,6 +27,37 @@ pub enum FilterArg {
     Literal(String),
 }
 
+impl FilterArg {
+    /// Parse a string into a FilterArg.
+    ///
+    /// If the string starts with `$`, it's a variable reference (the `$` is stripped).
+    /// Otherwise, it's a literal value.
+    pub fn parse(s: &str) -> Self {
+        if let Some(var_name) = s.strip_prefix('$') {
+            FilterArg::Variable(var_name.to_string())
+        } else {
+            FilterArg::Literal(s.to_string())
+        }
+    }
+
+    /// Returns true if this is a variable reference.
+    pub fn is_variable(&self) -> bool {
+        matches!(self, FilterArg::Variable(_))
+    }
+
+    /// Returns true if this is a literal value.
+    pub fn is_literal(&self) -> bool {
+        matches!(self, FilterArg::Literal(_))
+    }
+
+    /// Get the inner value (variable name without $ or literal value).
+    pub fn as_str(&self) -> &str {
+        match self {
+            FilterArg::Variable(s) | FilterArg::Literal(s) => s,
+        }
+    }
+}
+
 /// Specification for a filter function.
 pub struct FunctionSpec {
     pub name: &'static str,
@@ -59,50 +90,42 @@ impl FunctionSpec {
         // Parse each argument according to its spec
         let mut parsed = Vec::with_capacity(args.len());
         for (i, (arg_meta, spec)) in args.iter().zip(self.args.iter()).enumerate() {
-            let arg_str = arg_meta.as_str();
-            let is_var = arg_str.starts_with('$');
+            let filter_arg = FilterArg::parse(arg_meta.as_str());
 
-            let filter_arg = match spec {
+            // Validate against spec
+            match spec {
                 ArgSpec::VariableOrLiteral => {
-                    if is_var {
-                        FilterArg::Variable(arg_str[1..].to_string())
-                    } else {
-                        FilterArg::Literal(arg_str.to_string())
-                    }
+                    // Accepts both, no validation needed
                 }
                 ArgSpec::Variable => {
-                    if !is_var {
+                    if !filter_arg.is_variable() {
                         return Err(QError {
                             source: source.clone(),
                             span,
                             kind: QErrorKind::InvalidFilterArgType {
                                 filter: self.name.to_string(),
                                 reason: format!(
-                                    "argument {} must be a variable reference (starting with $), got literal",
-                                    i
+                                    "argument {i} must be a variable reference (starting with $), got literal",
                                 ),
                             },
                         });
                     }
-                    FilterArg::Variable(arg_str[1..].to_string())
                 }
                 ArgSpec::Literal => {
-                    if is_var {
+                    if !filter_arg.is_literal() {
                         return Err(QError {
                             source: source.clone(),
                             span,
                             kind: QErrorKind::InvalidFilterArgType {
                                 filter: self.name.to_string(),
                                 reason: format!(
-                                    "argument {} must be a literal value, got variable reference",
-                                    i
+                                    "argument {i} must be a literal value, got variable reference",
                                 ),
                             },
                         });
                     }
-                    FilterArg::Literal(arg_str.to_string())
                 }
-            };
+            }
 
             parsed.push(filter_arg);
         }

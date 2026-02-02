@@ -30,5 +30,6 @@ pub use sqlgen::{
 mod rustgen;
 pub use rustgen::{GeneratedCode, generate_rust_code};
 
-// Internal stuff
+// Filter argument parsing
 mod filter_spec;
+pub use filter_spec::FilterArg;

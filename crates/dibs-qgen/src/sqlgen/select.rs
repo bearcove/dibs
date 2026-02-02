@@ -145,7 +145,7 @@ pub fn generate_select_sql(
 
     Ok(GeneratedSelect {
         sql,
-        param_order: param_order.into_iter().map(|s| s.into()).collect(),
+        param_order,
         plan,
         column_order,
     })
