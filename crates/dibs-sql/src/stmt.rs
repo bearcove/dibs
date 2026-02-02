@@ -1,6 +1,7 @@
 //! SQL statements.
 
 use crate::expr::Expr;
+use crate::{ColumnName, TableName};
 
 /// A SQL statement.
 #[derive(Debug, Clone)]
@@ -27,9 +28,13 @@ pub struct SelectStmt {
 #[derive(Debug, Clone)]
 pub enum SelectColumn {
     /// A simple column reference
-    Expr { expr: Expr, alias: Option<String> },
+    Expr {
+        expr: Expr,
+        alias: Option<ColumnName>,
+    },
+
     /// All columns from a table: table.*
-    AllFrom(String),
+    AllFrom(TableName),
 }
 
 impl SelectColumn {
@@ -37,37 +42,37 @@ impl SelectColumn {
         SelectColumn::Expr { expr, alias: None }
     }
 
-    pub fn aliased(expr: Expr, alias: impl Into<String>) -> Self {
+    pub fn aliased(expr: Expr, alias: ColumnName) -> Self {
         SelectColumn::Expr {
             expr,
-            alias: Some(alias.into()),
+            alias: Some(alias),
         }
     }
 
-    pub fn all_from(table: impl Into<String>) -> Self {
-        SelectColumn::AllFrom(table.into())
+    pub fn all_from(table: TableName) -> Self {
+        SelectColumn::AllFrom(table)
     }
 }
 
 /// A FROM clause.
 #[derive(Debug, Clone)]
 pub struct FromClause {
-    pub table: String,
-    pub alias: Option<String>,
+    pub table: TableName,
+    pub alias: Option<TableName>,
 }
 
 impl FromClause {
-    pub fn table(name: impl Into<String>) -> Self {
+    pub fn table(name: TableName) -> Self {
         Self {
-            table: name.into(),
+            table: name,
             alias: None,
         }
     }
 
-    pub fn aliased(name: impl Into<String>, alias: impl Into<String>) -> Self {
+    pub fn aliased(name: TableName, alias: TableName) -> Self {
         Self {
-            table: name.into(),
-            alias: Some(alias.into()),
+            table: name,
+            alias: Some(alias),
         }
     }
 }
@@ -76,8 +81,8 @@ impl FromClause {
 #[derive(Debug, Clone)]
 pub struct Join {
     pub kind: JoinKind,
-    pub table: String,
-    pub alias: Option<String>,
+    pub table: TableName,
+    pub alias: Option<TableName>,
     pub on: Expr,
 }
 
@@ -141,18 +146,18 @@ pub enum NullsOrder {
 /// An INSERT statement.
 #[derive(Debug, Clone)]
 pub struct InsertStmt {
-    pub table: String,
-    pub columns: Vec<String>,
+    pub table: TableName,
+    pub columns: Vec<ColumnName>,
     pub values: Vec<Expr>,
     pub on_conflict: Option<OnConflict>,
-    pub returning: Vec<String>,
+    pub returning: Vec<ColumnName>,
 }
 
 /// ON CONFLICT clause for upsert.
 #[derive(Debug, Clone)]
 pub struct OnConflict {
     /// Conflict target columns
-    pub columns: Vec<String>,
+    pub columns: Vec<ColumnName>,
     /// What to do on conflict
     pub action: ConflictAction,
 }
@@ -169,16 +174,13 @@ pub enum ConflictAction {
 /// An assignment in UPDATE SET or ON CONFLICT DO UPDATE SET.
 #[derive(Debug, Clone)]
 pub struct UpdateAssignment {
-    pub column: String,
+    pub column: ColumnName,
     pub value: Expr,
 }
 
 impl UpdateAssignment {
-    pub fn new(column: impl Into<String>, value: Expr) -> Self {
-        Self {
-            column: column.into(),
-            value,
-        }
+    pub fn new(column: ColumnName, value: Expr) -> Self {
+        Self { column, value }
     }
 }
 
@@ -189,10 +191,10 @@ impl UpdateAssignment {
 /// An UPDATE statement.
 #[derive(Debug, Clone)]
 pub struct UpdateStmt {
-    pub table: String,
+    pub table: TableName,
     pub assignments: Vec<UpdateAssignment>,
     pub where_: Option<Expr>,
-    pub returning: Vec<String>,
+    pub returning: Vec<ColumnName>,
 }
 
 // ============================================================================
@@ -202,9 +204,9 @@ pub struct UpdateStmt {
 /// A DELETE statement.
 #[derive(Debug, Clone)]
 pub struct DeleteStmt {
-    pub table: String,
+    pub table: TableName,
     pub where_: Option<Expr>,
-    pub returning: Vec<String>,
+    pub returning: Vec<ColumnName>,
 }
 
 // ============================================================================
@@ -266,9 +268,9 @@ impl SelectStmt {
 }
 
 impl InsertStmt {
-    pub fn new(table: impl Into<String>) -> Self {
+    pub fn new(table: TableName) -> Self {
         Self {
-            table: table.into(),
+            table,
             columns: Vec::new(),
             values: Vec::new(),
             on_conflict: None,
@@ -276,8 +278,8 @@ impl InsertStmt {
         }
     }
 
-    pub fn column(mut self, name: impl Into<String>, value: Expr) -> Self {
-        self.columns.push(name.into());
+    pub fn column(mut self, name: ColumnName, value: Expr) -> Self {
+        self.columns.push(name);
         self.values.push(value);
         self
     }
@@ -287,23 +289,23 @@ impl InsertStmt {
         self
     }
 
-    pub fn returning(mut self, cols: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.returning.extend(cols.into_iter().map(Into::into));
+    pub fn returning(mut self, cols: impl IntoIterator<Item = ColumnName>) -> Self {
+        self.returning.extend(cols);
         self
     }
 }
 
 impl UpdateStmt {
-    pub fn new(table: impl Into<String>) -> Self {
+    pub fn new(table: TableName) -> Self {
         Self {
-            table: table.into(),
+            table,
             assignments: Vec::new(),
             where_: None,
             returning: Vec::new(),
         }
     }
 
-    pub fn set(mut self, column: impl Into<String>, value: Expr) -> Self {
+    pub fn set(mut self, column: ColumnName, value: Expr) -> Self {
         self.assignments.push(UpdateAssignment::new(column, value));
         self
     }
@@ -321,8 +323,8 @@ impl UpdateStmt {
         self
     }
 
-    pub fn returning(mut self, cols: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.returning.extend(cols.into_iter().map(Into::into));
+    pub fn returning(mut self, cols: impl IntoIterator<Item = ColumnName>) -> Self {
+        self.returning.extend(cols);
         self
     }
 }

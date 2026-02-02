@@ -1,10 +1,12 @@
 //! SQL expressions.
 
+use crate::{ColumnName, ParamName, TableName};
+
 /// A SQL expression.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     /// A parameter placeholder (e.g., $handle -> $1)
-    Param(String),
+    Param(ParamName),
     /// A column reference
     Column(ColumnRef),
     /// A string literal
@@ -32,7 +34,7 @@ pub enum Expr {
     /// Function call
     FnCall { name: String, args: Vec<Expr> },
     /// COUNT(table.*) for counting related rows
-    Count { table: String },
+    Count { table: TableName },
     /// Raw SQL (escape hatch)
     Raw(String),
 }
@@ -40,22 +42,22 @@ pub enum Expr {
 /// A column reference, optionally qualified with table/alias.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnRef {
-    pub table: Option<String>,
-    pub column: String,
+    pub table: Option<TableName>,
+    pub column: ColumnName,
 }
 
 impl ColumnRef {
-    pub fn new(column: impl Into<String>) -> Self {
+    pub fn new(column: ColumnName) -> Self {
         Self {
             table: None,
-            column: column.into(),
+            column,
         }
     }
 
-    pub fn qualified(table: impl Into<String>, column: impl Into<String>) -> Self {
+    pub fn qualified(table: TableName, column: ColumnName) -> Self {
         Self {
-            table: Some(table.into()),
-            column: column.into(),
+            table: Some(table),
+            column,
         }
     }
 }
@@ -90,15 +92,15 @@ impl BinOp {
 
 // Convenience constructors
 impl Expr {
-    pub fn param(name: impl Into<String>) -> Self {
-        Expr::Param(name.into())
+    pub fn param(name: ParamName) -> Self {
+        Expr::Param(name)
     }
 
-    pub fn column(name: impl Into<String>) -> Self {
+    pub fn column(name: ColumnName) -> Self {
         Expr::Column(ColumnRef::new(name))
     }
 
-    pub fn qualified_column(table: impl Into<String>, column: impl Into<String>) -> Self {
+    pub fn qualified_column(table: TableName, column: ColumnName) -> Self {
         Expr::Column(ColumnRef::qualified(table, column))
     }
 

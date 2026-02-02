@@ -8,6 +8,7 @@
 
 mod types;
 
+use dibs_db_schema::Schema;
 pub use types::*;
 
 use crate::{Query, Select};

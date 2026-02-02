@@ -33,13 +33,6 @@ pub fn generate_sql(
     query: &Query,
     schema: Option<&Schema>,
 ) -> Result<GeneratedSql, crate::planner::PlanError> {
-    // Check if query needs the planner (has relations or COUNT fields)
-    let needs_planner = query
-        .select
-        .as_ref()
-        .map(|sel| sel.has_relations() || sel.has_count())
-        .unwrap_or(false);
-
     // Plan the query
     let planner = QueryPlanner::new(schema.unwrap());
     let plan = planner.plan(query)?;

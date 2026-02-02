@@ -3,12 +3,15 @@
 //! Build SQL as a typed AST, then render to a string with automatic
 //! parameter numbering and formatting.
 
-mod expr;
-mod render;
-mod stmt;
+use strid::braid;
 
+mod expr;
 pub use expr::*;
+
+mod render;
 pub use render::*;
+
+mod stmt;
 pub use stmt::*;
 
 /// Result of rendering SQL.
@@ -16,9 +19,22 @@ pub use stmt::*;
 pub struct RenderedSql {
     /// The SQL string with $1, $2, etc. placeholders.
     pub sql: String,
+
     /// Parameter names in order (maps to $1, $2, etc.).
     pub params: Vec<String>,
 }
+
+/// The name of a table (or table alias).
+#[braid]
+pub struct TableName;
+
+/// The name of a column (or column alias).
+#[braid]
+pub struct ColumnName;
+
+/// The name of a query parameter.
+#[braid]
+pub struct ParamName;
 
 /// A PostgreSQL string literal wrapper.
 ///
