@@ -58,204 +58,173 @@ fn test_select_with_params() {
     );
 }
 
-// #[test]
-// fn test_select_with_join() {
-//     let stmt = SelectStmt::new()
-//         .columns([
-//             SelectColumn::expr(Expr::qualified_column("t0", "id")),
-//             SelectColumn::expr(Expr::qualified_column("t0", "handle")),
-//             SelectColumn::expr(Expr::qualified_column("t1", "title")),
-//             SelectColumn::expr(Expr::qualified_column("t1", "description")),
-//         ])
-//         .from(FromClause::aliased("products", "t0"))
-//         .join(Join {
-//             kind: JoinKind::Left,
-//             table: "product_translations".into(),
-//             alias: Some("t1".into()),
-//             on: Expr::qualified_column("t1", "product_id")
-//                 .eq(Expr::qualified_column("t0", "id"))
-//                 .and(Expr::qualified_column("t1", "locale").eq(Expr::param("locale"))),
-//         })
-//         .where_(Expr::qualified_column("t0", "handle").eq(Expr::param("handle")));
+#[test]
+fn test_select_with_join() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::expr(Expr::qualified_column("t0".into(), "id".into())),
+            SelectColumn::expr(Expr::qualified_column("t0".into(), "handle".into())),
+            SelectColumn::expr(Expr::qualified_column("t1".into(), "title".into())),
+            SelectColumn::expr(Expr::qualified_column("t1".into(), "description".into())),
+        ])
+        .from(FromClause::aliased("products".into(), "t0".into()))
+        .join(Join {
+            kind: JoinKind::Left,
+            table: "product_translations".into(),
+            alias: Some("t1".into()),
+            on: Expr::qualified_column("t1".into(), "product_id".into())
+                .eq(Expr::qualified_column("t0".into(), "id".into()))
+                .and(
+                    Expr::qualified_column("t1".into(), "locale".into())
+                        .eq(Expr::param("locale".into())),
+                ),
+        })
+        .where_(
+            Expr::qualified_column("t0".into(), "handle".into()).eq(Expr::param("handle".into())),
+        );
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     assert_eq!(result.params, vec!["locale", "handle"]);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(
+        result.params,
+        vec![ParamName::from("locale"), ParamName::from("handle")]
+    );
+}
 
-// #[test]
-// fn test_insert_simple() {
-//     let stmt = InsertStmt::new("products")
-//         .column("handle", Expr::param("handle"))
-//         .column("status", Expr::param("status"))
-//         .column("created_at", Expr::Now)
-//         .returning(["id", "handle", "status"]);
+#[test]
+fn test_insert_simple() {
+    let stmt = InsertStmt::new("products".into())
+        .column("handle".into(), Expr::param("handle".into()))
+        .column("status".into(), Expr::param("status".into()))
+        .column("created_at".into(), Expr::Now)
+        .returning(["id".into(), "handle".into(), "status".into()]);
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     assert_eq!(result.params, vec!["handle", "status"]);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(
+        result.params,
+        vec![ParamName::from("handle"), ParamName::from("status")]
+    );
+}
 
-// #[test]
-// fn test_insert_with_default() {
-//     let stmt = InsertStmt::new("products")
-//         .column("handle", Expr::param("handle"))
-//         .column("status", Expr::Default)
-//         .column("created_at", Expr::Now)
-//         .returning(["id"]);
+#[test]
+fn test_insert_with_default() {
+    let stmt = InsertStmt::new("products".into())
+        .column("handle".into(), Expr::param("handle".into()))
+        .column("status".into(), Expr::Default)
+        .column("created_at".into(), Expr::Now)
+        .returning(["id".into()]);
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     assert_eq!(result.params, vec!["handle"]);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(result.params, vec![ParamName::from("handle")]);
+}
 
-// #[test]
-// fn test_upsert() {
-//     let stmt = InsertStmt::new("products")
-//         .column("handle", Expr::param("handle"))
-//         .column("status", Expr::param("status"))
-//         .column("created_at", Expr::Now)
-//         .on_conflict(OnConflict {
-//             columns: vec!["handle".into()],
-//             action: ConflictAction::DoUpdate(vec![
-//                 UpdateAssignment::new("status", Expr::param("status")),
-//                 UpdateAssignment::new("updated_at", Expr::Now),
-//             ]),
-//         })
-//         .returning(["id", "handle", "status"]);
+#[test]
+fn test_upsert() {
+    let stmt = InsertStmt::new("products".into())
+        .column("handle".into(), Expr::param("handle".into()))
+        .column("status".into(), Expr::param("status".into()))
+        .column("created_at".into(), Expr::Now)
+        .on_conflict(OnConflict {
+            columns: vec!["handle".into()],
+            action: ConflictAction::DoUpdate(vec![
+                UpdateAssignment::new("status".into(), Expr::param("status".into())),
+                UpdateAssignment::new("updated_at".into(), Expr::Now),
+            ]),
+        })
+        .returning(["id".into(), "handle".into(), "status".into()]);
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     // Key: params should be deduped - status appears once
-//     assert_eq!(result.params, vec!["handle", "status"]);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    // Key: params should be deduped - status appears once
+    assert_eq!(
+        result.params,
+        vec![ParamName::from("handle"), ParamName::from("status")]
+    );
+}
 
-// #[test]
-// fn test_upsert_do_nothing() {
-//     let stmt = InsertStmt::new("products")
-//         .column("handle", Expr::param("handle"))
-//         .column("status", Expr::param("status"))
-//         .on_conflict(OnConflict {
-//             columns: vec!["handle".into()],
-//             action: ConflictAction::DoNothing,
-//         });
+#[test]
+fn test_upsert_do_nothing() {
+    let stmt = InsertStmt::new("products".into())
+        .column("handle".into(), Expr::param("handle".into()))
+        .column("status".into(), Expr::param("status".into()))
+        .on_conflict(OnConflict {
+            columns: vec!["handle".into()],
+            action: ConflictAction::DoNothing,
+        });
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
 
-// #[test]
-// fn test_update_simple() {
-//     let stmt = UpdateStmt::new("products")
-//         .set("status", Expr::param("status"))
-//         .set("updated_at", Expr::Now)
-//         .where_(Expr::column("handle").eq(Expr::param("handle")))
-//         .returning(["id", "handle", "status"]);
+#[test]
+fn test_update_simple() {
+    let stmt = UpdateStmt::new("products".into())
+        .set("status".into(), Expr::param("status".into()))
+        .set("updated_at".into(), Expr::Now)
+        .where_(Expr::column("handle".into()).eq(Expr::param("handle".into())))
+        .returning(["id".into(), "handle".into(), "status".into()]);
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     assert_eq!(result.params, vec!["status", "handle"]);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(
+        result.params,
+        vec![ParamName::from("status"), ParamName::from("handle")]
+    );
+}
 
-// #[test]
-// fn test_update_multiple_conditions() {
-//     let stmt = UpdateStmt::new("products")
-//         .set("deleted_at", Expr::Now)
-//         .where_(
-//             Expr::column("handle")
-//                 .eq(Expr::param("handle"))
-//                 .and(Expr::column("deleted_at").is_null()),
-//         )
-//         .returning(["id"]);
+#[test]
+fn test_update_multiple_conditions() {
+    let stmt = UpdateStmt::new("products".into())
+        .set("deleted_at".into(), Expr::Now)
+        .where_(
+            Expr::column("handle".into())
+                .eq(Expr::param("handle".into()))
+                .and(Expr::column("deleted_at".into()).is_null()),
+        )
+        .returning(["id".into()]);
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
 
-// #[test]
-// fn test_delete_simple() {
-//     let stmt = DeleteStmt::new("products")
-//         .where_(Expr::column("id").eq(Expr::param("id")))
-//         .returning(["id", "handle"]);
+#[test]
+fn test_delete_simple() {
+    let stmt = DeleteStmt::new("products".into())
+        .where_(Expr::column("id".into()).eq(Expr::param("id".into())))
+        .returning(["id".into(), "handle".into()]);
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     assert_eq!(result.params, vec!["id"]);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(result.params, vec![ParamName::from("id")]);
+}
 
-// #[test]
-// fn test_delete_no_returning() {
-//     let stmt = DeleteStmt::new("products").where_(Expr::column("deleted_at").is_not_null());
+#[test]
+fn test_delete_no_returning() {
+    let stmt =
+        DeleteStmt::new("products".into()).where_(Expr::column("deleted_at".into()).is_not_null());
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+}
 
-// #[test]
-// fn test_ilike_search() {
-//     let stmt = SelectStmt::new()
-//         .columns([
-//             SelectColumn::expr(Expr::column("id")),
-//             SelectColumn::expr(Expr::column("handle")),
-//         ])
-//         .from(FromClause::table("products"))
-//         .where_(Expr::column("handle").ilike(Expr::param("pattern")))
-//         .order_by(OrderBy::asc(Expr::column("handle")))
-//         .limit(Expr::param("limit"));
+#[test]
+fn test_ilike_search() {
+    let stmt = SelectStmt::new()
+        .columns([
+            SelectColumn::expr(Expr::column("id".into())),
+            SelectColumn::expr(Expr::column("handle".into())),
+        ])
+        .from(FromClause::table("products".into()))
+        .where_(Expr::column("handle".into()).ilike(Expr::param("pattern".into())))
+        .order_by(OrderBy::asc(Expr::column("handle".into())))
+        .limit(Expr::param("limit".into()));
 
-//     let result = render(&stmt);
-//     insta::assert_snapshot!(result.sql);
-//     assert_eq!(result.params, vec!["pattern", "limit"]);
-// }
-
-// #[test]
-// fn test_pretty_select() {
-//     let stmt = SelectStmt::new()
-//         .columns([
-//             SelectColumn::expr(Expr::column("id")),
-//             SelectColumn::expr(Expr::column("handle")),
-//             SelectColumn::expr(Expr::column("status")),
-//         ])
-//         .from(FromClause::table("products"))
-//         .where_(
-//             Expr::column("status")
-//                 .eq(Expr::String("active".into()))
-//                 .and(Expr::column("deleted_at").is_null()),
-//         )
-//         .order_by(OrderBy::desc(Expr::column("created_at")))
-//         .limit(Expr::Int(10));
-
-//     let result = render_pretty(&stmt);
-//     insta::assert_snapshot!(result.sql);
-// }
-
-// #[test]
-// fn test_pretty_insert() {
-//     let stmt = InsertStmt::new("products")
-//         .column("handle", Expr::param("handle"))
-//         .column("status", Expr::param("status"))
-//         .column("created_at", Expr::Now)
-//         .returning(["id", "handle", "status"]);
-
-//     let result = render_pretty(&stmt);
-//     insta::assert_snapshot!(result.sql);
-// }
-
-// #[test]
-// fn test_pretty_upsert() {
-//     let stmt = InsertStmt::new("products")
-//         .column("handle", Expr::param("handle"))
-//         .column("status", Expr::param("status"))
-//         .column("created_at", Expr::Now)
-//         .on_conflict(OnConflict {
-//             columns: vec!["handle".into()],
-//             action: ConflictAction::DoUpdate(vec![
-//                 UpdateAssignment::new("status", Expr::param("status")),
-//                 UpdateAssignment::new("updated_at", Expr::Now),
-//             ]),
-//         })
-//         .returning(["id", "handle", "status"]);
-
-//     let result = render_pretty(&stmt);
-//     insta::assert_snapshot!(result.sql);
-// }
+    let result = render(&stmt);
+    insta::assert_snapshot!(result.sql);
+    assert_eq!(
+        result.params,
+        vec![ParamName::from("pattern"), ParamName::from("limit")]
+    );
+}
