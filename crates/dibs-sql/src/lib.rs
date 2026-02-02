@@ -20,9 +20,61 @@ pub struct RenderedSql {
     pub params: Vec<String>,
 }
 
+/// A PostgreSQL string literal wrapper.
+///
+/// Display writes the value escaped and quoted with single quotes.
+///
+/// # Example
+/// ```
+/// use dibs_sql::Lit;
+/// assert_eq!(format!("{}", Lit("foo")), "'foo'");
+/// assert_eq!(format!("{}", Lit("it's")), "'it''s'");
+/// ```
+pub struct Lit<T: AsRef<str>>(pub T);
+
+impl<T: AsRef<str>> std::fmt::Display for Lit<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'")?;
+        for c in self.0.as_ref().chars() {
+            if c == '\'' {
+                write!(f, "''")?;
+            } else {
+                write!(f, "{}", c)?;
+            }
+        }
+        write!(f, "'")
+    }
+}
+
+/// A PostgreSQL identifier wrapper.
+///
+/// Display writes the value escaped and quoted with double quotes.
+///
+/// # Example
+/// ```
+/// use dibs_sql::Ident;
+/// assert_eq!(format!("{}", Ident("user")), "\"user\"");
+/// assert_eq!(format!("{}", Ident("bla\"h")), "\"bla\"\"h\"");
+/// ```
+pub struct Ident<T: AsRef<str>>(pub T);
+
+impl<T: AsRef<str>> std::fmt::Display for Ident<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"")?;
+        for c in self.0.as_ref().chars() {
+            if c == '"' {
+                write!(f, "\"\"")?;
+            } else {
+                write!(f, "{}", c)?;
+            }
+        }
+        write!(f, "\"")
+    }
+}
+
 /// Escape a string literal for SQL.
 pub fn escape_string(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
+    format!("{}", Lit(s))
 }
 
 /// Quote a PostgreSQL identifier.
@@ -30,7 +82,7 @@ pub fn escape_string(s: &str) -> String {
 /// Always quotes identifiers to avoid issues with reserved keywords like
 /// `user`, `order`, `table`, `group`, etc. Doubles any embedded quotes.
 pub fn quote_ident(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
+    format!("{}", Ident(name))
 }
 
 /// Generate a standard index name for a table and columns.

@@ -64,16 +64,18 @@ pub fn generate_sql(
     sql.push_str("SELECT ");
 
     // DISTINCT or DISTINCT ON
-    if !query.distinct_on.is_empty() {
-        sql.push_str("DISTINCT ON (");
-        let distinct_cols: Vec<_> = query
-            .distinct_on
-            .iter()
-            .map(|col| format!("\"t0\".\"{}\"", col))
-            .collect();
-        sql.push_str(&distinct_cols.join(", "));
-        sql.push_str(") ");
-    } else if query.distinct {
+    if let Some(distinct_on) = &query.distinct_on {
+        if !distinct_on.0.is_empty() {
+            sql.push_str("DISTINCT ON (");
+            let distinct_cols: Vec<_> = distinct_on
+                .0
+                .iter()
+                .map(|col| format!("\"t0\".\"{}\"", col.value))
+                .collect();
+            sql.push_str(&distinct_cols.join(", "));
+            sql.push_str(") ");
+        }
+    } else if query.distinct.as_ref().map(|m| m.value).unwrap_or(false) {
         sql.push_str("DISTINCT ");
     }
 
@@ -84,68 +86,71 @@ pub fn generate_sql(
     sql.push_str(&plan.from_sql_with_params(&mut param_order, &mut param_idx));
 
     // WHERE
-    if !query.filters.is_empty() {
-        sql.push_str(" WHERE ");
-        let conditions: Vec<_> = query
-            .filters
-            .iter()
-            .map(|f| {
-                // Prefix column with base table alias
-                let mut filter = f.clone();
-                filter.column = format!("t0.{}", f.column);
-                let (cond, new_idx) = format_filter(&filter, param_idx, &mut param_order);
-                param_idx = new_idx;
-                cond
-            })
-            .collect();
-        sql.push_str(&conditions.join(" AND "));
+    if let Some(where_clause) = &query.where_clause {
+        if !where_clause.filters.is_empty() {
+            sql.push_str(" WHERE ");
+            let conditions: Vec<_> = where_clause
+                .filters
+                .iter()
+                .map(|(col_meta, filter_value)| {
+                    // Prefix column with base table alias
+                    let column = format!("t0.{}", col_meta.value);
+                    let (cond, new_idx) =
+                        format_filter(&column, filter_value, param_idx, &mut param_order);
+                    param_idx = new_idx;
+                    cond
+                })
+                .collect();
+            sql.push_str(&conditions.join(" AND "));
+        }
     }
 
     // ORDER BY
-    if !query.order_by.is_empty() {
-        sql.push_str(" ORDER BY ");
-        let orders: Vec<_> = query
-            .order_by
-            .iter()
-            .map(|o| {
-                format!(
-                    "\"t0\".\"{}\" {}",
-                    o.column,
-                    match o.direction {
-                        SortDir::Asc => "ASC",
-                        SortDir::Desc => "DESC",
-                    }
-                )
-            })
-            .collect();
-        sql.push_str(&orders.join(", "));
+    if let Some(order_by) = &query.order_by {
+        if !order_by.columns.is_empty() {
+            sql.push_str(" ORDER BY ");
+            let orders: Vec<_> = order_by
+                .columns
+                .iter()
+                .map(|(col_meta, dir_opt)| {
+                    let dir = dir_opt.as_ref().map(|d| d.value.as_str()).unwrap_or("asc");
+                    let dir_sql = if dir.eq_ignore_ascii_case("desc") {
+                        "DESC"
+                    } else {
+                        "ASC"
+                    };
+                    format!("\"t0\".\"{}\" {}", col_meta.value, dir_sql)
+                })
+                .collect();
+            sql.push_str(&orders.join(", "));
+        }
     }
 
     // LIMIT
     if let Some(limit) = &query.limit {
         sql.push_str(" LIMIT ");
-        match limit {
-            Expr::Int(n) => sql.push_str(&n.to_string()),
-            Expr::Param(name) => {
-                param_order.push(name.clone());
-                sql.push_str(&format!("${}", param_idx));
-                param_idx += 1;
-            }
-            _ => sql.push_str("20"),
+        let limit_str = limit.value.as_str();
+        if let Some(param_name) = limit_str.strip_prefix('$') {
+            param_order.push(param_name.to_string());
+            sql.push_str(&format!("${}", param_idx));
+            param_idx += 1;
+        } else {
+            // Literal number
+            sql.push_str(limit_str);
         }
     }
 
     // OFFSET
     if let Some(offset) = &query.offset {
         sql.push_str(" OFFSET ");
-        match offset {
-            Expr::Int(n) => sql.push_str(&n.to_string()),
-            Expr::Param(name) => {
-                param_order.push(name.clone());
-                sql.push_str(&format!("${}", param_idx));
-                param_idx += 1;
-            }
-            _ => sql.push('0'),
+        let offset_str = offset.value.as_str();
+        if let Some(param_name) = offset_str.strip_prefix('$') {
+            param_order.push(param_name.to_string());
+            sql.push_str(&format!("${}", param_idx));
+            param_idx += 1;
+        } else {
+            // Literal number
+            sql.push_str(offset_str);
         }
     }
 
@@ -159,347 +164,121 @@ pub fn generate_sql(
     })
 }
 
-/// Format a filter value for the new schema structure.
-fn format_filter_value(
-    col: &str,
-    filter_value: &FilterValue,
-    mut param_idx: usize,
-    param_order: &mut Vec<String>,
-) -> Result<(String, usize), QError> {
-    let col_quoted = format!("\"{col}\"");
-    let mut used_param = false;
-
-    let result = match filter_value {
-        FilterValue::Null => format!("{col_quoted} IS NULL"),
-        FilterValue::NotNull => format!("{col_quoted} IS NOT NULL"),
-        FilterValue::EqBare(opt_meta) => {
-            if let Some(meta) = opt_meta {
-                let val_str = meta.as_str();
-                if val_str.starts_with('$') {
-                    param_order.push(val_str[1..].to_string());
-                    used_param = true;
-                    format!("{col_quoted} = ${param_idx}")
-                } else {
-                    let escaped = escape_sql_string(val_str);
-                    format!("{col_quoted} = '{escaped}'")
-                }
-            } else {
-                format!("{col_quoted} IS NULL")
-            }
-        }
-        FilterValue::Eq(args) => {
-            let parsed = EQ_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} = ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} = '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Ne(args) => {
-            let parsed = NE_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} != ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} != '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Lt(args) => {
-            let parsed = LT_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} < ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} < '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Lte(args) => {
-            let parsed = LTE_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} <= ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} <= '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Gt(args) => {
-            let parsed = GT_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} > ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} > '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Gte(args) => {
-            let parsed = GTE_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} >= ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} >= '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Like(args) => {
-            let parsed = LIKE_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} LIKE ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} LIKE '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Ilike(args) => {
-            let parsed = ILIKE_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} ILIKE ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} ILIKE '{escaped}'")
-                }
-            }
-        }
-        FilterValue::In(args) => {
-            let parsed = IN_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} = ANY(${param_idx})")
-                }
-                FilterArg::Literal(value) => {
-                    format!("{col_quoted} = ANY(ARRAY[{value}])")
-                }
-            }
-        }
-        FilterValue::JsonGet(args) => {
-            let parsed = JSON_GET_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} -> ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} -> '{escaped}'")
-                }
-            }
-        }
-        FilterValue::JsonGetText(args) => {
-            let parsed = JSON_GET_TEXT_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} ->> ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} ->> '{escaped}'")
-                }
-            }
-        }
-        FilterValue::Contains(args) => {
-            let parsed = CONTAINS_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} @> ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} @> '{escaped}'")
-                }
-            }
-        }
-        FilterValue::KeyExists(args) => {
-            let parsed = KEY_EXISTS_SPEC.parse_args(args)?;
-            match &parsed[0] {
-                FilterArg::Variable(var_name) => {
-                    param_order.push(var_name.clone());
-                    used_param = true;
-                    format!("{col_quoted} ? ${param_idx}")
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = escape_sql_string(value);
-                    format!("{col_quoted} ? '{escaped}'")
-                }
-            }
-        }
-    };
-
-    if used_param {
-        param_idx += 1;
-    }
-    Ok((result, param_idx))
-}
-
+/// Format a single filter condition from a column name and FilterValue.
+///
+/// Returns the SQL condition string and the updated param index.
 fn format_filter(
-    filter: &Filter,
+    column: &str,
+    filter_value: &dibs_query_schema::FilterValue,
     mut param_idx: usize,
     param_order: &mut Vec<String>,
 ) -> (String, usize) {
+    use dibs_query_schema::FilterValue;
+
     // Handle dotted column names (e.g., "t0.column") by quoting each part
-    let col = if filter.column.contains('.') {
-        filter
-            .column
+    let col = if column.contains('.') {
+        column
             .split('.')
             .map(|part| format!("\"{}\"", part))
             .collect::<Vec<_>>()
             .join(".")
     } else {
-        format!("\"{}\"", filter.column)
+        format!("\"{}\"", column)
     };
 
-    let result = match (&filter.op, &filter.value) {
-        (FilterOp::IsNull, _) => format!("{} IS NULL", col),
-        (FilterOp::IsNotNull, _) => format!("{} IS NOT NULL", col),
-        (FilterOp::Eq, Expr::Null) => format!("{} IS NULL", col),
-        (FilterOp::Ne, Expr::Null) => format!("{} IS NOT NULL", col),
-        (FilterOp::Eq, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} = ${}", col, param_idx);
-            param_idx += 1;
-            s
+    /// Extract param name or literal from a Meta<String>.
+    /// Returns (is_param, name_or_value).
+    fn parse_arg(arg: &dibs_query_schema::Meta<String>) -> (bool, &str) {
+        let s = arg.value.as_str();
+        if let Some(name) = s.strip_prefix('$') {
+            (true, name)
+        } else {
+            (false, s)
         }
-        (FilterOp::Eq, Expr::String(s)) => {
-            // Inline string literals directly - escape single quotes
-            let escaped = s.replace('\'', "''");
-            format!("{} = '{}'", col, escaped)
+    }
+
+    /// Format a comparison operator with a single argument.
+    fn format_comparison(
+        col: &str,
+        op: &str,
+        args: &[dibs_query_schema::Meta<String>],
+        param_idx: &mut usize,
+        param_order: &mut Vec<String>,
+    ) -> String {
+        if let Some(arg) = args.first() {
+            let (is_param, value) = parse_arg(arg);
+            if is_param {
+                param_order.push(value.to_string());
+                let s = format!("{} {} ${}", col, op, *param_idx);
+                *param_idx += 1;
+                s
+            } else {
+                let escaped = value.replace('\'', "''");
+                format!("{} {} '{}'", col, op, escaped)
+            }
+        } else {
+            format!("{} {} NULL", col, op)
         }
-        (FilterOp::Eq, Expr::Int(n)) => format!("{} = {}", col, n),
-        (FilterOp::Eq, Expr::Bool(b)) => format!("{} = {}", col, b),
-        (FilterOp::Ne, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} != ${}", col, param_idx);
-            param_idx += 1;
-            s
+    }
+
+    let result = match filter_value {
+        FilterValue::Null => format!("{} IS NULL", col),
+        FilterValue::NotNull => format!("{} IS NOT NULL", col),
+        FilterValue::Eq(args) => format_comparison(&col, "=", args, &mut param_idx, param_order),
+        FilterValue::EqBare(opt_meta) => {
+            if let Some(meta) = opt_meta {
+                let (is_param, value) = parse_arg(meta);
+                if is_param {
+                    param_order.push(value.to_string());
+                    let s = format!("{} = ${}", col, param_idx);
+                    param_idx += 1;
+                    s
+                } else {
+                    let escaped = value.replace('\'', "''");
+                    format!("{} = '{}'", col, escaped)
+                }
+            } else {
+                format!("{} IS NULL", col)
+            }
         }
-        (FilterOp::Lt, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} < ${}", col, param_idx);
-            param_idx += 1;
-            s
+        FilterValue::Ne(args) => format_comparison(&col, "!=", args, &mut param_idx, param_order),
+        FilterValue::Lt(args) => format_comparison(&col, "<", args, &mut param_idx, param_order),
+        FilterValue::Lte(args) => format_comparison(&col, "<=", args, &mut param_idx, param_order),
+        FilterValue::Gt(args) => format_comparison(&col, ">", args, &mut param_idx, param_order),
+        FilterValue::Gte(args) => format_comparison(&col, ">=", args, &mut param_idx, param_order),
+        FilterValue::Like(args) => {
+            format_comparison(&col, "LIKE", args, &mut param_idx, param_order)
         }
-        (FilterOp::Lte, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} <= ${}", col, param_idx);
-            param_idx += 1;
-            s
+        FilterValue::Ilike(args) => {
+            format_comparison(&col, "ILIKE", args, &mut param_idx, param_order)
         }
-        (FilterOp::Gt, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} > ${}", col, param_idx);
-            param_idx += 1;
-            s
+        FilterValue::In(args) => {
+            if let Some(arg) = args.first() {
+                let (is_param, value) = parse_arg(arg);
+                if is_param {
+                    param_order.push(value.to_string());
+                    let s = format!("{} = ANY(${})", col, param_idx);
+                    param_idx += 1;
+                    s
+                } else {
+                    format!("{} = ANY(ARRAY[{}])", col, value)
+                }
+            } else {
+                format!("{} = ANY(ARRAY[])", col)
+            }
         }
-        (FilterOp::Gte, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} >= ${}", col, param_idx);
-            param_idx += 1;
-            s
+        FilterValue::JsonGet(args) => {
+            format_comparison(&col, "->", args, &mut param_idx, param_order)
         }
-        (FilterOp::Like, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} LIKE ${}", col, param_idx);
-            param_idx += 1;
-            s
+        FilterValue::JsonGetText(args) => {
+            format_comparison(&col, "->>", args, &mut param_idx, param_order)
         }
-        (FilterOp::ILike, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} ILIKE ${}", col, param_idx);
-            param_idx += 1;
-            s
+        FilterValue::Contains(args) => {
+            format_comparison(&col, "@>", args, &mut param_idx, param_order)
         }
-        (FilterOp::In, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} = ANY(${})", col, param_idx);
-            param_idx += 1;
-            s
+        FilterValue::KeyExists(args) => {
+            format_comparison(&col, "?", args, &mut param_idx, param_order)
         }
-        (FilterOp::JsonGet, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} -> ${}", col, param_idx);
-            param_idx += 1;
-            s
-        }
-        (FilterOp::JsonGet, Expr::String(s)) => {
-            let escaped = s.replace('\'', "''");
-            format!("{} -> '{}'", col, escaped)
-        }
-        (FilterOp::JsonGetText, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} ->> ${}", col, param_idx);
-            param_idx += 1;
-            s
-        }
-        (FilterOp::JsonGetText, Expr::String(s)) => {
-            let escaped = s.replace('\'', "''");
-            format!("{} ->> '{}'", col, escaped)
-        }
-        (FilterOp::Contains, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} @> ${}", col, param_idx);
-            param_idx += 1;
-            s
-        }
-        (FilterOp::Contains, Expr::String(s)) => {
-            let escaped = s.replace('\'', "''");
-            format!("{} @> '{}'", col, escaped)
-        }
-        (FilterOp::KeyExists, Expr::Param(name)) => {
-            param_order.push(name.clone());
-            let s = format!("{} ? ${}", col, param_idx);
-            param_idx += 1;
-            s
-        }
-        (FilterOp::KeyExists, Expr::String(s)) => {
-            let escaped = s.replace('\'', "''");
-            format!("{} ? '{}'", col, escaped)
-        }
-        _ => format!("{} = TRUE", col), // fallback
     };
 
     (result, param_idx)
