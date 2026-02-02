@@ -1,9 +1,8 @@
 //! SQL generation from query schema types.
 
-use crate::error::QError;
-use crate::filter_spec::{FilterArg, *};
-use crate::planner::{QueryPlan, QueryPlanner, Schema};
-use crate::schema::*;
+use crate::{QError, QueryPlan, QueryPlanner};
+use dibs_db_schema::Schema;
+use dibs_query_schema::{ParamType, Query, ValueExpr};
 use dibs_sql::{
     BinOp as SqlBinOp, ConflictAction, DeleteStmt, Expr as SqlExpr, InsertStmt, OnConflict,
     UpdateAssignment, UpdateStmt, render,
@@ -21,11 +20,6 @@ pub struct GeneratedSql {
     /// Column names in SELECT order (for index-based access).
     /// Maps column names to their index in the result set.
     pub column_order: std::collections::HashMap<String, usize>,
-}
-
-/// Escape a SQL string literal by doubling single quotes.
-fn escape_sql_string(s: &str) -> String {
-    s.replace('\'', "''")
 }
 
 /// Generate SQL for a query with optional JOINs using the planner.

@@ -15,7 +15,7 @@ pub use parse::parse_query_file;
 
 // Query planner
 mod planner;
-pub use planner::QueryPlan;
+pub(crate) use planner::{QueryPlan, QueryPlanner};
 
 // SQL code generation
 mod sqlgen;

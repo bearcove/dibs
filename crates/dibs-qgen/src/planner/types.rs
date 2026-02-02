@@ -59,7 +59,7 @@ impl QueryPlan {
     }
 
     /// Add a JOIN clause and return its alias.
-    pub fn add_join(&mut self, mut join: JoinClause) -> String {
+    pub fn add_join(&mut self, join: JoinClause) -> String {
         let alias = join.alias.clone();
         self.joins.push(join);
         alias

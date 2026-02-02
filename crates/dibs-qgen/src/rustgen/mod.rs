@@ -4,7 +4,7 @@ use codegen::{Block, Function, Scope, Struct};
 use dibs_query_schema::{Meta, Select};
 use std::collections::HashMap;
 
-use crate::planner::QueryPlan;
+use crate::QueryPlan;
 
 // ============================================================================
 // Code Generation Contexts
