@@ -5,6 +5,7 @@
 //! - Used to generate a styx schema via facet-styx's schema generation
 //! - Used by the LSP extension for diagnostics, hover, go-to-definition
 
+use dibs_sql::TableName;
 use facet::Facet;
 pub use facet_reflect::Span;
 use indexmap::IndexMap;
@@ -241,7 +242,7 @@ pub struct Query {
     pub offset: Option<Meta<String>>,
 
     /// Fields to select (for structured queries).
-    pub select: Option<Select>,
+    pub fields: Option<SelectFields>,
 
     /// Raw SQL query string (for raw SQL queries).
     pub sql: Option<Meta<String>>,
@@ -357,7 +358,7 @@ pub enum ParamType {
 /// SELECT clause.
 #[derive(Debug, Facet)]
 #[facet(metadata_container)]
-pub struct Select {
+pub struct SelectFields {
     /// Source span of the select block.
     #[facet(metadata = "span")]
     pub span: Span,
@@ -383,7 +384,7 @@ pub enum FieldDef {
 #[facet(rename_all = "kebab-case")]
 pub struct Relation {
     /// Optional explicit table name.
-    pub from: Option<Meta<String>>,
+    pub from: Option<Meta<TableName>>,
 
     /// Filter conditions.
     #[facet(rename = "where")]
@@ -396,7 +397,7 @@ pub struct Relation {
     pub first: Option<Meta<bool>>,
 
     /// Fields to select from the relation.
-    pub select: Option<Select>,
+    pub fields: Option<SelectFields>,
 }
 
 /// An INSERT declaration.
@@ -508,7 +509,7 @@ pub struct Delete {
     /// Query parameters.
     pub params: Option<Params>,
     /// Target table.
-    pub from: Meta<String>, // TODO: move to dibs-sql's TableName eventually?
+    pub from: Meta<String>,
     /// Filter conditions.
     #[facet(rename = "where")]
     pub where_clause: Option<Where>,
@@ -619,7 +620,7 @@ impl Query {
 
     /// Check if this query has any relations in its select clause.
     pub fn has_relations(&self) -> bool {
-        self.select
+        self.fields
             .as_ref()
             .map(|select| select.has_relations())
             .unwrap_or(false)
@@ -627,7 +628,7 @@ impl Query {
 
     /// Check if this query has any Vec (has-many) relations.
     pub fn has_vec_relations(&self) -> bool {
-        self.select
+        self.fields
             .as_ref()
             .map(|select| select.has_vec_relations())
             .unwrap_or(false)
@@ -635,14 +636,14 @@ impl Query {
 
     /// Check if this query has nested Vec relations (Vec containing Vec).
     pub fn has_nested_vec_relations(&self) -> bool {
-        self.select
+        self.fields
             .as_ref()
             .map(|select| select.has_nested_vec_relations())
             .unwrap_or(false)
     }
 }
 
-impl Select {
+impl SelectFields {
     /// Get the first simple column (None field_def) in this select.
     pub fn first_column(&self) -> Option<String> {
         self.fields.iter().find_map(|(name_meta, field_def)| {
@@ -690,7 +691,7 @@ impl Select {
                 && rel.first.is_none()
             {
                 // This is a Vec relation
-                if let Some(rel_select) = &rel.select
+                if let Some(rel_select) = &rel.fields
                     && (rel_select.has_vec_relations() || rel_select.has_nested_vec_relations())
                 {
                     return true;
@@ -752,7 +753,7 @@ impl Relation {
 
     /// Check if this relation has any nested relations.
     pub fn has_relations(&self) -> bool {
-        self.select
+        self.fields
             .as_ref()
             .map(|select| select.has_relations())
             .unwrap_or(false)
@@ -760,7 +761,7 @@ impl Relation {
 
     /// Check if this relation has any Vec (has-many) nested relations.
     pub fn has_vec_relations(&self) -> bool {
-        self.select
+        self.fields
             .as_ref()
             .map(|select| select.has_vec_relations())
             .unwrap_or(false)

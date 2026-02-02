@@ -1069,6 +1069,7 @@ dependencies = [
 name = "dibs-query-schema"
 version = "0.1.0"
 dependencies = [
+ "dibs-sql",
  "facet",
  "facet-reflect",
  "facet-styx",
