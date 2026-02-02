@@ -3,7 +3,6 @@
 //! This crate contains the core schema types that are shared between
 //! `dibs` (schema introspection) and `dibs-qgen` (query planning).
 
-use dibs_jsonb::Jsonb;
 use dibs_sql::{check_constraint_name, index_name, trigger_check_name, unique_index_name};
 use facet::{Facet, Shape, Type, UserType};
 use indexmap::IndexMap;
@@ -241,7 +240,7 @@ impl PgType {
             PgType::Date => "Date",
             PgType::Time => "Time",
             PgType::Uuid => "Uuid",
-            PgType::Jsonb => "JsonValue",
+            PgType::Jsonb => "Jsonb<facet_value::Value>",
             PgType::TextArray => "Vec<String>",
             PgType::BigIntArray => "Vec<i64>",
             PgType::IntegerArray => "Vec<i32>",
@@ -851,12 +850,13 @@ impl TableDef {
 
 /// Unwrap Option<T> to get the inner type and nullability.
 fn unwrap_option(shape: &'static Shape) -> (&'static Shape, bool) {
-    // Check if this is an Option type by looking at the type identifier
-    if shape.decl_id == Option::<()>::SHAPE.decl_id {
-        // Get the inner shape from the Option's inner field
-        if let Some(inner) = shape.inner {
-            return (inner, true);
-        }
+    // Check if this is an Option type by looking at Def::Option
+    // We use Def::Option instead of decl_id because the decl_id can vary
+    // based on NPO (Null Pointer Optimization) - Option<T> where T allows NPO
+    // gets UserType::Enum while others get UserType::Opaque, causing different decl_ids.
+    if let facet::Def::Option(opt_def) = &shape.def {
+        // Get the inner shape from the OptionDef
+        return (opt_def.t, true);
     }
     (shape, false)
 }
@@ -979,8 +979,16 @@ fn is_auto_generated_default(default: &Option<String>) -> bool {
 }
 
 /// Extract enum variants from a shape if it's an enum type.
-fn extract_enum_variants(_shape: &'static Shape) -> Vec<String> {
-    todo!("facet supports enum variant reflection but dibs hasn't implemented it yet")
+fn extract_enum_variants(shape: &'static Shape) -> Vec<String> {
+    if let Type::User(UserType::Enum(enum_type)) = shape.ty {
+        enum_type
+            .variants
+            .iter()
+            .map(|v| v.name.to_string())
+            .collect()
+    } else {
+        vec![]
+    }
 }
 
 fn unescape_rust_string_escapes(value: &str) -> String {
@@ -1050,7 +1058,9 @@ pub fn parse_fk_reference(fk_ref: &str) -> Option<(&str, &str)> {
 ///
 /// Takes a Shape to properly handle generic types like `Vec<u8>` and `Jsonb<T>`.
 pub fn shape_to_pg_type(shape: &Shape) -> Option<PgType> {
-    if shape.decl_id == Jsonb::<()>::SHAPE.decl_id {
+    // Check for Jsonb<T> by type_identifier since decl_id can vary across crate boundaries
+    // (derive macro computes decl_id from file:line:column which differs per crate)
+    if shape.type_identifier == "Jsonb" {
         return Some(PgType::Jsonb);
     }
 

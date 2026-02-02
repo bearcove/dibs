@@ -336,7 +336,8 @@ ProductDetailsFull @select{
         handle
         status
         active
-        price
+        // Note: JSONB columns like 'metadata' are not yet supported in codegen
+        // metadata
         created_at
         updated_at
         locales @rel{
@@ -348,12 +349,13 @@ ProductDetailsFull @select{
         variants @rel{
             from product_variant
             where {deleted_at @null}
-            order-by {position asc}
+            order-by {sort_order asc}
             fields {
                 id
                 sku
-                price
-                inventory_quantity
+                title
+                // Note: JSONB columns like 'attributes' are not yet supported in codegen
+                // attributes
             }
         }
     }

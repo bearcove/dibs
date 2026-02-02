@@ -1006,6 +1006,7 @@ dependencies = [
  "dibs-sql",
  "facet",
  "facet-tokio-postgres",
+ "facet-value",
  "indexmap 2.13.0",
  "inventory",
  "jiff",
@@ -1074,8 +1075,10 @@ dependencies = [
 name = "dibs-runtime"
 version = "0.1.0"
 dependencies = [
+ "dibs-jsonb",
  "facet",
  "facet-tokio-postgres",
+ "facet-value",
  "jiff",
  "rust_decimal",
  "tokio-postgres",

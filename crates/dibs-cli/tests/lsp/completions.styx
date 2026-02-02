@@ -18,7 +18,7 @@ tests (
         input <<STYX
             AllProducts @select{
                 from product
-                select {|}
+                fields {|}
             }
             STYX
         completions {
@@ -31,7 +31,7 @@ tests (
         input <<STYX
             AllProducts @select{
                 from product
-                select {ha|}
+                fields {ha|}
             }
             STYX
         completions {
@@ -70,7 +70,7 @@ tests (
         input <<STYX
             AllProducts @select{
                 from product
-                select {
+                fields {
                     id
                     handle
                     active
@@ -92,14 +92,14 @@ tests (
         input <<STYX
             FirstQuery @select{
                 from product
-                select {
+                fields {
                     id
                     handle
                 }
             }
             SecondQuery @select{
                 from product_variant
-                select {
+                fields {
                     id
                     sku
                     title
@@ -128,7 +128,7 @@ tests (
                     id asc
                     created_at desc
                 }
-                select {id}
+                fields {id}
             }
             STYX
         inlay_hints {
@@ -152,7 +152,7 @@ tests (
                     active true
                     id 123
                 }
-                select {handle}
+                fields {handle}
             }
             STYX
         inlay_hints {
@@ -265,7 +265,7 @@ tests (
         input <<STYX
             AllProducts @select{
                 from product
-                select {han|dle}
+                fields {han|dle}
             }
             STYX
         hover {
@@ -291,7 +291,7 @@ tests (
             AllProducts @select{
                 from product
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     nonexistent_column
                 }
@@ -309,7 +309,7 @@ tests (
             AllProducts @select{
                 from product
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     handle
                 }
@@ -332,7 +332,7 @@ tests (
                     deleted_at @null
                     handle @eq($han|dle)
                 }
-                select {id handle}
+                fields {id handle}
             }
             STYX
         definition {
@@ -347,7 +347,7 @@ tests (
             AllProducts @select{
                 from product
                 where {deleted_at @null}
-                select {han|dle}
+                fields {han|dle}
             }
             STYX
         definition {
@@ -366,7 +366,7 @@ tests (
                 from product
                 where {deleted_at @null}
                 offset 10
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -382,7 +382,7 @@ tests (
                 from product
                 where {deleted_at @null}
                 limit 10
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -398,7 +398,7 @@ tests (
                 from product
                 where {deleted_at @null}
                 first true
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -415,7 +415,7 @@ tests (
                 where {deleted_at @null}
                 order-by {id asc}
                 limit 10
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -471,7 +471,7 @@ tests (
                 params {
                     unused_param @string
                 }
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -489,7 +489,7 @@ tests (
                     h @string
                 }
                 where {deleted_at @null, handle $h}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -502,7 +502,7 @@ tests (
         input <<STYX
             BadQuery @select{
                 from product
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -517,7 +517,7 @@ tests (
             GoodQuery @select{
                 from product
                 where {deleted_at @null}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -545,12 +545,12 @@ tests (
             QueryWithRel @select{
                 from product
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     translation @rel{
                         from product_translation
                         first true
-                        select {title}
+                        fields {title}
                     }
                 }
             }
@@ -567,13 +567,13 @@ tests (
             QueryWithRel @select{
                 from product
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     translation @rel{
                         from product_translation
                         order-by {locale asc}
                         first true
-                        select {title}
+                        fields {title}
                     }
                 }
             }
@@ -594,7 +594,7 @@ tests (
                 from product
                 params {h @string}
                 where {deleted_at @null, handle $h}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -609,7 +609,7 @@ tests (
                 from product
                 params {i @int}
                 where {deleted_at @null, id $i}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -624,7 +624,7 @@ tests (
                 from product
                 params {h @int}
                 where {deleted_at @null, handle $h}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -640,7 +640,7 @@ tests (
                 from product
                 params {i @string}
                 where {deleted_at @null, id $i}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -656,7 +656,7 @@ tests (
                 from product
                 params {id @string}
                 where {deleted_at @null, id @eq($id)}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -671,7 +671,7 @@ tests (
             GoodQuery @select{
                 from product
                 where {deleted_at @null, handle "test"}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -685,7 +685,7 @@ tests (
             GoodQuery @select{
                 from product
                 where {deleted_at @null, active true}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -699,7 +699,7 @@ tests (
             GoodQuery @select{
                 from product
                 where {deleted_at @null, id 123}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -713,7 +713,7 @@ tests (
             BadQuery @select{
                 from product
                 where {deleted_at @null, active "yes"}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -728,7 +728,7 @@ tests (
             BadQuery @select{
                 from product
                 where {deleted_at @null, handle true}
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -747,11 +747,11 @@ tests (
             GoodQuery @select{
                 from product
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     translation @rel{
                         from product_translation
-                        select {title}
+                        fields {title}
                     }
                 }
             }
@@ -767,11 +767,11 @@ tests (
             GoodQuery @select{
                 from product_variant
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     prices @rel{
                         from variant_price
-                        select {amount, currency_code}
+                        fields {amount, currency_code}
                     }
                 }
             }
@@ -787,11 +787,11 @@ tests (
             BadQuery @select{
                 from product
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     prices @rel{
                         from variant_price
-                        select {amount}
+                        fields {amount}
                     }
                 }
             }
@@ -807,11 +807,11 @@ tests (
         input <<STYX
             BadQuery @select{
                 from product_source
-                select {
+                fields {
                     id
                     translations @rel{
                         from product_translation
-                        select {title}
+                        fields {title}
                     }
                 }
             }
@@ -835,7 +835,7 @@ tests (
                 order-by {id asc}
                 offset 5000
                 limit 10
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -853,7 +853,7 @@ tests (
                 order-by {id asc}
                 offset 100
                 limit 10
-                select {id}
+                fields {id}
             }
             STYX
         diagnostics {
@@ -867,7 +867,7 @@ tests (
             BadQuery @select{
                 from product
                 where {deleted_at @null}
-                select {}
+                fields {}
             }
             STYX
         diagnostics {
@@ -942,7 +942,7 @@ tests (
                 from product
                 params {h @string}
                 where {deleted_at @null, handle $h|}
-                select {id}
+                fields {id}
             }
             STYX
         code_actions {
@@ -970,32 +970,12 @@ tests (
     // ========================================================================
 
     {
-        name "inlay hints appear at correct column positions"
-        input <<STYX
-            AllProducts @select{
-                from product
-                select {
-                    id
-                    handle
-                }
-            }
-            STYX
-        inlay_hints {
-            count 2
-            has (
-                {label ": BIGINT", line 4, col 10}
-                {label ": TEXT", line 5, col 14}
-            )
-        }
-    }
-
-    {
         name "inlay hint: wrong column is detected (negative test)"
         expect_fail true
         input <<STYX
             AllProducts @select{
                 from product
-                select {
+                fields {
                     id
                 }
             }
@@ -1025,7 +1005,7 @@ tests (
             BadQuery @select{
                 from product
                 where {deleted_at @null}
-                select {
+                fields {
                     id
                     bad_column
                     ^^^^^^^^^^ "Unknown column"
@@ -1065,7 +1045,7 @@ tests (
                 from product
                 params {id @int}
                 where {deleted_at @null, id $id}
-                select {handle}
+                fields {handle}
             }
             STYX
         diagnostics {

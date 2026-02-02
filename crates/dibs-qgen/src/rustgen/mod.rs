@@ -602,6 +602,7 @@ fn generate_query_body(ctx: &CodegenContext, query: &Select, struct_name: &str) 
             struct_name,
             &column_order,
             root_table,
+            is_first,
         ));
     }
 
@@ -1303,6 +1304,7 @@ fn generate_option_relation_assembly(
     struct_name: &str,
     column_order: &HashMap<String, usize>,
     root_table: &str,
+    is_first: bool,
 ) -> String {
     let mut block = Block::new("");
 
@@ -1391,12 +1393,17 @@ fn generate_option_relation_assembly(
     block.push_block(map_block);
     block.line("");
 
-    // Check if first.is_some() to determine return type
-    block.line("if results.is_empty() || results.as_ref().ok().map_or(false, |r| r.is_empty()) {");
-    block.line("Ok(None)");
-    block.line("} else {");
-    block.line("Ok(results?.into_iter().next())");
-    block.line("}");
+    // Return based on whether this is a first-only query or a vec query
+    if is_first {
+        block.line("let results = results?;");
+        block.line("if results.is_empty() {");
+        block.line("Ok(None)");
+        block.line("} else {");
+        block.line("Ok(results.into_iter().next())");
+        block.line("}");
+    } else {
+        block.line("results");
+    }
 
     block_to_string(&block)
 }

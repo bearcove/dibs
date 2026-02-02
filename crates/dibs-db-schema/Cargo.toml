@@ -24,3 +24,6 @@ inventory.workspace = true
 jiff.workspace = true
 rust_decimal.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+facet-value.workspace = true
