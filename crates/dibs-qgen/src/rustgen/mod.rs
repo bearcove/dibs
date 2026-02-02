@@ -264,7 +264,7 @@ impl SchemaInfo {
 /// Context for code generation.
 struct CodegenContext<'a> {
     schema: &'a SchemaInfo,
-    planner_schema: Option<&'a dibs_db_schema::Schema>,
+    planner_schema: &'a dibs_db_schema::Schema,
     scope: Scope,
 }
 
@@ -285,7 +285,7 @@ pub fn generate_rust_code_with_schema(file: &QueryFile, schema: &SchemaInfo) -> 
 pub fn generate_rust_code_with_planner(
     file: &QueryFile,
     schema: &SchemaInfo,
-    planner_schema: Option<&dibs_db_schema::Schema>,
+    planner_schema: &dibs_db_schema::Schema,
 ) -> GeneratedCode {
     let mut scope = Scope::new();
 
@@ -517,7 +517,6 @@ fn generate_select_function(
         let body = generate_raw_query_body(query, &raw_sql_meta.value);
         func.line(block_to_string(&body));
     } else {
-        // Always use the planner-based SQL generation (it falls back to simple if needed)
         let body = generate_query_body(ctx, query, struct_name);
         func.line(body);
     };
