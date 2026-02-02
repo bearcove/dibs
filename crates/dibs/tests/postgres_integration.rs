@@ -217,7 +217,7 @@ async fn test_execute_schema_on_postgres() {
 
     // Create tables
     for table in &test_tables {
-        let sql = table.to_create_table_sql();
+        let sql = dibs::schema::create_table_sql(table);
         client
             .batch_execute(&sql)
             .await
@@ -246,7 +246,7 @@ async fn test_execute_schema_on_postgres() {
     // Create indices
     for table in &test_tables {
         for idx in &table.indices {
-            let sql = table.to_create_index_sql(idx);
+            let sql = dibs::schema::create_index_sql(table, idx);
             client
                 .batch_execute(&sql)
                 .await
@@ -333,7 +333,7 @@ async fn test_insert_and_query_data() {
 
     for table in &test_tables {
         client
-            .batch_execute(&table.to_create_table_sql())
+            .batch_execute(&dibs::schema::create_table_sql(table))
             .await
             .unwrap();
     }

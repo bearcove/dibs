@@ -24,6 +24,7 @@ tokio.workspace = true
 inventory.workspace = true
 thiserror.workspace = true
 facet.workspace = true
+dibs-db-schema.workspace = true
 dibs-macros.workspace = true
 dibs-proto.workspace = true
 dibs-query-gen.workspace = true

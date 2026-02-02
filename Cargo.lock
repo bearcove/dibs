@@ -937,6 +937,7 @@ dependencies = [
  "bytes",
  "chrono",
  "deadpool-postgres",
+ "dibs-db-schema",
  "dibs-macros",
  "dibs-proto",
  "dibs-query-gen",
@@ -1008,7 +1009,22 @@ dependencies = [
 name = "dibs-db-schema"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "dibs-jsonb",
+ "dibs-sql",
+ "facet",
+ "facet-tokio-postgres",
  "indexmap 2.13.0",
+ "jiff",
+ "rust_decimal",
+ "uuid",
+]
+
+[[package]]
+name = "dibs-jsonb"
+version = "0.1.0"
+dependencies = [
+ "facet",
 ]
 
 [[package]]
@@ -1073,6 +1089,7 @@ dependencies = [
 name = "dibs-sql"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "indexmap 2.13.0",
  "insta",
 ]

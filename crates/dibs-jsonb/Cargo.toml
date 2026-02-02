@@ -1,5 +1,5 @@
 [package]
-name = "dibs-sql"
+name = "dibs-jsonb"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,8 +9,4 @@ edition = "2024"
 rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [dependencies]
-blake3.workspace = true
-indexmap = "2"
-
-[dev-dependencies]
-insta = "1"
+facet.workspace = true

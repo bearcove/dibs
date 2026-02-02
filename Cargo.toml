@@ -59,7 +59,7 @@ bytes = "1"
 chrono = "0.4"
 jiff = "0.2"
 postgres-types = "0.2"
-rust_decimal = { version = "1", default-features = false, features = ["std"] }
+rust_decimal = { version = "1", default-features = false, features = [] }
 time = "0.3"
 uuid = "1"
 

@@ -154,7 +154,7 @@ impl Change {
     pub fn to_sql(&self, table_name: &str) -> String {
         let qt = quote_ident(table_name);
         match self {
-            Change::AddTable(t) => t.to_create_table_sql(),
+            Change::AddTable(t) => crate::schema::create_table_sql(t),
             Change::DropTable(name) => format!("DROP TABLE {};", quote_ident(name)),
             Change::RenameTable { from, to } => {
                 format!(
@@ -291,7 +291,11 @@ impl Change {
             }
             Change::AddIndex(idx) => {
                 let unique = if idx.unique { "UNIQUE " } else { "" };
-                let quoted_cols: Vec<_> = idx.columns.iter().map(|c| c.to_sql()).collect();
+                let quoted_cols: Vec<_> = idx
+                    .columns
+                    .iter()
+                    .map(|c| crate::schema::index_column_to_sql(c))
+                    .collect();
                 let where_clause = idx
                     .where_clause
                     .as_ref()
@@ -1641,7 +1645,7 @@ mod tests {
             icon: None,
         };
 
-        insta::assert_snapshot!(table.to_create_table_sql());
+        insta::assert_snapshot!(crate::schema::create_table_sql(&table));
     }
 
     #[test]
@@ -1663,7 +1667,7 @@ mod tests {
             icon: None,
         };
 
-        insta::assert_snapshot!(table.to_create_table_sql());
+        insta::assert_snapshot!(crate::schema::create_table_sql(&table));
     }
 
     #[test]
@@ -1697,8 +1701,8 @@ mod tests {
             icon: None,
         };
 
-        // Note: to_create_table_sql doesn't include FKs (they're added separately)
-        insta::assert_snapshot!(table.to_create_table_sql());
+        // Note: create_table_sql doesn't include FKs (they're added separately)
+        insta::assert_snapshot!(crate::schema::create_table_sql(&table));
     }
 
     #[test]
@@ -1730,7 +1734,7 @@ mod tests {
             icon: None,
         };
 
-        insta::assert_snapshot!(table.to_create_table_sql());
+        insta::assert_snapshot!(crate::schema::create_table_sql(&table));
     }
 
     #[test]

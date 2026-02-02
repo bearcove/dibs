@@ -686,14 +686,14 @@ impl Select {
     /// Check if this select has nested Vec relations.
     pub fn has_nested_vec_relations(&self) -> bool {
         for field_def in self.fields.values() {
-            if let Some(FieldDef::Rel(rel)) = field_def {
-                if rel.first.is_none() {
-                    // This is a Vec relation
-                    if let Some(rel_select) = &rel.select {
-                        if rel_select.has_vec_relations() || rel_select.has_nested_vec_relations() {
-                            return true;
-                        }
-                    }
+            if let Some(FieldDef::Rel(rel)) = field_def
+                && rel.first.is_none()
+            {
+                // This is a Vec relation
+                if let Some(rel_select) = &rel.select
+                    && (rel_select.has_vec_relations() || rel_select.has_nested_vec_relations())
+                {
+                    return true;
                 }
             }
         }
