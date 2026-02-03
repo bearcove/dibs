@@ -1,7 +1,7 @@
 //! SQL generation for SELECT statements.
 
 use super::SqlGenContext;
-use super::common::{filter_value_to_expr, meta_string_to_expr};
+use super::common::{filter_value_to_expr_validated, meta_string_to_expr};
 use crate::{QError, QueryPlan, QueryPlanner};
 use dibs_query_schema::{OrderBy as QueryOrderBy, Select, Where};
 use dibs_sql::{
@@ -141,7 +141,7 @@ pub fn generate_select_sql(ctx: &SqlGenContext, query: &Select) -> Result<Genera
 
     // WHERE
     if let Some(where_clause) = &query.where_clause
-        && let Some(expr) = where_to_qualified_expr(where_clause, "t0")
+        && let Some(expr) = where_to_qualified_expr_validated(ctx, where_clause, "t0")?
     {
         stmt = stmt.where_(expr);
     }
@@ -184,23 +184,30 @@ fn parse_qualified_column(s: &str) -> (&str, &str) {
     }
 }
 
-/// Convert a WHERE clause to a dibs_sql::Expr with qualified columns.
-fn where_to_qualified_expr(where_clause: &Where, table_alias: &str) -> Option<Expr> {
+/// Convert a WHERE clause to a dibs_sql::Expr with qualified columns and validation.
+fn where_to_qualified_expr_validated(
+    ctx: &SqlGenContext,
+    where_clause: &Where,
+    table_alias: &str,
+) -> Result<Option<Expr>, QError> {
     let mut exprs: Vec<Expr> = vec![];
 
     for (col_meta, filter_value) in &where_clause.filters {
         let col_name: ColumnName = col_meta.value.clone();
         // Create a qualified column name for the filter
         let qualified_col: ColumnName = format!("{}.{}", table_alias, col_name).into();
-        if let Some(expr) = filter_value_to_expr(&qualified_col, filter_value) {
+        if let Some(expr) =
+            filter_value_to_expr_validated(ctx, &qualified_col, filter_value, col_meta.span)?
+        {
             exprs.push(expr);
         }
     }
 
     // AND all expressions together
     let mut iter = exprs.into_iter();
-    let first = iter.next()?;
-    Some(iter.fold(first, |acc, expr| acc.and(expr)))
+    Ok(iter
+        .next()
+        .map(|first| iter.fold(first, |acc, expr| acc.and(expr))))
 }
 
 /// Convert ORDER BY clause to AST OrderBy items.

@@ -573,7 +573,7 @@ ProductWithVariants @select{
     assert_eq!(gizmo.1.len(), 0, "Gizmo should have 0 variants");
 
     // Also verify the generated Rust code looks correct
-    let code = generate_rust_code(&file, &schema, qsource);
+    let code = generate_rust_code(&file, &schema, qsource).unwrap();
     tracing::info!("Generated code:\n{}", code.code);
 
     assert!(
@@ -1052,10 +1052,12 @@ UpdateProductStatus @update{
     returning {id, handle, status}
 }
 "#;
-    let (file, _qsource) = parse_test_query(source);
+    let (file, qsource) = parse_test_query(source);
     let update = first_update(&file);
 
-    let generated = dibs_qgen::generate_update_sql(update);
+    let schema = Schema::default();
+    let ctx = SqlGenContext::new(&schema, qsource);
+    let generated = dibs_qgen::generate_update_sql(&ctx, update).unwrap();
     tracing::info!("Generated UPDATE SQL: {}", generated.sql);
 
     // Verify SQL structure
@@ -1111,10 +1113,12 @@ DeleteProduct @delete{
     returning {id, handle}
 }
 "#;
-    let (file, _qsource) = parse_test_query(source);
+    let (file, qsource) = parse_test_query(source);
     let delete = first_delete(&file);
 
-    let generated = dibs_qgen::generate_delete_sql(delete);
+    let schema = Schema::default();
+    let ctx = SqlGenContext::new(&schema, qsource);
+    let generated = dibs_qgen::generate_delete_sql(&ctx, delete).unwrap();
     tracing::info!("Generated DELETE SQL: {}", generated.sql);
 
     // Verify SQL structure
