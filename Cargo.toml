@@ -35,7 +35,7 @@ facet-testhelpers = { git = "https://github.com/facet-rs/facet", branch = "main"
 facet-format = { git = "https://github.com/facet-rs/facet", branch = "main" }
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres" }
 
-strid = { git = "https://github.com/bearcove/strid", version = "8.0.0" }
+strid = { git = "https://github.com/bearcove/strid", branch = "main" }
 
 # styx ecosystem
 facet-styx = { git = "https://github.com/bearcove/styx", branch = "main" }
@@ -106,44 +106,46 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [patch.crates-io]
 facet = { git = "https://github.com/facet-rs/facet", branch = "main" }
 
-# Note: Mutations require facet-rs/facet#1844 to be merged for IndexMap<String, ()> support
+# [patch.crates-io]
+# facet = { path = "../facet/facet" }
+
+# # Note: Uncomment to develop facet
 # [patch."https://github.com/facet-rs/facet"]
-# facet = { path = "/Users/amos/bearcove/facet/facet" }
-# facet-args = { path = "/Users/amos/bearcove/facet/facet-args" }
-# facet-core = { path = "/Users/amos/bearcove/facet/facet-core" }
-# facet-dessert = { path = "/Users/amos/bearcove/facet/facet-dessert" }
-# facet-error = { path = "/Users/amos/bearcove/facet/facet-error" }
-# facet-format = { path = "/Users/amos/bearcove/facet/facet-format" }
-# facet-path = { path = "/Users/amos/bearcove/facet/facet-path" }
-# facet-postcard = { path = "/Users/amos/bearcove/facet/facet-postcard" }
-# facet-pretty = { path = "/Users/amos/bearcove/facet/facet-pretty" }
-# facet-reflect = { path = "/Users/amos/bearcove/facet/facet-reflect" }
-# facet-solver = { path = "/Users/amos/bearcove/facet/facet-solver" }
-# facet-testhelpers = { path = "/Users/amos/bearcove/facet/facet-testhelpers" }
-# facet-toml = { path = "/Users/amos/bearcove/facet/facet-toml" }
-# facet-value = { path = "/Users/amos/bearcove/facet/facet-value" }
+# facet = { path = "../facet/facet" }
+# facet-core = { path = "../facet/facet-core" }
+# facet-dessert = { path = "../facet/facet-dessert" }
+# facet-error = { path = "../facet/facet-error" }
+# facet-format = { path = "../facet/facet-format" }
+# facet-path = { path = "../facet/facet-path" }
+# facet-postcard = { path = "../facet/facet-postcard" }
+# facet-pretty = { path = "../facet/facet-pretty" }
+# facet-reflect = { path = "../facet/facet-reflect" }
+# facet-solver = { path = "../facet/facet-solver" }
+# facet-testhelpers = { path = "../facet/facet-testhelpers" }
+# facet-toml = { path = "../facet/facet-toml" }
+# facet-value = { path = "../facet/facet-value" }
 
 # [patch."https://github.com/bearcove/styx"]
-# facet-styx = { path = "/Users/amos/bearcove/styx/crates/facet-styx" }
-# styx-embed = { path = "/Users/amos/bearcove/styx/crates/styx-embed" }
-# styx-tree = { path = "/Users/amos/bearcove/styx/crates/styx-tree" }
-# styx-parse = { path = "/Users/amos/bearcove/styx/crates/styx-parse" }
-# styx-cst = { path = "/Users/amos/bearcove/styx/crates/styx-cst" }
-# styx-format = { path = "/Users/amos/bearcove/styx/crates/styx-format" }
-# styx-lsp-ext = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-ext" }
-# styx-lsp = { path = "/Users/amos/bearcove/styx/crates/styx-lsp" }
-# styx-lsp-test-schema = { path = "/Users/amos/bearcove/styx/crates/styx-lsp-test-schema" }
+# facet-styx = { path = "../styx/crates/facet-styx" }
+# styx-embed = { path = "../styx/crates/styx-embed" }
+# styx-tree = { path = "../styx/crates/styx-tree" }
+# styx-parse = { path = "../styx/crates/styx-parse" }
+# styx-cst = { path = "../styx/crates/styx-cst" }
+# styx-format = { path = "../styx/crates/styx-format" }
+# styx-lsp-ext = { path = "../styx/crates/styx-lsp-ext" }
+# styx-lsp = { path = "../styx/crates/styx-lsp" }
+# styx-lsp-test-schema = { path = "../styx/crates/styx-lsp-test-schema" }
 
 # [patch."https://github.com/bearcove/roam"]
-# roam = { path = "/Users/amos/bearcove/roam/rust/roam" }
-# roam-codegen = { path = "/Users/amos/bearcove/roam/rust/roam-codegen" }
-# roam-frame = { path = "/Users/amos/bearcove/roam/rust/roam-frame" }
-# roam-hash = { path = "/Users/amos/bearcove/roam/rust/roam-hash" }
-# roam-service-macros = { path = "/Users/amos/bearcove/roam/rust/roam-macros" }
-# roam-macros-parse = { path = "/Users/amos/bearcove/roam/rust/roam-macros-parse" }
-# roam-schema = { path = "/Users/amos/bearcove/roam/rust/roam-schema" }
-# roam-session = { path = "/Users/amos/bearcove/roam/rust/roam-session" }
-# roam-stream = { path = "/Users/amos/bearcove/roam/rust/roam-stream" }
-# roam-task-local = { path = "/Users/amos/bearcove/roam/rust/roam-task-local" }
-# roam-websocket = { path = "/Users/amos/bearcove/roam/rust/roam-websocket" }
-# roam-wire = { path = "/Users/amos/bearcove/roam/rust/roam-wire" }
+# roam = { path = "../roam/rust/roam" }
+# roam-codegen = { path = "../roam/rust/roam-codegen" }
+# roam-frame = { path = "../roam/rust/roam-frame" }
+# roam-hash = { path = "../roam/rust/roam-hash" }
+# roam-service-macros = { path = "../roam/rust/roam-macros" }
+# roam-macros-parse = { path = "../roam/rust/roam-macros-parse" }
+# roam-schema = { path = "../roam/rust/roam-schema" }
+# roam-session = { path = "../roam/rust/roam-session" }
+# roam-stream = { path = "../roam/rust/roam-stream" }
+# roam-task-local = { path = "../roam/rust/roam-task-local" }
+# roam-websocket = { path = "../roam/rust/roam-websocket" }
+# roam-wire = { path = "../roam/rust/roam-wire" }

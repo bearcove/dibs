@@ -533,9 +533,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
+checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "camino"
@@ -1069,6 +1069,7 @@ dependencies = [
  "facet",
  "facet-reflect",
  "facet-styx",
+ "facet-testhelpers",
  "indexmap 2.13.0",
 ]
 
@@ -1274,7 +1275,7 @@ dependencies = [
 [[package]]
 name = "facet"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "autocfg",
  "facet-core",
@@ -1299,7 +1300,7 @@ dependencies = [
 [[package]]
 name = "facet-core"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "autocfg",
  "bytes",
@@ -1318,7 +1319,7 @@ dependencies = [
 [[package]]
 name = "facet-dessert"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-core",
  "facet-reflect",
@@ -1327,7 +1328,7 @@ dependencies = [
 [[package]]
 name = "facet-error"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet",
 ]
@@ -1335,7 +1336,7 @@ dependencies = [
 [[package]]
 name = "facet-format"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "ariadne",
  "facet-core",
@@ -1349,7 +1350,7 @@ dependencies = [
 [[package]]
 name = "facet-json"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet",
  "facet-core",
@@ -1361,7 +1362,7 @@ dependencies = [
 [[package]]
 name = "facet-macro-parse"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-macro-types",
  "proc-macro2",
@@ -1371,7 +1372,7 @@ dependencies = [
 [[package]]
 name = "facet-macro-types"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1381,7 +1382,7 @@ dependencies = [
 [[package]]
 name = "facet-macros"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-macros-impl",
 ]
@@ -1389,7 +1390,7 @@ dependencies = [
 [[package]]
 name = "facet-macros-impl"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-macro-parse",
  "facet-macro-types",
@@ -1402,7 +1403,7 @@ dependencies = [
 [[package]]
 name = "facet-path"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-core",
 ]
@@ -1410,7 +1411,7 @@ dependencies = [
 [[package]]
 name = "facet-postcard"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "camino",
  "facet-core",
@@ -1424,7 +1425,7 @@ dependencies = [
 [[package]]
 name = "facet-pretty"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-core",
  "facet-reflect",
@@ -1434,7 +1435,7 @@ dependencies = [
 [[package]]
 name = "facet-reflect"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-core",
  "facet-path",
@@ -1447,7 +1448,7 @@ dependencies = [
 [[package]]
 name = "facet-solver"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-core",
  "facet-reflect",
@@ -1456,7 +1457,7 @@ dependencies = [
 [[package]]
 name = "facet-styx"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "ariadne",
  "facet",
@@ -1474,7 +1475,7 @@ dependencies = [
 [[package]]
 name = "facet-testhelpers"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "color-backtrace",
  "facet-testhelpers-macros",
@@ -1486,7 +1487,7 @@ dependencies = [
 [[package]]
 name = "facet-testhelpers-macros"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "quote",
  "unsynn",
@@ -1516,7 +1517,7 @@ dependencies = [
 [[package]]
 name = "facet-toml"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-core",
  "facet-format",
@@ -1527,7 +1528,7 @@ dependencies = [
 [[package]]
 name = "facet-value"
 version = "0.43.2"
-source = "git+https://github.com/facet-rs/facet?branch=main#4d4a9347585fdd3bf5314ef9f575ad95954d72dc"
+source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
  "facet-core",
  "facet-format",
@@ -3502,9 +3503,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.12.2"
+version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843bc0191f75f3e22651ae5f1e72939ab2f72a4bc30fa80a066bd66edefc24d4"
+checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3514,9 +3515,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.13"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5276caf25ac86c8d810222b3dbb938e512c55c6831a10f3e6ed1c93b84041f1c"
+checksum = "6e1dd4122fc1595e8162618945476892eefca7b88c52820e74af6262213cae8f"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3525,9 +3526,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.8"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
+checksum = "a96887878f22d7bad8a3b6dc5b7440e0ada9a245242924394987b21cf2210a4c"
 
 [[package]]
 name = "rend"
@@ -4216,7 +4217,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 [[package]]
 name = "strid"
 version = "8.0.0"
-source = "git+https://github.com/bearcove/strid#9ff60e29b2058e2aa9446783fab9095714b19d98"
+source = "git+https://github.com/bearcove/strid?branch=main#9ff60e29b2058e2aa9446783fab9095714b19d98"
 dependencies = [
  "facet",
  "strid-macros",
@@ -4225,7 +4226,7 @@ dependencies = [
 [[package]]
 name = "strid-macros"
 version = "8.0.0"
-source = "git+https://github.com/bearcove/strid#9ff60e29b2058e2aa9446783fab9095714b19d98"
+source = "git+https://github.com/bearcove/strid?branch=main#9ff60e29b2058e2aa9446783fab9095714b19d98"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4305,7 +4306,7 @@ dependencies = [
 [[package]]
 name = "styx-cst"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "rowan",
  "styx-tokenizer",
@@ -4314,7 +4315,7 @@ dependencies = [
 [[package]]
 name = "styx-embed"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "blake3",
  "goblin",
@@ -4326,7 +4327,7 @@ dependencies = [
 [[package]]
 name = "styx-embed-macros"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "blake3",
  "lz4_flex",
@@ -4338,7 +4339,7 @@ dependencies = [
 [[package]]
 name = "styx-format"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "styx-cst",
  "styx-parse",
@@ -4348,7 +4349,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "dirs",
  "eyre",
@@ -4376,7 +4377,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-ext"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "facet",
  "roam",
@@ -4386,7 +4387,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-test-schema"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "facet",
 ]
@@ -4394,7 +4395,7 @@ dependencies = [
 [[package]]
 name = "styx-parse"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "facet",
  "styx-tokenizer",
@@ -4404,7 +4405,7 @@ dependencies = [
 [[package]]
 name = "styx-tokenizer"
 version = "1.0.0"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "facet",
  "tracing",
@@ -4413,7 +4414,7 @@ dependencies = [
 [[package]]
 name = "styx-tree"
 version = "1.0.1"
-source = "git+https://github.com/bearcove/styx?branch=main#3f44500be783e0dfbbbbef4dbfb4406b27c58672"
+source = "git+https://github.com/bearcove/styx?branch=main#4cbb7b53f7f89ede02127332de690c24a1f9a757"
 dependencies = [
  "ariadne",
  "facet",
