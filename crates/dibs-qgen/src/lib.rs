@@ -21,9 +21,9 @@ pub(crate) use planner::{QueryPlan, QueryPlanner};
 mod sqlgen;
 pub use sqlgen::{
     GeneratedDelete, GeneratedInsert, GeneratedInsertMany, GeneratedSelect, GeneratedUpdate,
-    GeneratedUpsert, GeneratedUpsertMany, generate_delete_sql, generate_insert_many_sql,
-    generate_insert_sql, generate_select_sql, generate_update_sql, generate_upsert_many_sql,
-    generate_upsert_sql,
+    GeneratedUpsert, GeneratedUpsertMany, SqlGenContext, generate_delete_sql,
+    generate_insert_many_sql, generate_insert_sql, generate_select_sql, generate_update_sql,
+    generate_upsert_many_sql, generate_upsert_sql,
 };
 
 // Rust code generation

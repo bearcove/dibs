@@ -1,7 +1,35 @@
 //! Common SQL generation utilities shared across statement types.
 
 use dibs_query_schema::{FilterValue, Meta, Payload, UpdateValue, ValueExpr, Where};
-use dibs_sql::{BinOp, ColumnName, Expr};
+use dibs_sql::{BinOp, ColumnName, Expr, TableName};
+
+/// Convert a column name (possibly qualified like "t0.id") to an Expr.
+///
+/// If the column name contains a dot, it's treated as "table.column".
+/// Otherwise, it's an unqualified column reference.
+fn column_name_to_expr(column: &ColumnName) -> Expr {
+    let s = column.as_str();
+    if let Some(dot_pos) = s.find('.') {
+        let table: TableName = s[..dot_pos].into();
+        let col: ColumnName = s[dot_pos + 1..].into();
+        Expr::qualified_column(table, col)
+    } else {
+        Expr::column(column.clone())
+    }
+}
+
+/// Extract the unqualified column name from a possibly qualified name.
+///
+/// "t0.id" -> "id"
+/// "id" -> "id"
+fn extract_column_name(column: &ColumnName) -> &str {
+    let s = column.as_str();
+    if let Some(dot_pos) = s.rfind('.') {
+        &s[dot_pos + 1..]
+    } else {
+        s
+    }
+}
 
 /// Convert a Meta<String> argument to an Expr.
 ///
@@ -26,8 +54,14 @@ pub fn meta_string_to_expr(meta: &Meta<String>) -> Expr {
 }
 
 /// Convert a FilterValue to a dibs_sql::Expr.
+///
+/// The column can be either a simple name like "id" or a qualified name like "t0.id".
+/// Qualified names are parsed and converted to qualified column expressions.
 pub fn filter_value_to_expr(column: &ColumnName, filter: &FilterValue) -> Option<Expr> {
-    let col = Expr::column(column.clone());
+    let col = column_name_to_expr(column);
+
+    // For EqBare shorthand, we need the unqualified column name for the param
+    let unqualified_name = extract_column_name(column);
 
     match filter {
         FilterValue::Null => Some(col.is_null()),
@@ -42,8 +76,8 @@ pub fn filter_value_to_expr(column: &ColumnName, filter: &FilterValue) -> Option
             if let Some(meta) = opt_meta {
                 Some(col.eq(meta_string_to_expr(meta)))
             } else {
-                // Shorthand: {id} means {id $id} - use column name as param name
-                Some(col.eq(Expr::param(column.as_str().into())))
+                // Shorthand: {id} means {id $id} - use unqualified column name as param name
+                Some(col.eq(Expr::param(unqualified_name.into())))
             }
         }
 

@@ -184,6 +184,7 @@ pub enum PlanError {
     /// No FK relationship found between tables
     NoForeignKey { from: String, to: String },
     /// Relation requires explicit 'from' clause
+    #[allow(dead_code)]
     RelationNeedsFrom { relation: String },
 }
 

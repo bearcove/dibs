@@ -10,12 +10,15 @@
 //! This approach uses facet-tokio-postgres for all deserialization, which
 //! properly handles complex types like `Jsonb<T>` via reflection.
 
+use crate::QSource;
+use crate::sqlgen::SqlGenContext;
 use codegen::{Block, Function, Scope, Struct};
 use dibs_db_schema::Schema;
 use dibs_query_schema::{
     Decl, Delete, FieldDef, Insert, InsertMany, Meta, Params, QueryFile, Returning, Returns,
     Select, SelectFields, Update, Upsert, UpsertMany,
 };
+use std::sync::Arc;
 
 /// Generated Rust code for a query file.
 #[derive(Debug, Clone)]
@@ -42,6 +45,7 @@ fn schema_column_type(schema: &Schema, table: &str, column: &str) -> Option<Stri
 /// Context for code generation.
 struct CodegenContext<'a> {
     schema: &'a Schema,
+    source: Arc<QSource>,
     #[allow(dead_code)]
     scope: Scope,
 }
@@ -51,10 +55,19 @@ impl CodegenContext<'_> {
     fn column_type(&self, table: &str, column: &str) -> Option<String> {
         schema_column_type(self.schema, table, column)
     }
+
+    /// Create an SqlGenContext for this codegen context.
+    fn sqlgen_ctx(&self) -> SqlGenContext<'_> {
+        SqlGenContext::new(self.schema, self.source.clone())
+    }
 }
 
 /// Generate Rust code for a query file.
-pub fn generate_rust_code(file: &QueryFile, schema: &Schema) -> GeneratedCode {
+pub fn generate_rust_code(
+    file: &QueryFile,
+    schema: &Schema,
+    source: Arc<QSource>,
+) -> GeneratedCode {
     let mut scope = Scope::new();
 
     // Add file header as raw code
@@ -67,6 +80,7 @@ pub fn generate_rust_code(file: &QueryFile, schema: &Schema) -> GeneratedCode {
 
     let ctx = CodegenContext {
         schema,
+        source,
         scope: Scope::new(),
     };
 
@@ -429,7 +443,8 @@ fn generate_select_function(
 /// For queries without relations: use `from_row()` directly into the result struct.
 /// For queries with relations: deserialize into flat row struct, then transform.
 fn generate_query_body(ctx: &CodegenContext, query: &Select, struct_name: &str) -> String {
-    let generated = match crate::sqlgen::generate_select_sql(query, ctx.schema) {
+    let sqlgen_ctx = ctx.sqlgen_ctx();
+    let generated = match crate::sqlgen::generate_select_sql(&sqlgen_ctx, query) {
         Ok(g) => g,
         Err(e) => {
             panic!("SELECT SQL generation failed: {}", e);

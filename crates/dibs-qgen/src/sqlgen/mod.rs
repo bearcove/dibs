@@ -1,5 +1,9 @@
 //! SQL generation from query schema types.
 
+use crate::QSource;
+use dibs_db_schema::Schema;
+use std::sync::Arc;
+
 mod common;
 mod delete;
 mod insert;
@@ -18,122 +22,21 @@ pub use update::{GeneratedUpdate, generate_update_sql};
 pub use upsert::{GeneratedUpsert, generate_upsert_sql};
 pub use upsert_many::{GeneratedUpsertMany, generate_upsert_many_sql};
 
-/// Format a single filter condition from a column name and FilterValue.
+/// Context for SQL generation.
 ///
-/// Returns the SQL condition string and the updated param index.
-fn format_filter(
-    column: &str,
-    filter_value: &dibs_query_schema::FilterValue,
-    mut param_idx: usize,
-    param_order: &mut Vec<dibs_sql::ParamName>,
-) -> (String, usize) {
-    use crate::FilterArg;
-    use dibs_query_schema::FilterValue;
+/// Carries schema and source information for validation and rich error messages.
+pub struct SqlGenContext<'a> {
+    /// The database schema for type lookups and validation.
+    pub schema: &'a Schema,
 
-    // Handle dotted column names (e.g., "t0.column") by quoting each part
-    let col = if column.contains('.') {
-        column
-            .split('.')
-            .map(|part| format!("\"{part}\""))
-            .collect::<Vec<_>>()
-            .join(".")
-    } else {
-        format!("\"{column}\"")
-    };
+    /// The source file for error reporting with proper spans.
+    pub source: Arc<QSource>,
+}
 
-    /// Format a comparison operator with a single argument.
-    fn format_comparison(
-        col: &str,
-        op: &str,
-        args: &[dibs_query_schema::Meta<String>],
-        param_idx: &mut usize,
-        param_order: &mut Vec<dibs_sql::ParamName>,
-    ) -> String {
-        use crate::FilterArg;
-
-        if let Some(arg) = args.first() {
-            match FilterArg::parse(&arg.value) {
-                FilterArg::Variable(name) => {
-                    param_order.push(name.into());
-                    let s = format!("{col} {op} ${}", *param_idx);
-                    *param_idx += 1;
-                    s
-                }
-                FilterArg::Literal(value) => {
-                    let escaped = value.replace('\'', "''");
-                    format!("{col} {op} '{escaped}'")
-                }
-            }
-        } else {
-            format!("{col} {op} NULL")
-        }
+impl<'a> SqlGenContext<'a> {
+    pub fn new(schema: &'a Schema, source: Arc<QSource>) -> Self {
+        Self { schema, source }
     }
-
-    let result = match filter_value {
-        FilterValue::Null => format!("{col} IS NULL"),
-        FilterValue::NotNull => format!("{col} IS NOT NULL"),
-        FilterValue::Eq(args) => format_comparison(&col, "=", args, &mut param_idx, param_order),
-        FilterValue::EqBare(opt_meta) => {
-            if let Some(meta) = opt_meta {
-                match FilterArg::parse(&meta.value) {
-                    FilterArg::Variable(name) => {
-                        param_order.push(name.into());
-                        let s = format!("{col} = ${param_idx}");
-                        param_idx += 1;
-                        s
-                    }
-                    FilterArg::Literal(value) => {
-                        let escaped = value.replace('\'', "''");
-                        format!("{col} = '{escaped}'")
-                    }
-                }
-            } else {
-                format!("{col} IS NULL")
-            }
-        }
-        FilterValue::Ne(args) => format_comparison(&col, "!=", args, &mut param_idx, param_order),
-        FilterValue::Lt(args) => format_comparison(&col, "<", args, &mut param_idx, param_order),
-        FilterValue::Lte(args) => format_comparison(&col, "<=", args, &mut param_idx, param_order),
-        FilterValue::Gt(args) => format_comparison(&col, ">", args, &mut param_idx, param_order),
-        FilterValue::Gte(args) => format_comparison(&col, ">=", args, &mut param_idx, param_order),
-        FilterValue::Like(args) => {
-            format_comparison(&col, "LIKE", args, &mut param_idx, param_order)
-        }
-        FilterValue::Ilike(args) => {
-            format_comparison(&col, "ILIKE", args, &mut param_idx, param_order)
-        }
-        FilterValue::In(args) => {
-            if let Some(arg) = args.first() {
-                match FilterArg::parse(&arg.value) {
-                    FilterArg::Variable(name) => {
-                        param_order.push(name.into());
-                        let s = format!("{col} = ANY(${param_idx})");
-                        param_idx += 1;
-                        s
-                    }
-                    FilterArg::Literal(value) => {
-                        format!("{col} = ANY(ARRAY[{value}])")
-                    }
-                }
-            } else {
-                format!("{col} = ANY(ARRAY[])")
-            }
-        }
-        FilterValue::JsonGet(args) => {
-            format_comparison(&col, "->", args, &mut param_idx, param_order)
-        }
-        FilterValue::JsonGetText(args) => {
-            format_comparison(&col, "->>", args, &mut param_idx, param_order)
-        }
-        FilterValue::Contains(args) => {
-            format_comparison(&col, "@>", args, &mut param_idx, param_order)
-        }
-        FilterValue::KeyExists(args) => {
-            format_comparison(&col, "?", args, &mut param_idx, param_order)
-        }
-    };
-
-    (result, param_idx)
 }
 
 #[cfg(test)]
