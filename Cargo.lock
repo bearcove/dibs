@@ -1006,7 +1006,6 @@ dependencies = [
  "dibs-jsonb",
  "dibs-sql",
  "facet",
- "facet-tokio-postgres",
  "facet-value",
  "indexmap 2.13.0",
  "inventory",
@@ -1050,12 +1049,10 @@ dependencies = [
  "dibs-query-schema",
  "dibs-sql",
  "dockside",
- "facet-format",
  "facet-styx",
  "facet-testhelpers",
  "indexmap 2.13.0",
  "insta",
- "thiserror 2.0.18",
  "tokio",
  "tokio-postgres",
  "tracing",
@@ -1338,7 +1335,6 @@ name = "facet-format"
 version = "0.43.2"
 source = "git+https://github.com/facet-rs/facet?branch=main#df49ae20b26f97dedf6a1077a35c098a5e2bdb75"
 dependencies = [
- "ariadne",
  "facet-core",
  "facet-dessert",
  "facet-path",

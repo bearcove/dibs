@@ -201,8 +201,8 @@ pub enum FkDirection {
 pub struct FkResolution {
     /// The JOIN clause
     pub join_clause: JoinClause,
-    /// Direction of the relationship
-    pub direction: FkDirection,
+    /// Direction of the relationship (reserved for future use)
+    pub _direction: FkDirection,
     /// Parent's primary key column (used for grouping Vec relations)
     pub parent_key_column: ColumnName,
 }

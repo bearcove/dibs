@@ -29,10 +29,10 @@ pub fn generate_update_sql(update: &Update) -> GeneratedUpdate {
     }
 
     // WHERE clause
-    if let Some(where_clause) = &update.where_clause {
-        if let Some(expr) = where_to_expr(where_clause) {
-            stmt = stmt.where_(expr);
-        }
+    if let Some(where_clause) = &update.where_clause
+        && let Some(expr) = where_to_expr(where_clause)
+    {
+        stmt = stmt.where_(expr);
     }
 
     // RETURNING clause

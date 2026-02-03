@@ -73,44 +73,44 @@ pub fn generate_select_sql(
     sql.push_str(&plan.from_sql_with_params(&mut param_order, &mut param_idx));
 
     // WHERE
-    if let Some(where_clause) = &query.where_clause {
-        if !where_clause.filters.is_empty() {
-            sql.push_str(" WHERE ");
-            let conditions: Vec<_> = where_clause
-                .filters
-                .iter()
-                .map(|(col_meta, filter_value)| {
-                    // Prefix column with base table alias
-                    let column = format!("t0.{}", col_meta.value);
-                    let (cond, new_idx) =
-                        format_filter(&column, filter_value, param_idx, &mut param_order);
-                    param_idx = new_idx;
-                    cond
-                })
-                .collect();
-            sql.push_str(&conditions.join(" AND "));
-        }
+    if let Some(where_clause) = &query.where_clause
+        && !where_clause.filters.is_empty()
+    {
+        sql.push_str(" WHERE ");
+        let conditions: Vec<_> = where_clause
+            .filters
+            .iter()
+            .map(|(col_meta, filter_value)| {
+                // Prefix column with base table alias
+                let column = format!("t0.{}", col_meta.value);
+                let (cond, new_idx) =
+                    format_filter(&column, filter_value, param_idx, &mut param_order);
+                param_idx = new_idx;
+                cond
+            })
+            .collect();
+        sql.push_str(&conditions.join(" AND "));
     }
 
     // ORDER BY
-    if let Some(order_by) = &query.order_by {
-        if !order_by.columns.is_empty() {
-            sql.push_str(" ORDER BY ");
-            let orders: Vec<_> = order_by
-                .columns
-                .iter()
-                .map(|(col_meta, dir_opt)| {
-                    let dir = dir_opt.as_ref().map(|d| d.value.as_str()).unwrap_or("asc");
-                    let dir_sql = if dir.eq_ignore_ascii_case("desc") {
-                        "DESC"
-                    } else {
-                        "ASC"
-                    };
-                    format!("\"t0\".\"{}\" {}", col_meta.value, dir_sql)
-                })
-                .collect();
-            sql.push_str(&orders.join(", "));
-        }
+    if let Some(order_by) = &query.order_by
+        && !order_by.columns.is_empty()
+    {
+        sql.push_str(" ORDER BY ");
+        let orders: Vec<_> = order_by
+            .columns
+            .iter()
+            .map(|(col_meta, dir_opt)| {
+                let dir = dir_opt.as_ref().map(|d| d.value.as_str()).unwrap_or("asc");
+                let dir_sql = if dir.eq_ignore_ascii_case("desc") {
+                    "DESC"
+                } else {
+                    "ASC"
+                };
+                format!("\"t0\".\"{}\" {}", col_meta.value, dir_sql)
+            })
+            .collect();
+        sql.push_str(&orders.join(", "));
     }
 
     // LIMIT

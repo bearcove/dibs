@@ -11,35 +11,12 @@ mod upsert_many;
 
 // Common helpers are used by submodules via `super::common::`
 pub use delete::{GeneratedDelete, generate_delete_sql};
-use indexmap::IndexMap;
 pub use insert::{GeneratedInsert, generate_insert_sql};
 pub use insert_many::{GeneratedInsertMany, generate_insert_many_sql};
 pub use select::{GeneratedSelect, generate_select_sql};
 pub use update::{GeneratedUpdate, generate_update_sql};
 pub use upsert::{GeneratedUpsert, generate_upsert_sql};
 pub use upsert_many::{GeneratedUpsertMany, generate_upsert_many_sql};
-
-#[allow(unused_imports)]
-use dibs_query_schema::{ParamType, ValueExpr};
-
-use crate::QueryPlan;
-
-/// Generated SQL with parameter placeholders.
-#[derive(Debug, Clone)]
-pub struct GeneratedSql {
-    /// The SQL string with $1, $2, etc. placeholders.
-    pub sql: String,
-
-    /// Parameter names in order (maps to $1, $2, etc.).
-    pub param_order: Vec<String>,
-
-    /// Query plan (if JOINs are involved).
-    pub plan: Option<QueryPlan>,
-
-    /// Column names in SELECT order (for index-based access).
-    /// Maps column names to their index in the result set.
-    pub column_order: IndexMap<String, usize>,
-}
 
 /// Format a single filter condition from a column name and FilterValue.
 ///

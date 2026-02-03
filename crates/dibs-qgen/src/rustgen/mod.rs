@@ -483,14 +483,14 @@ fn generate_query_body(ctx: &CodegenContext, query: &Select, struct_name: &str) 
     block.line("");
     block.line("// Deserialize all rows into flat structs using facet reflection");
     block.line(format!(
-        "let flat_rows: Vec<{flat_struct_name}> = rows.iter().map(|row| from_row(row)).collect::<Result<Vec<_>, _>>()?;"
+        "let flat_rows: Vec<{flat_struct_name}> = rows.iter().map(from_row).collect::<Result<Vec<_>, _>>()?;"
     ));
     block.line("");
 
     // Generate the transformation from flat rows to nested result
     let Some(select_fields) = &query.fields else {
         // No fields - shouldn't happen for queries with relations
-        block.line(format!("Ok(vec![])"));
+        block.line("Ok(vec![])".to_string());
         return block_to_string(&block);
     };
 
@@ -792,7 +792,7 @@ fn generate_relation_assembly(
 
                     let mut if_block =
                         Block::new(format!("if let Some(ref rel_id) = flat_row.{id_alias}"));
-                    if_block.line(format!("let key = (parent_id.clone(), rel_id.clone());"));
+                    if_block.line("let key = (parent_id.clone(), rel_id.clone());".to_string());
 
                     let mut if_insert = Block::new(format!("if {set_name}.insert(key)"));
                     let mut push_block =

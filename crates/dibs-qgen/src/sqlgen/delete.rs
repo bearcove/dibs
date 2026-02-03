@@ -22,10 +22,10 @@ pub fn generate_delete_sql(delete: &Delete) -> GeneratedDelete {
     let mut stmt = DeleteStmt::new(delete.from.value.clone());
 
     // WHERE clause
-    if let Some(where_clause) = &delete.where_clause {
-        if let Some(expr) = where_to_expr(where_clause) {
-            stmt = stmt.where_(expr);
-        }
+    if let Some(where_clause) = &delete.where_clause
+        && let Some(expr) = where_to_expr(where_clause)
+    {
+        stmt = stmt.where_(expr);
     }
 
     // RETURNING clause
