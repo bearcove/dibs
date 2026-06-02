@@ -1147,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "dibs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake3",
  "bytes",
@@ -1744,7 +1744,7 @@ dependencies = [
 
 [[package]]
 name = "facet-tokio-postgres"
-version = "0.43.1"
+version = "0.44.0"
 dependencies = [
  "chrono",
  "dibs-jsonb",
