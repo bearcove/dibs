@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/bearcove/dibs/compare/dibs-cli-v0.1.0...dibs-cli-v0.1.1) - 2026-06-04
+
+### Other
+
+- fix `generate` skeleton template (Result -> MigrationResult)
+
 ## [0.1.0](https://github.com/bearcove/dibs/compare/dibs-cli-v0.0.0...dibs-cli-v0.1.0) - 2026-06-02
 
 ### Added

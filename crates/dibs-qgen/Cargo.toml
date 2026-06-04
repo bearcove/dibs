@@ -1,6 +1,6 @@
 [package]
 name = "dibs-qgen"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Query DSL code generator for dibs (parses .styx query files into Rust and SQL)"
 license = "MIT OR Apache-2.0"
