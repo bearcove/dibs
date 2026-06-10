@@ -13,41 +13,41 @@ ignored = ["dibs-runtime"]
 
 [workspace.dependencies]
 # Internal crates
-dibs = { path = "crates/dibs", version = "0.1.1" }
-dibs-config = { path = "crates/dibs-config", version = "0.1.0" }
-dibs-macros = { path = "crates/dibs-macros", version = "0.1.0" }
-dibs-proto = { path = "crates/dibs-proto", version = "0.1.0" }
-dibs-qgen = { path = "crates/dibs-qgen", version = "0.1.0" }
-dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.1.0" }
-dibs-db-schema = { path = "crates/dibs-db-schema", version = "0.1.0" }
-dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.1.0" }
-dibs-runtime = { path = "crates/dibs-runtime", version = "0.1.0" }
+dibs = { path = "crates/dibs", version = "0.2.0-rc.0" }
+dibs-config = { path = "crates/dibs-config", version = "0.2.0-rc.0" }
+dibs-macros = { path = "crates/dibs-macros", version = "0.2.0-rc.0" }
+dibs-proto = { path = "crates/dibs-proto", version = "0.2.0-rc.0" }
+dibs-qgen = { path = "crates/dibs-qgen", version = "0.2.0-rc.0" }
+dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.2.0-rc.0" }
+dibs-db-schema = { path = "crates/dibs-db-schema", version = "0.2.0-rc.0" }
+dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.0" }
+dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.0" }
 dockside = { path = "crates/dockside" }
 
 # facet ecosystem
-facet = "0.46"
-figue = "4"
-facet-core = "0.46"
-facet-value = "0.46"
-facet-json = "0.46"
-facet-reflect = "0.46"
-facet-testhelpers = "0.46"
-facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.44.0" }
+facet = "0.50.0-rc.0"
+figue = "5.0.0-rc.0"
+facet-core = "0.50.0-rc.0"
+facet-value = "0.50.0-rc.0"
+facet-json = "0.50.0-rc.0"
+facet-reflect = "0.50.0-rc.0"
+facet-testhelpers = "0.50.0-rc.0"
+facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.0" }
 
-strid = "10"
+strid = "11.0.0-rc.0"
 
 # styx ecosystem
-facet-styx = "4"
-styx-embed = "4"
-styx-tree = { version = "4", features = ["facet"] }
-styx-lsp-ext = "4"
-styx-lsp = "4"
+facet-styx = "5.0.0-rc.0"
+styx-embed = "5.0.0-rc.0"
+styx-tree = { version = "5.0.0-rc.0", features = ["facet"] }
+styx-lsp-ext = "5.0.0-rc.0"
+styx-lsp = "5.0.0-rc.0"
 
 # vox ecosystem
-vox = "0.8"
-vox-codegen = "0.8"
-vox-stream = "0.8"
-vox-websocket = "0.8"
+vox = "0.9.0-rc.0"
+vox-codegen = "0.9.0-rc.0"
+vox-stream = "0.9.0-rc.0"
+vox-websocket = "0.9.0-rc.0"
 
 # async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
