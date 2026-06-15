@@ -10,6 +10,7 @@ Tables are defined as Rust structs with facet attributes:
 
 ```rust
 #[derive(Facet)]
+#[facet(derive(dibs::Table))]
 #[facet(dibs::table = "user")]
 pub struct User {
     #[facet(dibs::pk)]

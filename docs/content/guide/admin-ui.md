@@ -24,6 +24,7 @@ Remember those admin UI attributes from the schema guide? Here's where they shin
 
 ```rust
 #[derive(Facet)]
+#[facet(derive(dibs::Table))]
 #[facet(dibs::table = "products")]
 #[facet(dibs::icon = "package")]  // Shows a package icon in the UI
 pub struct Product {

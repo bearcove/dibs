@@ -21,6 +21,7 @@ my-app/
 use facet::Facet;
 
 #[derive(Facet)]
+#[facet(derive(dibs::Table))]
 #[facet(dibs::table = "users")]
 pub struct User {
     #[facet(dibs::pk)]

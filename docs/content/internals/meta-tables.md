@@ -140,6 +140,7 @@ The proc macro captures source location via `Span`:
 
 ```rust
 #[derive(Facet)]
+#[facet(derive(dibs::Table))]
 #[facet(dibs::table = "users")]
 /// User accounts in the system
 struct User {
