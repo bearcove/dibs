@@ -1,5 +1,11 @@
 # dibs
 
+## Moved to facet-rs/facet
+
+Dibs now lives in the [Facet monorepo](https://github.com/facet-rs/facet/tree/main/dibs).
+
+This repository is archived. Please use [facet-rs/facet](https://github.com/facet-rs/facet) for issues, pull requests, and future development.
+
 A Postgres toolkit for Rust, powered by [facet](https://github.com/facet-rs/facet) reflection.
 
 ## Components
