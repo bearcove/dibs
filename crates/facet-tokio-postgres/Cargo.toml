@@ -1,7 +1,8 @@
 [package]
 name = "facet-tokio-postgres"
-version = "0.50.0-rc.0"
+version = "0.50.0-rc.5"
 edition = "2024"
+rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Deserialize tokio-postgres Rows into any type implementing Facet"
 keywords = ["postgres", "tokio-postgres", "facet", "deserialization", "database"]
@@ -25,8 +26,8 @@ jiff = { workspace = true, optional = true }
 dibs-jsonb.workspace = true
 
 [dev-dependencies]
-facet = { workspace = true }
-facet-json = { workspace = true }
+facet.workspace = true
+facet-json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }

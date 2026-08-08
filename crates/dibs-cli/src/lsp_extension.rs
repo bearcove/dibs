@@ -3,8 +3,9 @@
 //! When invoked with `dibs lsp-extension`, this provides domain-specific
 //! intelligence (completions, hover, diagnostics) for dibs query files.
 //!
-//! This connects to the user's db crate service (same as the TUI) to fetch
-//! the actual schema, rather than using dummy tables.
+//! This connects to the application's explicit Dibs tooling endpoint (the same
+//! endpoint as the TUI) to fetch the actual linked schema rather than using
+//! dummy tables.
 
 use crate::config;
 use crate::service::{self, ServiceConnection};
@@ -43,7 +44,7 @@ pub async fn run() {
 
     let link = vox_stream::StreamLink::stdio();
     let host_client = match styx_lsp_ext::vox::acceptor_on(link)
-        .on_connection(dispatcher)
+        .on_lane(dispatcher)
         .establish::<StyxLspHostClient>()
         .await
     {

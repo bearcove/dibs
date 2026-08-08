@@ -1,11 +1,12 @@
 [package]
 name = "dibs-cli"
-version = "0.2.0-rc.0"
+version = "0.2.0-rc.5"
 edition = "2024"
+rust-version.workspace = true
 authors = ["Amos Wenger <amos@bearcove.eu>"]
 description = "CLI for dibs - Postgres toolkit for Rust"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/bearcove/dibs"
+repository = "https://github.com/facet-rs/facet"
 
 [package.metadata]
 
@@ -43,7 +44,7 @@ facet-styx.workspace = true
 vox.workspace = true
 vox-stream.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 jiff.workspace = true
 owo-colors.workspace = true
 ratatui.workspace = true
@@ -52,9 +53,9 @@ arborium.workspace = true
 arborium-highlight.workspace = true
 arborium-theme.workspace = true
 ariadne.workspace = true
-notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 
 [dev-dependencies]
 styx-lsp.workspace = true
+tempfile.workspace = true
 serde_json = "1"
 lsp-types = "0.97"

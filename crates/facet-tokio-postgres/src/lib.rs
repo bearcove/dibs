@@ -431,6 +431,8 @@ fn deserialize_option_column(
         try_option!(bool);
     } else if inner_shape == String::SHAPE {
         try_option!(String);
+    } else if inner_shape == <Vec<u8>>::SHAPE {
+        try_option!(Vec<u8>);
     }
 
     #[cfg(feature = "rust_decimal")]
@@ -499,7 +501,7 @@ where
     })
 }
 
-/// Deserialize a JSONB column into a Jsonb<T> wrapper.
+/// Deserialize a JSONB column into a `Jsonb<T>` wrapper.
 fn deserialize_jsonb_column(
     row: &Row,
     column_idx: usize,
@@ -512,7 +514,7 @@ fn deserialize_jsonb_column(
     deserialize_jsonb_bytes(&raw_jsonb.0, partial, shape, column_name)
 }
 
-/// Deserialize JSONB bytes into a Jsonb<T> wrapper.
+/// Deserialize JSONB bytes into a `Jsonb<T>` wrapper.
 fn deserialize_jsonb_bytes(
     raw_bytes: &[u8],
     mut partial: Partial<'static, false>,
