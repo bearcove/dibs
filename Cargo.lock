@@ -690,7 +690,7 @@ checksum = "980c2afde4af43d6a05c5be738f9eae595cff86dce1f38f88b95058a98c027f3"
 [[package]]
 name = "copypatch"
 version = "0.2.0-rc.4"
-source = "git+https://github.com/bearcove/weavy?rev=5231e74c2532bc0fc6eb807b6b3f504e67ca6ac4#5231e74c2532bc0fc6eb807b6b3f504e67ca6ac4"
+source = "git+https://github.com/bearcove/weavy?rev=743a7abe8f999ab4122df1cc02e2441849210a23#743a7abe8f999ab4122df1cc02e2441849210a23"
 dependencies = [
  "libc",
  "object 0.39.1",
@@ -951,7 +951,7 @@ dependencies = [
  "dibs-proto",
  "dibs-qgen",
  "dockside",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "indexmap 2.14.0",
  "insta",
  "inventory",
@@ -978,7 +978,7 @@ dependencies = [
  "dibs-config",
  "dibs-proto",
  "dibs-query-schema",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-json",
  "facet-styx",
  "figue",
@@ -1004,7 +1004,7 @@ name = "dibs-codegen"
 version = "0.1.0"
 dependencies = [
  "dibs-proto",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "figue",
  "vox-codegen",
 ]
@@ -1013,7 +1013,7 @@ dependencies = [
 name = "dibs-config"
 version = "0.2.0-rc.5"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
@@ -1023,7 +1023,7 @@ dependencies = [
  "chrono",
  "dibs-jsonb",
  "dibs-sql",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-value",
  "indexmap 2.14.0",
  "inventory",
@@ -1036,7 +1036,7 @@ dependencies = [
 name = "dibs-jsonb"
 version = "0.2.0-rc.5"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
@@ -1052,7 +1052,7 @@ dependencies = [
 name = "dibs-proto"
 version = "0.2.0-rc.5"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "vox",
 ]
 
@@ -1081,7 +1081,7 @@ name = "dibs-query-schema"
 version = "0.2.0-rc.5"
 dependencies = [
  "dibs-sql",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-reflect",
  "facet-styx",
  "facet-testhelpers",
@@ -1093,7 +1093,7 @@ name = "dibs-runtime"
 version = "0.2.0-rc.5"
 dependencies = [
  "dibs-jsonb",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-tokio-postgres",
  "facet-value",
  "jiff",
@@ -1108,7 +1108,7 @@ name = "dibs-sql"
 version = "0.2.0-rc.5"
 dependencies = [
  "blake3",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "indexmap 2.14.0",
  "insta",
  "strid",
@@ -1275,18 +1275,28 @@ dependencies = [
 [[package]]
 name = "facet"
 version = "0.50.0-rc.5"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
+dependencies = [
+ "autocfg",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-macros 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-reflect",
+]
+
+[[package]]
+name = "facet"
+version = "0.50.0-rc.5"
 source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
 dependencies = [
  "autocfg",
- "facet-core",
- "facet-macros",
- "facet-reflect",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4)",
+ "facet-macros 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4)",
 ]
 
 [[package]]
 name = "facet-core"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
  "autocfg",
  "bytes",
@@ -1304,28 +1314,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "facet-dessert"
+name = "facet-core"
 version = "0.50.0-rc.5"
 source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
 dependencies = [
- "facet-core",
+ "autocfg",
+ "const-fnv1a-hash",
+ "iddqd",
+ "impls",
+]
+
+[[package]]
+name = "facet-dessert"
+version = "0.50.0-rc.5"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
+dependencies = [
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-reflect",
 ]
 
 [[package]]
 name = "facet-error"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
 name = "facet-format"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet-core",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-dessert",
  "facet-path",
  "facet-reflect",
@@ -1336,11 +1357,11 @@ dependencies = [
 [[package]]
 name = "facet-json"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
  "copypatch",
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-format",
  "facet-reflect",
  "weavy",
@@ -1349,11 +1370,31 @@ dependencies = [
 [[package]]
 name = "facet-macro-parse"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet-macro-types",
+ "facet-macro-types 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "facet-macro-parse"
+version = "0.50.0-rc.5"
+source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+dependencies = [
+ "facet-macro-types 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4)",
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "facet-macro-types"
+version = "0.50.0-rc.5"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unsynn",
 ]
 
 [[package]]
@@ -1369,9 +1410,30 @@ dependencies = [
 [[package]]
 name = "facet-macros"
 version = "0.50.0-rc.5"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
+dependencies = [
+ "facet-macros-impl 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+]
+
+[[package]]
+name = "facet-macros"
+version = "0.50.0-rc.5"
 source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
 dependencies = [
- "facet-macros-impl",
+ "facet-macros-impl 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4)",
+]
+
+[[package]]
+name = "facet-macros-impl"
+version = "0.50.0-rc.5"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
+dependencies = [
+ "facet-macro-parse 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-macro-types 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "unsynn",
 ]
 
 [[package]]
@@ -1379,8 +1441,8 @@ name = "facet-macros-impl"
 version = "0.50.0-rc.5"
 source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
 dependencies = [
- "facet-macro-parse",
- "facet-macro-types",
+ "facet-macro-parse 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4)",
+ "facet-macro-types 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4)",
  "proc-macro2",
  "quote",
  "strsim",
@@ -1390,17 +1452,17 @@ dependencies = [
 [[package]]
 name = "facet-path"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet-core",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
 name = "facet-pretty"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet-core",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-reflect",
  "owo-colors",
  "terminal-light",
@@ -1409,9 +1471,9 @@ dependencies = [
 [[package]]
 name = "facet-reflect"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet-core",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-path",
  "hashbrown 0.17.1",
  "smallvec 2.0.0-alpha.12",
@@ -1421,9 +1483,9 @@ dependencies = [
 [[package]]
 name = "facet-solver"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet-core",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-reflect",
  "strsim",
 ]
@@ -1431,11 +1493,11 @@ dependencies = [
 [[package]]
 name = "facet-styx"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
  "ariadne",
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-format",
  "facet-reflect",
  "margin",
@@ -1450,7 +1512,7 @@ dependencies = [
 [[package]]
 name = "facet-testhelpers"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
  "color-backtrace",
  "facet-testhelpers-macros",
@@ -1462,7 +1524,7 @@ dependencies = [
 [[package]]
 name = "facet-testhelpers-macros"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
  "quote",
  "unsynn",
@@ -1474,8 +1536,8 @@ version = "0.50.0-rc.5"
 dependencies = [
  "chrono",
  "dibs-jsonb",
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-json",
  "facet-reflect",
  "jiff",
@@ -1492,9 +1554,9 @@ dependencies = [
 [[package]]
 name = "facet-value"
 version = "0.50.0-rc.5"
-source = "git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4#dc57e24e381f0c61b4acfa242c368656a84348d4"
+source = "git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8#5705fa6c51289bea49f5729c52dc5e23cedce4f8"
 dependencies = [
- "facet-core",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-format",
  "facet-reflect",
  "indexmap 2.14.0",
@@ -1536,12 +1598,12 @@ dependencies = [
 [[package]]
 name = "figue"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/figue-next?rev=c7e1fda97267bafe83c4bbe30b74950a30cf8e5e#c7e1fda97267bafe83c4bbe30b74950a30cf8e5e"
+source = "git+https://github.com/bearcove/figue-next?rev=361672c57316b2202ac0372f1c64988d8acfc6b6#361672c57316b2202ac0372f1c64988d8acfc6b6"
 dependencies = [
  "ariadne",
  "camino",
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-error",
  "facet-format",
  "facet-json",
@@ -1561,9 +1623,9 @@ dependencies = [
 [[package]]
 name = "figue-attrs"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/figue-next?rev=c7e1fda97267bafe83c4bbe30b74950a30cf8e5e#c7e1fda97267bafe83c4bbe30b74950a30cf8e5e"
+source = "git+https://github.com/bearcove/figue-next?rev=361672c57316b2202ac0372f1c64988d8acfc6b6#361672c57316b2202ac0372f1c64988d8acfc6b6"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
@@ -2529,16 +2591,16 @@ dependencies = [
 [[package]]
 name = "margin"
 version = "0.10.0-rc.1"
-source = "git+https://github.com/bearcove/snark?rev=da157a34d268cde4153aa0abbcbfb5caa19cf58a#da157a34d268cde4153aa0abbcbfb5caa19cf58a"
+source = "git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a#2dcfc039aa43e14fa004238d00bd9eeb16bf859a"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=dc57e24e381f0c61b4acfa242c368656a84348d4)",
  "unicode-width",
 ]
 
 [[package]]
 name = "margin-term"
 version = "0.10.0-rc.1"
-source = "git+https://github.com/bearcove/snark?rev=da157a34d268cde4153aa0abbcbfb5caa19cf58a#da157a34d268cde4153aa0abbcbfb5caa19cf58a"
+source = "git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a#2dcfc039aa43e14fa004238d00bd9eeb16bf859a"
 dependencies = [
  "arborium-theme",
  "margin",
@@ -3036,9 +3098,9 @@ dependencies = [
 [[package]]
 name = "phon"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=91e595cc651a4ca0e90746be0d75c033bb9cd766#91e595cc651a4ca0e90746be0d75c033bb9cd766"
+source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-value",
  "phon-engine",
  "phon-ir",
@@ -3049,9 +3111,9 @@ dependencies = [
 [[package]]
 name = "phon-codegen"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=91e595cc651a4ca0e90746be0d75c033bb9cd766#91e595cc651a4ca0e90746be0d75c033bb9cd766"
+source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "phon",
  "phon-schema",
 ]
@@ -3059,7 +3121,7 @@ dependencies = [
 [[package]]
 name = "phon-engine"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=91e595cc651a4ca0e90746be0d75c033bb9cd766#91e595cc651a4ca0e90746be0d75c033bb9cd766"
+source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
 dependencies = [
  "facet-value",
  "phon-ir",
@@ -3070,7 +3132,7 @@ dependencies = [
 [[package]]
 name = "phon-ir"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=91e595cc651a4ca0e90746be0d75c033bb9cd766#91e595cc651a4ca0e90746be0d75c033bb9cd766"
+source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
 dependencies = [
  "phon-schema",
  "weavy",
@@ -3079,7 +3141,7 @@ dependencies = [
 [[package]]
 name = "phon-jit"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=91e595cc651a4ca0e90746be0d75c033bb9cd766#91e595cc651a4ca0e90746be0d75c033bb9cd766"
+source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
 dependencies = [
  "copypatch",
  "phon-ir",
@@ -3090,7 +3152,7 @@ dependencies = [
 [[package]]
 name = "phon-schema"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=91e595cc651a4ca0e90746be0d75c033bb9cd766#91e595cc651a4ca0e90746be0d75c033bb9cd766"
+source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
 dependencies = [
  "blake3",
  "facet-value",
@@ -4115,17 +4177,17 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strid"
-version = "11.0.0-rc.0"
-source = "git+https://github.com/bearcove/strid-next?rev=256531f73b93ff110d390e105c4af8e1f5728dad#256531f73b93ff110d390e105c4af8e1f5728dad"
+version = "11.0.0-rc.5"
+source = "git+https://github.com/bearcove/strid-next?rev=98a76b12c2a65f1a909123ec5a03fcc12d89444b#98a76b12c2a65f1a909123ec5a03fcc12d89444b"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "strid-macros",
 ]
 
 [[package]]
 name = "strid-macros"
-version = "11.0.0-rc.0"
-source = "git+https://github.com/bearcove/strid-next?rev=256531f73b93ff110d390e105c4af8e1f5728dad#256531f73b93ff110d390e105c4af8e1f5728dad"
+version = "11.0.0-rc.4"
+source = "git+https://github.com/bearcove/strid-next?rev=98a76b12c2a65f1a909123ec5a03fcc12d89444b#98a76b12c2a65f1a909123ec5a03fcc12d89444b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4216,7 +4278,7 @@ dependencies = [
 [[package]]
 name = "styx-cst"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
  "rowan",
  "styx-tokenizer",
@@ -4225,7 +4287,7 @@ dependencies = [
 [[package]]
 name = "styx-embed"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
  "blake3",
  "goblin",
@@ -4237,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "styx-embed-macros"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
  "blake3",
  "lz4_flex",
@@ -4249,7 +4311,7 @@ dependencies = [
 [[package]]
 name = "styx-format"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
  "styx-cst",
  "styx-parse",
@@ -4259,11 +4321,11 @@ dependencies = [
 [[package]]
 name = "styx-lsp"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
  "dirs",
  "eyre",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-styx",
  "glob",
  "hex",
@@ -4287,9 +4349,9 @@ dependencies = [
 [[package]]
 name = "styx-lsp-ext"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "styx-tree",
  "vox",
 ]
@@ -4297,17 +4359,17 @@ dependencies = [
 [[package]]
 name = "styx-lsp-test-schema"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
 name = "styx-parse"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "styx-tokenizer",
  "tracing",
 ]
@@ -4315,19 +4377,19 @@ dependencies = [
 [[package]]
 name = "styx-tokenizer"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "tracing",
 ]
 
 [[package]]
 name = "styx-tree"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?branch=restore-from-facet#db9c6590c751099399a3debe5d6975898530261a"
+source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
 dependencies = [
  "ariadne",
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-testhelpers",
  "styx-parse",
 ]
@@ -4405,7 +4467,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "taxon"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/weavy?rev=5231e74c2532bc0fc6eb807b6b3f504e67ca6ac4#5231e74c2532bc0fc6eb807b6b3f504e67ca6ac4"
+source = "git+https://github.com/bearcove/weavy?rev=743a7abe8f999ab4122df1cc02e2441849210a23#743a7abe8f999ab4122df1cc02e2441849210a23"
 dependencies = [
  "blake3",
 ]
@@ -5190,9 +5252,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vox"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-pretty",
  "facet-reflect",
  "tokio",
@@ -5209,11 +5271,11 @@ dependencies = [
 [[package]]
 name = "vox-codegen"
 version = "0.10.0-rc.6"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "base64 0.21.7",
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "heck",
  "phon",
  "phon-codegen",
@@ -5227,10 +5289,10 @@ dependencies = [
 [[package]]
 name = "vox-core"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "futures-util",
  "tokio",
  "tracing",
@@ -5244,7 +5306,7 @@ dependencies = [
 [[package]]
 name = "vox-fdpass"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "libc",
  "passfd",
@@ -5255,7 +5317,7 @@ dependencies = [
 [[package]]
 name = "vox-macros-core"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -5266,7 +5328,7 @@ dependencies = [
 [[package]]
 name = "vox-macros-parse"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "proc-macro2",
  "unsynn",
@@ -5275,9 +5337,9 @@ dependencies = [
 [[package]]
 name = "vox-phon"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
- "facet",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "phon",
  "phon-engine",
  "phon-ir",
@@ -5289,7 +5351,7 @@ dependencies = [
 [[package]]
 name = "vox-rt"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -5305,22 +5367,22 @@ dependencies = [
 [[package]]
 name = "vox-rt-macros"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 
 [[package]]
 name = "vox-schema"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "blake3",
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
 name = "vox-service-macros"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "proc-macro2",
  "vox-macros-core",
@@ -5329,7 +5391,7 @@ dependencies = [
 [[package]]
 name = "vox-stream"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "libc",
  "tokio",
@@ -5343,11 +5405,11 @@ dependencies = [
 [[package]]
 name = "vox-types"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "blake3",
- "facet",
- "facet-core",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-reflect",
  "facet-value",
  "heck",
@@ -5362,7 +5424,7 @@ dependencies = [
 [[package]]
 name = "vox-websocket"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=b18398810c404350e70c98527132e965ba878666#b18398810c404350e70c98527132e965ba878666"
+source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -5555,7 +5617,7 @@ dependencies = [
 [[package]]
 name = "weavy"
 version = "0.2.2"
-source = "git+https://github.com/bearcove/weavy?rev=5231e74c2532bc0fc6eb807b6b3f504e67ca6ac4#5231e74c2532bc0fc6eb807b6b3f504e67ca6ac4"
+source = "git+https://github.com/bearcove/weavy?rev=743a7abe8f999ab4122df1cc02e2441849210a23#743a7abe8f999ab4122df1cc02e2441849210a23"
 dependencies = [
  "copypatch",
 ]
