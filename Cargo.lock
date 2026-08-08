@@ -1493,7 +1493,7 @@ dependencies = [
 [[package]]
 name = "facet-styx"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "ariadne",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -1598,7 +1598,7 @@ dependencies = [
 [[package]]
 name = "figue"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/figue-next?rev=361672c57316b2202ac0372f1c64988d8acfc6b6#361672c57316b2202ac0372f1c64988d8acfc6b6"
+source = "git+https://github.com/bearcove/figue?rev=361672c57316b2202ac0372f1c64988d8acfc6b6#361672c57316b2202ac0372f1c64988d8acfc6b6"
 dependencies = [
  "ariadne",
  "camino",
@@ -1623,7 +1623,7 @@ dependencies = [
 [[package]]
 name = "figue-attrs"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/figue-next?rev=361672c57316b2202ac0372f1c64988d8acfc6b6#361672c57316b2202ac0372f1c64988d8acfc6b6"
+source = "git+https://github.com/bearcove/figue?rev=361672c57316b2202ac0372f1c64988d8acfc6b6#361672c57316b2202ac0372f1c64988d8acfc6b6"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
@@ -4278,7 +4278,7 @@ dependencies = [
 [[package]]
 name = "styx-cst"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "rowan",
  "styx-tokenizer",
@@ -4287,7 +4287,7 @@ dependencies = [
 [[package]]
 name = "styx-embed"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "blake3",
  "goblin",
@@ -4299,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "styx-embed-macros"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "blake3",
  "lz4_flex",
@@ -4311,7 +4311,7 @@ dependencies = [
 [[package]]
 name = "styx-format"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "styx-cst",
  "styx-parse",
@@ -4321,7 +4321,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "dirs",
  "eyre",
@@ -4349,7 +4349,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-ext"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "styx-tree",
@@ -4359,7 +4359,7 @@ dependencies = [
 [[package]]
 name = "styx-lsp-test-schema"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
@@ -4367,7 +4367,7 @@ dependencies = [
 [[package]]
 name = "styx-parse"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "styx-tokenizer",
@@ -4377,7 +4377,7 @@ dependencies = [
 [[package]]
 name = "styx-tokenizer"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "tracing",
@@ -4386,7 +4386,7 @@ dependencies = [
 [[package]]
 name = "styx-tree"
 version = "5.0.0-rc.5"
-source = "git+https://github.com/bearcove/styx?rev=d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc#d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc"
+source = "git+https://github.com/bearcove/styx?rev=fc2814a5ec889338eb1bf9f27425ac7094462265#fc2814a5ec889338eb1bf9f27425ac7094462265"
 dependencies = [
  "ariadne",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -5252,7 +5252,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vox"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-pretty",
@@ -5271,7 +5271,7 @@ dependencies = [
 [[package]]
 name = "vox-codegen"
 version = "0.10.0-rc.6"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "base64 0.21.7",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -5289,7 +5289,7 @@ dependencies = [
 [[package]]
 name = "vox-core"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -5306,7 +5306,7 @@ dependencies = [
 [[package]]
 name = "vox-fdpass"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "libc",
  "passfd",
@@ -5317,7 +5317,7 @@ dependencies = [
 [[package]]
 name = "vox-macros-core"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -5328,7 +5328,7 @@ dependencies = [
 [[package]]
 name = "vox-macros-parse"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "proc-macro2",
  "unsynn",
@@ -5337,7 +5337,7 @@ dependencies = [
 [[package]]
 name = "vox-phon"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "phon",
@@ -5351,7 +5351,7 @@ dependencies = [
 [[package]]
 name = "vox-rt"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -5367,12 +5367,12 @@ dependencies = [
 [[package]]
 name = "vox-rt-macros"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 
 [[package]]
 name = "vox-schema"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "blake3",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -5382,7 +5382,7 @@ dependencies = [
 [[package]]
 name = "vox-service-macros"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "proc-macro2",
  "vox-macros-core",
@@ -5391,7 +5391,7 @@ dependencies = [
 [[package]]
 name = "vox-stream"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "libc",
  "tokio",
@@ -5405,7 +5405,7 @@ dependencies = [
 [[package]]
 name = "vox-types"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "blake3",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -5424,7 +5424,7 @@ dependencies = [
 [[package]]
 name = "vox-websocket"
 version = "0.10.0-rc.5"
-source = "git+https://github.com/bearcove/vox-next?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
+source = "git+https://github.com/bearcove/vox?rev=e875e070d78690f45a06a13e8fc79cef84579ed4#e875e070d78690f45a06a13e8fc79cef84579ed4"
 dependencies = [
  "futures-channel",
  "futures-util",

@@ -25,19 +25,19 @@ facet-json = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289be
 facet-reflect = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
 facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
-figue = { git = "https://github.com/bearcove/figue-next", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
+figue = { git = "https://github.com/bearcove/figue", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
 strid = { git = "https://github.com/bearcove/strid-next", rev = "98a76b12c2a65f1a909123ec5a03fcc12d89444b" }
 
-facet-styx = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
-styx-embed = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
-styx-tree = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc", features = ["facet"] }
-styx-lsp-ext = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
-styx-lsp = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
+facet-styx = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
+styx-embed = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
+styx-tree = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265", features = ["facet"] }
+styx-lsp-ext = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
+styx-lsp = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
 
-vox = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
-vox-codegen = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
-vox-stream = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
-vox-websocket = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox-codegen = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox-stream = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox-websocket = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-postgres = "0.7"
