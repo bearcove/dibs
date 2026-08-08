@@ -18,26 +18,26 @@ dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.5" }
 dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.5" }
 dockside = { path = "crates/dockside" }
 
-facet = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
-facet-core = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
-facet-value = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
-facet-json = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
-facet-reflect = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
-facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
+facet = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet-core = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet-value = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet-json = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet-reflect = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
-figue = { git = "https://github.com/bearcove/figue-next", rev = "c7e1fda97267bafe83c4bbe30b74950a30cf8e5e" }
-strid = { git = "https://github.com/bearcove/strid-next", rev = "256531f73b93ff110d390e105c4af8e1f5728dad" }
+figue = { git = "https://github.com/bearcove/figue-next", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
+strid = { git = "https://github.com/bearcove/strid-next", rev = "98a76b12c2a65f1a909123ec5a03fcc12d89444b" }
 
-facet-styx = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
-styx-embed = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
-styx-tree = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet", features = ["facet"] }
-styx-lsp-ext = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
-styx-lsp = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
+facet-styx = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
+styx-embed = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
+styx-tree = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc", features = ["facet"] }
+styx-lsp-ext = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
+styx-lsp = { git = "https://github.com/bearcove/styx", rev = "d2a83adc1fc6bf5f9a6a9ec6919bf6be61e4f1fc" }
 
-vox = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
-vox-codegen = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
-vox-stream = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
-vox-websocket = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
+vox = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox-codegen = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox-stream = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox-websocket = { git = "https://github.com/bearcove/vox-next", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-postgres = "0.7"
