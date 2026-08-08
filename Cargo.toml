@@ -1,134 +1,76 @@
 [workspace]
-members = [
-  "crates/*",
-  "examples/my-app-workspace/my-app",
-  "examples/my-app-workspace/my-app-db",
-  "examples/my-app-workspace/my-app-queries",
-]
-exclude = ["examples/admin-ui"]
+members = ["crates/*"]
+exclude = ["examples/admin-ui", "examples/my-app-workspace"]
 resolver = "3"
 
-[workspace.metadata.cargo-shear]
-ignored = ["dibs-runtime"]
+[workspace.package]
+rust-version = "1.92"
 
 [workspace.dependencies]
-# Internal crates
-dibs = { path = "crates/dibs", version = "0.2.0-rc.0" }
-dibs-config = { path = "crates/dibs-config", version = "0.2.0-rc.0" }
-dibs-macros = { path = "crates/dibs-macros", version = "0.2.0-rc.0" }
-dibs-proto = { path = "crates/dibs-proto", version = "0.2.0-rc.0" }
-dibs-qgen = { path = "crates/dibs-qgen", version = "0.2.0-rc.0" }
-dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.2.0-rc.0" }
-dibs-db-schema = { path = "crates/dibs-db-schema", version = "0.2.0-rc.0" }
-dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.0" }
-dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.0" }
+dibs = { path = "crates/dibs", version = "0.2.0-rc.5" }
+dibs-config = { path = "crates/dibs-config", version = "0.2.0-rc.5" }
+dibs-macros = { path = "crates/dibs-macros", version = "0.2.0-rc.4" }
+dibs-proto = { path = "crates/dibs-proto", version = "0.2.0-rc.5" }
+dibs-qgen = { path = "crates/dibs-qgen", version = "0.2.0-rc.5" }
+dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.2.0-rc.5" }
+dibs-db-schema = { path = "crates/dibs-db-schema", version = "0.2.0-rc.5" }
+dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.5" }
+dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.5" }
 dockside = { path = "crates/dockside" }
 
-# facet ecosystem
-facet = "0.50.0-rc.0"
-figue = "5.0.0-rc.0"
-facet-core = "0.50.0-rc.0"
-facet-value = "0.50.0-rc.0"
-facet-json = "0.50.0-rc.0"
-facet-reflect = "0.50.0-rc.0"
-facet-testhelpers = "0.50.0-rc.0"
-facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.0" }
+facet = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
+facet-core = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
+facet-value = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
+facet-json = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
+facet-reflect = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
+facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "dc57e24e381f0c61b4acfa242c368656a84348d4" }
+facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
+figue = { git = "https://github.com/bearcove/figue-next", rev = "c7e1fda97267bafe83c4bbe30b74950a30cf8e5e" }
+strid = { git = "https://github.com/bearcove/strid-next", rev = "256531f73b93ff110d390e105c4af8e1f5728dad" }
 
-strid = "11.0.0-rc.0"
+facet-styx = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
+styx-embed = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
+styx-tree = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet", features = ["facet"] }
+styx-lsp-ext = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
+styx-lsp = { git = "https://github.com/bearcove/styx", branch = "restore-from-facet" }
 
-# styx ecosystem
-facet-styx = "5.0.0-rc.0"
-styx-embed = "5.0.0-rc.0"
-styx-tree = { version = "5.0.0-rc.0", features = ["facet"] }
-styx-lsp-ext = "5.0.0-rc.0"
-styx-lsp = "5.0.0-rc.0"
+vox = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
+vox-codegen = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
+vox-stream = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
+vox-websocket = { git = "https://github.com/bearcove/vox-next", rev = "b18398810c404350e70c98527132e965ba878666" }
 
-# vox ecosystem
-vox = "0.9.0-rc.0"
-vox-codegen = "0.9.0-rc.0"
-vox-stream = "0.9.0-rc.0"
-vox-websocket = "0.9.0-rc.0"
-
-# async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-tokio-postgres = { version = "0.7" }
+tokio-postgres = "0.7"
 tokio-tungstenite = "0.29"
 deadpool-postgres = "0.14"
-
-# serialization & data
 bytes = "1"
 chrono = "0.4"
 jiff = "0.2"
 postgres-types = "0.2"
-rust_decimal = { version = "1", default-features = false, features = [] }
+rust_decimal = { version = "1", default-features = false }
 time = "0.3"
 uuid = "1"
-
-# error handling
 thiserror = "2"
-
-# CLI & terminal
 crossterm = "0.29"
 dotenvy = "0.15"
 owo-colors = "4"
 ratatui = "0.30"
-
-# syntax highlighting
 arborium = { version = "2", features = ["lang-rust"] }
 arborium-highlight = "2"
 arborium-theme = "2"
 ariadne = "0.6"
-
-# proc macros
 proc-macro2 = "1"
 quote = "1"
 unsynn = { version = "0.3", features = ["proc_macro2"] }
-
-# codegen
 codegen = "0.3"
-
-# misc
 camino = "1"
 indexmap = "2"
 inventory = "0.3"
 blake3 = "1"
-
-# dev/test dependencies
 insta = "1"
 proptest = "1"
+tempfile = "3"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# facet = { path = "../facet/facet" }
-
-# # Note: Uncomment to develop facet
-# [patch."https://github.com/facet-rs/facet"]
-# facet = { path = "../facet/facet" }
-# facet-core = { path = "../facet/facet-core" }
-# facet-dessert = { path = "../facet/facet-dessert" }
-# facet-error = { path = "../facet/facet-error" }
-# facet-format = { path = "../facet/facet-format" }
-# facet-path = { path = "../facet/facet-path" }
-# facet-postcard = { path = "../facet/facet-postcard" }
-# facet-pretty = { path = "../facet/facet-pretty" }
-# facet-reflect = { path = "../facet/facet-reflect" }
-# facet-solver = { path = "../facet/facet-solver" }
-# facet-testhelpers = { path = "../facet/facet-testhelpers" }
-# facet-toml = { path = "../facet/facet-toml" }
-# facet-value = { path = "../facet/facet-value" }
-
-# [patch."https://github.com/bearcove/roam"]
-# roam = { path = "../roam/rust/roam" }
-# roam-codegen = { path = "../roam/rust/roam-codegen" }
-# roam-frame = { path = "../roam/rust/roam-frame" }
-# roam-hash = { path = "../roam/rust/roam-hash" }
-# roam-service-macros = { path = "../roam/rust/roam-macros" }
-# roam-macros-parse = { path = "../roam/rust/roam-macros-parse" }
-# roam-schema = { path = "../roam/rust/roam-schema" }
-# roam-session = { path = "../roam/rust/roam-session" }
-# roam-stream = { path = "../roam/rust/roam-stream" }
-# roam-task-local = { path = "../roam/rust/roam-task-local" }
-# roam-websocket = { path = "../roam/rust/roam-websocket" }
-# roam-wire = { path = "../roam/rust/roam-wire" }
