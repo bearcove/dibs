@@ -1014,6 +1014,7 @@ fn param_type_to_rust(ty: &dibs_query_schema::ParamType) -> String {
     match ty {
         ParamType::String => "String".to_string(),
         ParamType::Int => "i64".to_string(),
+        ParamType::Int32 => "i32".to_string(),
         ParamType::Float => "f64".to_string(),
         ParamType::Bool => "bool".to_string(),
         ParamType::Uuid => "Uuid".to_string(),
@@ -1176,7 +1177,7 @@ fn generate_upsert_code(
 ) -> Result<(), QError> {
     let name = &name_meta.value;
     let fn_name = to_snake_case(name);
-    let generated = crate::sqlgen::generate_upsert_sql(upsert);
+    let generated = crate::sqlgen::generate_upsert_sql(&_ctx.sqlgen_ctx(), upsert)?;
 
     let has_returning = upsert.returning.is_some();
     let return_ty = if !has_returning {

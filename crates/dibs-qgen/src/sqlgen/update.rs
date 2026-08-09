@@ -1,7 +1,7 @@
 //! SQL generation for UPDATE statements.
 
 use super::SqlGenContext;
-use super::common::{value_expr_to_expr, where_to_expr_validated};
+use super::common::{update_set_value_to_expr, where_to_expr_validated};
 use crate::QError;
 use dibs_query_schema::Update;
 use dibs_sql::{ColumnName, ParamName, UpdateStmt, render};
@@ -29,7 +29,13 @@ pub fn generate_update_sql(
     // SET clause
     for (col_meta, value_expr) in &update.set.columns {
         let col_name = &col_meta.value;
-        let expr = value_expr_to_expr(col_name, value_expr, update.params.as_ref());
+        let expr = update_set_value_to_expr(
+            ctx,
+            col_meta.span,
+            col_name,
+            value_expr,
+            update.params.as_ref(),
+        )?;
         stmt = stmt.set(col_name.clone(), expr);
     }
 
@@ -138,6 +144,82 @@ ClearDeletedAt @update{
             "must not emit the invalid `NULL()`: {}",
             result.sql
         );
+    }
+
+    #[test]
+    fn test_update_arithmetic_expression() {
+        let source = r#"
+IncrementRefcount @update{
+    table objects
+    set {refcount @add(1)}
+    where {object_key $object_key}
+    params {object_key @string}
+    returning {refcount}
+}
+"#;
+        let (update, qsource) = get_first_update(source);
+        let schema = Schema::default();
+        let ctx = SqlGenContext::new(&schema, std::sync::Arc::new(qsource));
+        let result = generate_update_sql(&ctx, &update).unwrap();
+        assert!(
+            result.sql.contains(r#"SET "refcount" = "refcount" + 1"#),
+            "unexpected SQL: {}",
+            result.sql
+        );
+        assert!(!result.sql.contains("ADD("));
+    }
+
+    #[test]
+    fn test_update_arithmetic_rejects_wrong_arity() {
+        for source in [
+            r#"
+BadIncrement @update{
+    table objects
+    set {refcount @add()}
+}
+"#,
+            r#"
+BadIncrement @update{
+    table objects
+    set {refcount @add(1 2)}
+}
+"#,
+        ] {
+            let (update, qsource) = get_first_update(source);
+            let schema = Schema::default();
+            let ctx = SqlGenContext::new(&schema, std::sync::Arc::new(qsource));
+            let err = generate_update_sql(&ctx, &update).unwrap_err();
+            assert!(matches!(
+                err.kind,
+                crate::QErrorKind::InvalidUpdateArgCount {
+                    expected: 1,
+                    actual: 0 | 2,
+                    ..
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn test_insert_add_remains_a_function_call() {
+        let source = r#"
+InsertCounter @insert{
+    into objects
+    values {refcount @add(1)}
+}
+"#;
+        let (file, _) = parse_query_file(camino::Utf8Path::new("<test>"), source).unwrap();
+        let insert = file
+            .0
+            .values()
+            .find_map(|decl| match decl {
+                dibs_query_schema::Decl::Insert(insert) => Some(insert),
+                _ => None,
+            })
+            .unwrap();
+        let result = crate::sqlgen::generate_insert_sql(insert);
+        assert!(result.sql.contains(r#"VALUES (ADD(1))"#));
+        assert!(!result.sql.contains(r#"\"refcount\" + 1"#));
     }
 
     #[test]

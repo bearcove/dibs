@@ -5,7 +5,7 @@ use crate::filter_spec::{
     CONTAINS_SPEC, EQ_SPEC, GT_SPEC, GTE_SPEC, ILIKE_SPEC, IN_SPEC, JSON_GET_SPEC,
     JSON_GET_TEXT_SPEC, KEY_EXISTS_SPEC, LIKE_SPEC, LT_SPEC, LTE_SPEC, NE_SPEC,
 };
-use crate::{FilterArg, QError};
+use crate::{FilterArg, QError, QErrorKind};
 use dibs_query_schema::{
     FilterValue, Meta, ParamType, Params, Payload, Span, UpdateValue, ValueExpr, Where,
 };
@@ -316,53 +316,113 @@ pub fn cast_for_jsonb_param(expr: Expr, params: Option<&Params>) -> Expr {
     }
 }
 
+/// Convert a value in an UPDATE SET clause, where arithmetic tags are valid.
+pub fn update_set_value_to_expr(
+    ctx: &SqlGenContext<'_>,
+    span: Span,
+    column: &ColumnName,
+    expr: &Option<ValueExpr>,
+    params: Option<&Params>,
+) -> Result<Expr, QError> {
+    if let Some(ValueExpr::Other {
+        tag: Some(name),
+        content: Some(payload),
+    }) = expr
+        && (name.eq_ignore_ascii_case("add") || name.eq_ignore_ascii_case("sub"))
+    {
+        let operand = match payload {
+            Payload::Scalar(arg) => meta_string_to_expr(arg),
+            Payload::Seq(args) if args.len() == 1 => {
+                value_expr_to_expr(column, &Some(args[0].clone()), params)
+            }
+            Payload::Seq(args) => {
+                return Err(QError {
+                    source: ctx.source.clone(),
+                    span,
+                    kind: QErrorKind::InvalidUpdateArgCount {
+                        expression: name.clone(),
+                        expected: 1,
+                        actual: args.len(),
+                    },
+                });
+            }
+        };
+        return Ok(Expr::BinOp {
+            left: Box::new(Expr::column(column.clone())),
+            op: if name.eq_ignore_ascii_case("add") {
+                BinOp::Add
+            } else {
+                BinOp::Sub
+            },
+            right: Box::new(operand),
+        });
+    }
+    Ok(value_expr_to_expr(column, expr, params))
+}
+
 /// Convert an UpdateValue to a dibs_sql::Expr.
 ///
 /// Similar to value_expr_to_expr but for the update clause in upserts.
 pub fn update_value_to_expr(
+    ctx: &SqlGenContext<'_>,
+    span: Span,
     column: &ColumnName,
     expr: &Option<UpdateValue>,
     params: Option<&Params>,
-) -> Expr {
+) -> Result<Expr, QError> {
     let raw = match expr {
-        None => {
-            // Shorthand: {col} means use EXCLUDED.col
-            Expr::excluded(column.clone())
-        }
+        None => Expr::excluded(column.clone()),
         Some(UpdateValue::Default) => Expr::Default,
         Some(UpdateValue::Other { tag, content }) => match (tag, content) {
-            // Bare scalar (param reference like $name or literal)
             (None, Some(Payload::Scalar(s))) => meta_string_to_expr(s),
-            // `@null` is the SQL keyword NULL, not a nullary function `NULL()`.
             (Some(name), None) if name.eq_ignore_ascii_case("null") => Expr::Null,
-            // Nullary function like @now
             (Some(name), None) => Expr::FnCall {
                 name: name.to_uppercase(),
                 args: vec![],
             },
-            // Function with args
-            (Some(name), Some(Payload::Seq(args))) => {
-                // Convert each arg - but we need ValueExpr not UpdateValue
-                // For now, handle the common cases
-                let sql_args: Vec<Expr> = args
-                    .iter()
-                    .map(|a| value_expr_to_expr(column, &Some(a.clone()), params))
-                    .collect();
-                Expr::FnCall {
-                    name: name.to_uppercase(),
-                    args: sql_args,
+            (Some(name), Some(payload))
+                if name.eq_ignore_ascii_case("add") || name.eq_ignore_ascii_case("sub") =>
+            {
+                let operand = match payload {
+                    Payload::Scalar(arg) => meta_string_to_expr(arg),
+                    Payload::Seq(args) if args.len() == 1 => {
+                        value_expr_to_expr(column, &Some(args[0].clone()), params)
+                    }
+                    Payload::Seq(args) => {
+                        return Err(QError {
+                            source: ctx.source.clone(),
+                            span,
+                            kind: QErrorKind::InvalidUpdateArgCount {
+                                expression: name.clone(),
+                                expected: 1,
+                                actual: args.len(),
+                            },
+                        });
+                    }
+                };
+                Expr::BinOp {
+                    left: Box::new(Expr::column(column.clone())),
+                    op: if name.eq_ignore_ascii_case("add") {
+                        BinOp::Add
+                    } else {
+                        BinOp::Sub
+                    },
+                    right: Box::new(operand),
                 }
             }
-            // Function with single scalar arg
-            (Some(name), Some(Payload::Scalar(s))) => Expr::FnCall {
+            (Some(name), Some(Payload::Seq(args))) => Expr::FnCall {
                 name: name.to_uppercase(),
-                args: vec![meta_string_to_expr(s)],
+                args: args
+                    .iter()
+                    .map(|arg| value_expr_to_expr(column, &Some(arg.clone()), params))
+                    .collect(),
             },
-            // Shouldn't happen but handle gracefully
-            (None, None) => Expr::Null,
-            // Sequence without tag - shouldn't happen
-            (None, Some(Payload::Seq(_))) => Expr::Null,
+            (Some(name), Some(Payload::Scalar(arg))) => Expr::FnCall {
+                name: name.to_uppercase(),
+                args: vec![meta_string_to_expr(arg)],
+            },
+            (None, None) | (None, Some(Payload::Seq(_))) => Expr::Null,
         },
     };
-    cast_for_jsonb_param(raw, params)
+    Ok(cast_for_jsonb_param(raw, params))
 }

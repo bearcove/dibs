@@ -105,6 +105,10 @@ pub enum BinOp {
     Gt,
     /// Greater than or equal: `>=`
     Ge,
+    /// Addition: `+`
+    Add,
+    /// Subtraction: `-`
+    Sub,
     /// Logical AND
     And,
     /// Logical OR
@@ -120,6 +124,8 @@ impl BinOp {
             BinOp::Le => "<=",
             BinOp::Gt => ">",
             BinOp::Ge => ">=",
+            BinOp::Add => "+",
+            BinOp::Sub => "-",
             BinOp::And => "AND",
             BinOp::Or => "OR",
         }

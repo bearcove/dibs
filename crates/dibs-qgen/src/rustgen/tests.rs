@@ -254,6 +254,22 @@ CreatePasskey @insert{
 }
 
 #[test]
+fn test_generate_int32_param_takes_i32() {
+    let source = r#"
+CreateAttachment @insert{
+  params { message_id @string, position @int32 }
+  into message_attachments
+  values { message_id $message_id, position $position }
+}
+"#;
+    let (file, qsource) = parse_test(source);
+    let code = generate_rust_code(&file, &empty_schema(), qsource).unwrap();
+
+    assert!(code.code.contains("position: &i32"));
+    assert!(!code.code.contains("position: &i64"));
+}
+
+#[test]
 fn test_snake_case() {
     assert_eq!(to_snake_case("ProductListing"), "product_listing");
     assert_eq!(to_snake_case("AllProducts"), "all_products");
@@ -726,6 +742,37 @@ UpdateUserEmail @update{
     assert!(code.code.contains("UPDATE"));
     assert!(code.code.contains("SET"));
     assert!(code.code.contains("WHERE"));
+}
+
+#[test]
+fn test_generate_arithmetic_update_returning_result() {
+    let source = r#"
+IncrementRefcount @update{
+  params { object_key @string }
+  table objects
+  set { refcount @add(1) }
+  where { object_key $object_key }
+  returning { refcount }
+}
+"#;
+    let (file, qsource) = parse_test(source);
+    let schema = make_test_schema(vec![make_test_table(
+        "objects",
+        &[
+            ("object_key", PgType::Text, false),
+            ("refcount", PgType::BigInt, false),
+        ],
+        vec![],
+    )]);
+    let code = generate_rust_code(&file, &schema, qsource).unwrap();
+
+    assert!(code.code.contains("pub struct IncrementRefcountResult"));
+    assert!(code.code.contains("pub refcount: i64"));
+    assert!(code.code.contains(r#"SET "refcount" = "refcount" + 1"#));
+    assert!(
+        code.code
+            .contains("Result<Option<IncrementRefcountResult>, QueryError>")
+    );
 }
 
 #[test]

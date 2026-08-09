@@ -1,6 +1,8 @@
 //! SQL generation for UPSERT statements (INSERT ... ON CONFLICT ... DO UPDATE).
 
+use super::SqlGenContext;
 use super::common::{update_value_to_expr, value_expr_to_expr};
+use crate::QError;
 use dibs_query_schema::Upsert;
 use dibs_sql::{
     ColumnName, ConflictAction, InsertStmt, OnConflict, ParamName, UpdateAssignment, render,
@@ -20,7 +22,10 @@ pub struct GeneratedUpsert {
 }
 
 /// Generate SQL for an UPSERT statement.
-pub fn generate_upsert_sql(upsert: &Upsert) -> GeneratedUpsert {
+pub fn generate_upsert_sql(
+    ctx: &SqlGenContext<'_>,
+    upsert: &Upsert,
+) -> Result<GeneratedUpsert, QError> {
     let mut stmt = InsertStmt::new(upsert.into.value.clone());
 
     // VALUES clause
@@ -47,10 +52,16 @@ pub fn generate_upsert_sql(upsert: &Upsert) -> GeneratedUpsert {
         .iter()
         .map(|(col_meta, update_value)| {
             let col_name = &col_meta.value;
-            let expr = update_value_to_expr(col_name, update_value, upsert.params.as_ref());
-            UpdateAssignment::new(col_name.clone(), expr)
+            let expr = update_value_to_expr(
+                ctx,
+                col_meta.span,
+                col_name,
+                update_value,
+                upsert.params.as_ref(),
+            )?;
+            Ok(UpdateAssignment::new(col_name.clone(), expr))
         })
-        .collect();
+        .collect::<Result<_, QError>>()?;
 
     stmt = stmt.on_conflict(OnConflict {
         columns: conflict_columns,
@@ -70,11 +81,11 @@ pub fn generate_upsert_sql(upsert: &Upsert) -> GeneratedUpsert {
 
     let rendered = render(&stmt);
 
-    GeneratedUpsert {
+    Ok(GeneratedUpsert {
         sql: rendered.sql,
         params: rendered.params,
         returning_columns,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -82,11 +93,11 @@ mod tests {
     use super::*;
     use crate::parse_query_file;
 
-    fn get_first_upsert(source: &str) -> Upsert {
-        let (file, _source) = parse_query_file(camino::Utf8Path::new("<test>"), source).unwrap();
+    fn get_first_upsert(source: &str) -> (Upsert, crate::QSource) {
+        let (file, source) = parse_query_file(camino::Utf8Path::new("<test>"), source).unwrap();
         for (_, decl) in file.0.iter() {
             if let dibs_query_schema::Decl::Upsert(u) = decl {
-                return u.clone();
+                return (u.clone(), (*source).clone());
             }
         }
         panic!("No upsert found in source");
@@ -106,8 +117,10 @@ UpsertProduct @upsert{
     returning {id, name, price}
 }
 "#;
-        let upsert = get_first_upsert(source);
-        let result = generate_upsert_sql(&upsert);
+        let (upsert, source) = get_first_upsert(source);
+        let schema = dibs_db_schema::Schema::default();
+        let ctx = SqlGenContext::new(&schema, std::sync::Arc::new(source));
+        let result = generate_upsert_sql(&ctx, &upsert).unwrap();
         insta::assert_snapshot!(result.sql);
     }
 
@@ -125,8 +138,10 @@ UpsertProduct @upsert{
     returning {id, handle, name, updated_at}
 }
 "#;
-        let upsert = get_first_upsert(source);
-        let result = generate_upsert_sql(&upsert);
+        let (upsert, source) = get_first_upsert(source);
+        let schema = dibs_db_schema::Schema::default();
+        let ctx = SqlGenContext::new(&schema, std::sync::Arc::new(source));
+        let result = generate_upsert_sql(&ctx, &upsert).unwrap();
         insta::assert_snapshot!(result.sql);
     }
 
@@ -144,8 +159,10 @@ UpsertTranslation @upsert{
     returning {id}
 }
 "#;
-        let upsert = get_first_upsert(source);
-        let result = generate_upsert_sql(&upsert);
+        let (upsert, source) = get_first_upsert(source);
+        let schema = dibs_db_schema::Schema::default();
+        let ctx = SqlGenContext::new(&schema, std::sync::Arc::new(source));
+        let result = generate_upsert_sql(&ctx, &upsert).unwrap();
         insta::assert_snapshot!(result.sql);
     }
 }
