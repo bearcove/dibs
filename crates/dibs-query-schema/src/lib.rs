@@ -402,6 +402,8 @@ pub struct Params {
 pub enum ParamType {
     String,
     Int,
+    /// `i32` / PostgreSQL `INTEGER`.
+    Int32,
     /// `f64` / `DOUBLE PRECISION`.
     Float,
     Bool,

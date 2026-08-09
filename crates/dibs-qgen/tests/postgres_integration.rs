@@ -1177,10 +1177,12 @@ UpsertProduct @upsert{
     returning {id, handle, status}
 }
 "#;
-    let (file, _qsource) = parse_test_query(source);
+    let (file, qsource) = parse_test_query(source);
     let upsert = first_upsert(&file);
+    let schema = Schema::default();
+    let ctx = dibs_qgen::SqlGenContext::new(&schema, qsource);
 
-    let generated = dibs_qgen::generate_upsert_sql(upsert);
+    let generated = dibs_qgen::generate_upsert_sql(&ctx, upsert).unwrap();
     tracing::info!("Generated UPSERT SQL: {}", generated.sql);
 
     // Verify SQL structure
@@ -1237,10 +1239,12 @@ UpsertProduct @upsert{
     returning {id, handle, status}
 }
 "#;
-    let (file, _qsource) = parse_test_query(source);
+    let (file, qsource) = parse_test_query(source);
     let upsert = first_upsert(&file);
+    let schema = Schema::default();
+    let ctx = dibs_qgen::SqlGenContext::new(&schema, qsource);
 
-    let generated = dibs_qgen::generate_upsert_sql(upsert);
+    let generated = dibs_qgen::generate_upsert_sql(&ctx, upsert).unwrap();
 
     // Upsert existing product - should update
     let handle = "widget".to_string(); // exists from test data

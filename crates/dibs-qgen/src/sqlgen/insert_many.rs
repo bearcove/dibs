@@ -186,6 +186,7 @@ fn param_type_to_pg_array(ty: &ParamType) -> &'static str {
     match ty {
         ParamType::String => "text[]",
         ParamType::Int => "bigint[]",
+        ParamType::Int32 => "integer[]",
         ParamType::Float => "double precision[]",
         ParamType::Bool => "boolean[]",
         ParamType::Uuid => "uuid[]",

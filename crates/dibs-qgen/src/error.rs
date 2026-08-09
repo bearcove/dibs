@@ -101,6 +101,16 @@ pub enum QErrorKind {
         /// Description of the type mismatch
         reason: String,
     },
+
+    /// Invalid arguments for an update expression.
+    InvalidUpdateArgCount {
+        /// Update expression name.
+        expression: String,
+        /// Expected number of arguments.
+        expected: usize,
+        /// Actual number of arguments.
+        actual: usize,
+    },
 }
 
 impl fmt::Display for QErrorKind {
@@ -164,6 +174,15 @@ impl fmt::Display for QErrorKind {
             QErrorKind::InvalidFilterArgType { filter, reason } => {
                 write!(f, "invalid argument for filter '{}': {}", filter, reason)
             }
+            QErrorKind::InvalidUpdateArgCount {
+                expression,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "invalid arguments for update expression '{}': expected {} arguments, got {}",
+                expression, expected, actual
+            ),
         }
     }
 }
