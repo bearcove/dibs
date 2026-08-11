@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 blake3.workspace = true
+facet.workspace = true
 dibs-db-schema.workspace = true
 thiserror.workspace = true
 

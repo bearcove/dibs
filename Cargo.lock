@@ -1055,6 +1055,7 @@ dependencies = [
  "blake3",
  "dibs-db-schema",
  "dockside",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "indexmap 2.14.0",
  "thiserror 2.0.18",
  "tokio",
@@ -1088,6 +1089,17 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing",
+]
+
+[[package]]
+name = "dibs-query-ir"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dibs-pg-catalog",
+ "dibs-query-syntax",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-json",
 ]
 
 [[package]]

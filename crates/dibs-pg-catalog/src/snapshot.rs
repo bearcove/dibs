@@ -8,17 +8,24 @@ use dibs_db_schema::{
 
 use crate::{
     ApiLanguage, ApiTypeId, CallableId, CastId, CatalogCallable, CatalogError, CatalogType,
-    CollationId, OperatorId, PgTypeKind, ScalarSignature, TableOutputColumn, TableSignature,
-    TypeId, TypeRegistration, TypeRegistrationKind,
+    CollationId, ColumnId, ConstraintId, IndexId, OperatorId, PgTypeKind, ScalarSignature, TableId,
+    TableOutputColumn, TableSignature, TypeId, TypeRegistration, TypeRegistrationKind,
 };
 
 const POSTGRES_MAJOR: u16 = 18;
 
 /// Deterministic fingerprint of Dibs schema truth.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[repr(transparent)]
 pub struct SchemaFingerprint(String);
 
 impl SchemaFingerprint {
+    /// Rehydrates a persisted lowercase BLAKE3 fingerprint.
+    #[must_use]
+    pub fn from_hex_for_artifact(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
     /// Returns the lowercase BLAKE3 hex digest.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -44,6 +51,8 @@ pub enum Nullability {
 /// One application schema column in a catalog snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogColumn {
+    /// Stable logical column identity.
+    pub id: ColumnId,
     /// Column name.
     pub name: String,
     /// Stable logical type identity.
@@ -63,6 +72,8 @@ pub struct CatalogColumn {
 /// Exact primary-key column sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrimaryKey {
+    /// Stable logical primary-key constraint identity.
+    pub id: ConstraintId,
     /// Columns in key order.
     pub columns: Vec<String>,
 }
@@ -70,6 +81,8 @@ pub struct PrimaryKey {
 /// Exact single- or multi-column unique constraint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UniqueConstraint {
+    /// Stable logical unique-constraint identity.
+    pub id: ConstraintId,
     /// Stable constraint name in the snapshot.
     pub name: String,
     /// Columns in constraint order.
@@ -79,6 +92,8 @@ pub struct UniqueConstraint {
 /// Exact foreign-key relationship.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogForeignKey {
+    /// Stable logical foreign-key constraint identity.
+    pub id: ConstraintId,
     /// Local columns in key order.
     pub columns: Vec<String>,
     /// Qualified referenced table name.
@@ -101,6 +116,8 @@ pub struct CatalogIndexColumn {
 /// Exact application index definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogIndex {
+    /// Stable logical index identity.
+    pub id: IndexId,
     /// Index name.
     pub name: String,
     /// Ordered index columns.
@@ -114,6 +131,8 @@ pub struct CatalogIndex {
 /// One application table in a catalog snapshot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CatalogTable {
+    /// Stable logical table identity.
+    pub id: TableId,
     /// SQL-qualified table name.
     pub qualified_name: String,
     /// Ordered columns from Dibs schema truth.
@@ -851,10 +870,16 @@ impl CatalogSnapshot {
                 .tables
                 .get(&table_name)
                 .expect("table name came from schema map");
+            let qualified_name = qualify_public(&table.name);
+            let table_id = TableId::new(format!("pg{POSTGRES_MAJOR}:table:{qualified_name}"));
             let mut columns = Vec::with_capacity(table.columns.len());
             for column in &table.columns {
                 let type_id = self.resolve_type(pg_type_name(column.pg_type))?.id.clone();
                 columns.push(CatalogColumn {
+                    id: ColumnId::new(format!(
+                        "pg{POSTGRES_MAJOR}:column:{qualified_name}.{}",
+                        column.name
+                    )),
                     name: column.name.clone(),
                     type_id,
                     nullability: if column.nullable {
@@ -869,6 +894,9 @@ impl CatalogSnapshot {
                 });
             }
             let primary_key = PrimaryKey {
+                id: ConstraintId::new(format!(
+                    "pg{POSTGRES_MAJOR}:constraint:{qualified_name}:primary-key"
+                )),
                 columns: table
                     .columns
                     .iter()
@@ -880,23 +908,38 @@ impl CatalogSnapshot {
                 .columns
                 .iter()
                 .filter(|column| column.unique && !column.primary_key)
-                .map(|column| UniqueConstraint {
-                    name: format!("uq_{}_{}", table.name, column.name),
-                    columns: vec![column.name.clone()],
+                .map(|column| {
+                    let name = format!("uq_{}_{}", table.name, column.name);
+                    UniqueConstraint {
+                        id: ConstraintId::new(format!(
+                            "pg{POSTGRES_MAJOR}:constraint:{qualified_name}:{name}"
+                        )),
+                        name,
+                        columns: vec![column.name.clone()],
+                    }
                 })
                 .collect();
             let foreign_keys = table
                 .foreign_keys
                 .iter()
-                .map(|foreign_key| CatalogForeignKey {
+                .enumerate()
+                .map(|(ordinal, foreign_key)| CatalogForeignKey {
+                    id: ConstraintId::new(format!(
+                        "pg{POSTGRES_MAJOR}:constraint:{qualified_name}:foreign-key:{ordinal}"
+                    )),
                     columns: foreign_key.columns.clone(),
                     references_table: qualify_public(&foreign_key.references_table),
                     references_columns: foreign_key.references_columns.clone(),
                 })
                 .collect();
-            let indexes = table.indices.iter().map(convert_index).collect();
+            let indexes = table
+                .indices
+                .iter()
+                .map(|index| convert_index(&qualified_name, index))
+                .collect();
             self.tables.push(CatalogTable {
-                qualified_name: qualify_public(&table.name),
+                id: table_id,
+                qualified_name,
                 columns,
                 primary_key,
                 unique_constraints,
@@ -970,8 +1013,12 @@ fn pg_type_name(pg_type: PgType) -> &'static str {
     }
 }
 
-fn convert_index(index: &Index) -> CatalogIndex {
+fn convert_index(table_name: &str, index: &Index) -> CatalogIndex {
     CatalogIndex {
+        id: IndexId::new(format!(
+            "pg{POSTGRES_MAJOR}:index:{table_name}:{}",
+            index.name
+        )),
         name: index.name.clone(),
         columns: index.columns.iter().map(convert_index_column).collect(),
         unique: index.unique,
@@ -1193,8 +1240,10 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
         .collect();
     for (name, table) in tables {
         write_value(&mut canonical, "table", name);
+        write_value(&mut canonical, "table-id", table.id.as_str());
         for column in &table.columns {
             write_value(&mut canonical, "column", &column.name);
+            write_value(&mut canonical, "column-id", column.id.as_str());
             write_value(&mut canonical, "column-type", column.type_id.as_str());
             let _ = writeln!(canonical, "column-nullability:{:?}", column.nullability);
             write_optional(&mut canonical, "column-default", column.default.as_deref());
@@ -1202,12 +1251,18 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
             let _ = writeln!(canonical, "column-unique:{}", column.unique);
             let _ = writeln!(canonical, "column-generated:{}", column.auto_generated);
         }
+        write_value(
+            &mut canonical,
+            "primary-key-id",
+            table.primary_key.id.as_str(),
+        );
         for column in &table.primary_key.columns {
             write_value(&mut canonical, "primary-key", column);
         }
         let mut unique_constraints = table.unique_constraints.clone();
         unique_constraints.sort_by(|left, right| left.name.cmp(&right.name));
         for constraint in unique_constraints {
+            write_value(&mut canonical, "unique-id", constraint.id.as_str());
             write_value(&mut canonical, "unique", &constraint.name);
             for column in constraint.columns {
                 write_value(&mut canonical, "unique-column", &column);
@@ -1244,6 +1299,7 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
                 ))
         });
         for foreign_key in foreign_keys {
+            write_value(&mut canonical, "fk-id", foreign_key.id.as_str());
             for column in foreign_key.columns {
                 write_value(&mut canonical, "fk-column", &column);
             }
@@ -1259,6 +1315,7 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
         let mut indexes = table.indexes.clone();
         indexes.sort_by(|left, right| left.name.cmp(&right.name));
         for index in indexes {
+            write_value(&mut canonical, "index-id", index.id.as_str());
             write_value(&mut canonical, "index", &index.name);
             let _ = writeln!(canonical, "index-unique:{}", index.unique);
             write_optional(&mut canonical, "index-where", index.where_clause.as_deref());

@@ -28,7 +28,7 @@ impl fmt::Display for SourceId {
 }
 
 /// Half-open byte range inside a source document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, facet::Facet)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
 pub struct Span {
     /// First byte included in the range.
     pub start: u32,
@@ -45,6 +45,22 @@ impl Span {
     /// Returns an empty range at `offset`.
     pub const fn empty(offset: u32) -> Self {
         Self::new(offset, offset)
+    }
+}
+
+/// A half-open byte range paired with its source document identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+pub struct SourceSpan {
+    /// Source document containing the range.
+    pub source_id: SourceId,
+    /// Half-open byte range inside the source document.
+    pub span: Span,
+}
+
+impl SourceSpan {
+    /// Creates a source-qualified half-open byte range.
+    pub const fn new(source_id: SourceId, span: Span) -> Self {
+        Self { source_id, span }
     }
 }
 
