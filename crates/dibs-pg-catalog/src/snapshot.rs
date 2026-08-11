@@ -386,12 +386,13 @@ impl CatalogSnapshot {
                 constraints,
             } => {
                 let base = self.resolve_type(&base_type)?.clone();
-                let mut constraint_names = BTreeSet::new();
-                for constraint in &constraints {
-                    if !constraint_names.insert(constraint.name.as_str()) {
+                let mut constraints = constraints;
+                constraints.sort_by(|left, right| left.name.cmp(&right.name));
+                for duplicate in constraints.windows(2) {
+                    if duplicate[0].name == duplicate[1].name {
                         return Err(CatalogError::DuplicateDomainConstraintName {
                             qualified_name: registration.qualified_name,
-                            constraint: constraint.name.clone(),
+                            constraint: duplicate[0].name.clone(),
                         });
                     }
                 }

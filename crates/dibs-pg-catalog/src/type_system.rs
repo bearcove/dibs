@@ -27,7 +27,7 @@ impl PgTypeKind {
     }
 }
 
-/// One named PostgreSQL domain CHECK constraint in definition order.
+/// One named PostgreSQL domain CHECK constraint.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DomainConstraint {
     /// Constraint name.
@@ -62,7 +62,7 @@ pub struct DomainDefinition {
     pub collation_policy: DomainCollation,
     /// Effective applicable domain collation.
     pub collation: Option<CollationId>,
-    /// Named CHECK constraints in PostgreSQL evaluation order.
+    /// Named CHECK constraints in canonical PostgreSQL evaluation order.
     pub constraints: Vec<DomainConstraint>,
 }
 
@@ -301,7 +301,7 @@ pub enum TypeRegistrationKind {
         default: Option<String>,
         /// Applicable collation policy.
         collation: DomainCollation,
-        /// Named CHECK constraints in definition order.
+        /// Named CHECK constraints; canonicalized by name during registration.
         constraints: Vec<DomainConstraint>,
     },
     /// Array whose lossless codecs are derived from its element type.

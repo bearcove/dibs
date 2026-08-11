@@ -361,6 +361,54 @@ fn domain_definition_changes_identity_and_fingerprint() {
 }
 
 #[test]
+fn domain_constraint_input_order_is_canonicalized_by_name() {
+    fn snapshot(constraints: Vec<DomainConstraint>) -> CatalogSnapshot {
+        let mut catalog = CatalogSnapshot::postgres_18_fixture();
+        catalog
+            .register_type(TypeRegistration {
+                qualified_name: "app.ordered_checks".to_string(),
+                kind: TypeRegistrationKind::Domain {
+                    base_type: "pg_catalog.bigint".to_string(),
+                    base_typmod: None,
+                    not_null: false,
+                    default: None,
+                    collation: DomainCollation::None,
+                    constraints,
+                },
+            })
+            .unwrap();
+        catalog
+    }
+
+    let alpha = DomainConstraint {
+        name: "alpha_check".to_string(),
+        expression: "VALUE > 0".to_string(),
+    };
+    let omega = DomainConstraint {
+        name: "omega_check".to_string(),
+        expression: "VALUE < 100".to_string(),
+    };
+    let forward = snapshot(vec![alpha.clone(), omega.clone()]);
+    let reversed = snapshot(vec![omega, alpha]);
+    let forward_type = forward.resolve_type("app.ordered_checks").unwrap();
+    let reversed_type = reversed.resolve_type("app.ordered_checks").unwrap();
+
+    assert_eq!(forward_type.id, reversed_type.id);
+    assert_eq!(forward.fingerprint(), reversed.fingerprint());
+    assert_eq!(
+        reversed_type
+            .domain
+            .as_ref()
+            .unwrap()
+            .constraints
+            .iter()
+            .map(|constraint| constraint.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alpha_check", "omega_check"]
+    );
+}
+
+#[test]
 fn domain_rejects_collation_for_noncollatable_base() {
     let mut catalog = CatalogSnapshot::postgres_18_fixture();
 
