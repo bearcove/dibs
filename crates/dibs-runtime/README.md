@@ -1,10 +1,10 @@
 # dibs-runtime
 
-Runtime support for dibs query generation.
+Runtime support for dibs-generated PostgreSQL queries:
 
-This crate provides types and traits used by generated query code, including:
-- Query result types
-- Type conversions for Postgres types
-- Runtime query execution helpers
+- `many`, `optional`, `one`, and `exec` result-mode helpers
+- typed `UnexpectedRowCount` failures without SQL truncation
+- minimal `QueryContext` identity and preserved PostgreSQL/decode errors
+- duration plus rows-or-affected tracing with no bind values
 
 Part of the [dibs](https://github.com/facet-rs/facet) project.

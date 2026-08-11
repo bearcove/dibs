@@ -15,6 +15,7 @@ fn main() -> ExitCode {
         }
     };
     let parser = DibsParser::new();
+    eprintln!("parser facts: {:?}", parser.parser_facts());
     match parser.parse_strict(SourceId::new(0), &source) {
         Ok(file) => {
             println!("{file:#?}");
