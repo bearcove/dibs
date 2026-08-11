@@ -1,9 +1,9 @@
 use crate::{
     ApiTypeId, CatalogError, CodecBinding, CollationId, PgCodecId, TypeId, WireCodecId,
-    codec::{array_codec_for_registered, builtin_codec, enum_codec},
+    codec::{array_codec_for_registered, builtin_codec, enum_codec, pseudo_codec},
 };
 
-/// PostgreSQL type category represented by a stable logical identity.
+/// PostgreSQL physical or pseudo type kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PgTypeKind {
     /// Scalar base type.
@@ -14,6 +14,8 @@ pub enum PgTypeKind {
     Enum,
     /// Registered domain type.
     Domain,
+    /// Contextual or polymorphic pseudo-type.
+    Pseudo,
 }
 
 impl PgTypeKind {
@@ -23,8 +25,51 @@ impl PgTypeKind {
             Self::Array => "array",
             Self::Enum => "enum",
             Self::Domain => "domain",
+            Self::Pseudo => "pseudo",
         }
     }
+}
+
+/// PostgreSQL `pg_type.typcategory` represented semantically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PgTypeCategory {
+    /// Array types.
+    Array,
+    /// Boolean values.
+    Boolean,
+    /// Date/time values.
+    DateTime,
+    /// Numeric values.
+    Numeric,
+    /// Pseudo-types.
+    Pseudo,
+    /// String values.
+    String,
+    /// Contextual unknown literals.
+    Unknown,
+    /// User-defined or otherwise uncategorized values.
+    UserDefined,
+}
+
+/// Supported PostgreSQL polymorphic pseudo-type families.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PolymorphicType {
+    /// Any input value.
+    Any,
+    /// Any array value.
+    AnyArray,
+    /// Any element value.
+    AnyElement,
+    /// Any non-array value.
+    AnyNonArray,
+    /// Any enum value.
+    AnyEnum,
+    /// Any compatible value family.
+    AnyCompatible,
+    /// Any compatible array family.
+    AnyCompatibleArray,
+    /// Any compatible non-array family.
+    AnyCompatibleNonArray,
 }
 
 /// One named PostgreSQL domain CHECK constraint.
@@ -77,6 +122,12 @@ pub struct CatalogType {
     pub internal_qualified_name: String,
     /// PostgreSQL type kind.
     pub kind: PgTypeKind,
+    /// PostgreSQL type category used by overload and common-type resolution.
+    pub category: PgTypeCategory,
+    /// Whether PostgreSQL prefers this type within its category.
+    pub preferred: bool,
+    /// Polymorphic pseudo-type family, when applicable.
+    pub polymorphic: Option<PolymorphicType>,
     /// Canonical type modifier, when this logical type fixes one.
     pub typmod: Option<String>,
     /// Array element type relationship.
@@ -95,17 +146,23 @@ pub struct CatalogType {
     pub rust_api_type: ApiTypeId,
     /// TypeScript generated API identity.
     pub typescript_api_type: ApiTypeId,
+    /// Whether values of this type may be stored, bound, or returned directly.
+    pub bindable: bool,
     /// Whether this row belongs to the curated PostgreSQL fixture.
     pub builtin: bool,
 }
 
 impl CatalogType {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn builtin(
         postgres_major: u16,
         qualified_name: &str,
         internal_name: &str,
         kind: PgTypeKind,
         element_type: Option<TypeId>,
+        category: PgTypeCategory,
+        preferred: bool,
+        polymorphic: Option<PolymorphicType>,
     ) -> Result<Self, CatalogError> {
         let canonical_name = qualified_name
             .strip_prefix("pg_catalog.")
@@ -123,6 +180,10 @@ impl CatalogType {
             qualified_name,
             internal_name,
             kind,
+            category,
+            preferred,
+            true,
+            polymorphic,
             None,
             element_type,
             None,
@@ -131,6 +192,41 @@ impl CatalogType {
             codec,
             true,
         ))
+    }
+
+    pub(crate) fn builtin_pseudo(
+        postgres_major: u16,
+        qualified_name: &str,
+        category: PgTypeCategory,
+        polymorphic: Option<PolymorphicType>,
+    ) -> Self {
+        let canonical_name = qualified_name
+            .strip_prefix("pg_catalog.")
+            .expect("builtin names are pg_catalog-qualified");
+        Self::with_codec(
+            stable_type_id(
+                postgres_major,
+                qualified_name,
+                PgTypeKind::Pseudo,
+                None,
+                None,
+                None::<&[&str]>,
+            ),
+            qualified_name,
+            qualified_name,
+            PgTypeKind::Pseudo,
+            category,
+            false,
+            false,
+            polymorphic,
+            None,
+            None,
+            None,
+            Vec::new(),
+            None,
+            pseudo_codec(canonical_name),
+            true,
+        )
     }
 
     pub(crate) fn registered_enum(
@@ -151,6 +247,10 @@ impl CatalogType {
             qualified_name,
             qualified_name,
             PgTypeKind::Enum,
+            PgTypeCategory::UserDefined,
+            false,
+            true,
+            None,
             None,
             None,
             None,
@@ -186,6 +286,10 @@ impl CatalogType {
             qualified_name,
             qualified_name,
             PgTypeKind::Domain,
+            base.category,
+            false,
+            true,
+            None,
             domain.base_typmod.clone(),
             None,
             Some(domain.clone()),
@@ -221,6 +325,10 @@ impl CatalogType {
             qualified_name,
             qualified_name,
             PgTypeKind::Array,
+            PgTypeCategory::Array,
+            false,
+            true,
+            None,
             None,
             Some(element.id.clone()),
             None,
@@ -245,6 +353,10 @@ impl CatalogType {
         qualified_name: &str,
         internal_qualified_name: &str,
         kind: PgTypeKind,
+        category: PgTypeCategory,
+        preferred: bool,
+        bindable: bool,
+        polymorphic: Option<PolymorphicType>,
         typmod: Option<String>,
         element_type: Option<TypeId>,
         domain: Option<DomainDefinition>,
@@ -258,6 +370,10 @@ impl CatalogType {
             qualified_name: qualified_name.to_string(),
             internal_qualified_name: internal_qualified_name.to_string(),
             kind,
+            category,
+            preferred,
+            bindable,
+            polymorphic,
             typmod,
             element_type,
             domain,

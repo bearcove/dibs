@@ -1,12 +1,47 @@
 use crate::{CallableId, Nullability, TypeId};
 
-/// Exact callable result shape.
+/// PostgreSQL callable kind from `pg_proc.prokind`, plus table-function shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CallableKind {
-    /// One scalar result value.
+    /// Ordinary scalar function.
     Scalar,
+    /// Aggregate function.
+    Aggregate,
+    /// Window function.
+    Window,
     /// Set-returning function with named output columns.
     Table,
+}
+
+/// PostgreSQL callable volatility from `pg_proc.provolatile`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Volatility {
+    /// Result depends only on arguments.
+    Immutable,
+    /// Result is stable within one statement.
+    Stable,
+    /// Result may change within one statement or have effects.
+    Volatile,
+}
+
+/// Exact row-production fact owned by the catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CallableCardinality {
+    /// One scalar value per invocation.
+    ExactlyOne,
+    /// One window value per input row.
+    OnePerInput,
+    /// Set-returning cardinality is not proven by the catalog.
+    SetOfUnknown,
+}
+
+/// Aggregate result behavior on an empty input set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AggregateEmptyBehavior {
+    /// Returns a non-NULL identity value, such as `count(*) = 0`.
+    Identity,
+    /// Returns SQL NULL on empty input.
+    Null,
 }
 
 /// Exact application scalar-function signature.
@@ -28,6 +63,17 @@ impl ScalarSignature {
     }
 }
 
+/// Explicit semantic facts required for an application scalar function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScalarCallableFacts {
+    /// PostgreSQL volatility.
+    pub volatility: Volatility,
+    /// Whether SQL NULL in any input forces SQL NULL output.
+    pub strict: bool,
+    /// Scalar result nullability contract.
+    pub result_nullability: Nullability,
+}
+
 /// Exact application table-function signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSignature {
@@ -37,6 +83,17 @@ pub struct TableSignature {
     pub arguments: Vec<TypeId>,
     /// Ordered named output columns.
     pub columns: Vec<TableOutputColumn>,
+}
+
+/// Explicit semantic facts required for an application table function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TableCallableFacts {
+    /// PostgreSQL volatility.
+    pub volatility: Volatility,
+    /// Whether SQL NULL in any input produces no rows.
+    pub strict: bool,
+    /// Authoritative registered row-production fact.
+    pub cardinality: CallableCardinality,
 }
 
 /// One named output column from a table function.
@@ -57,14 +114,24 @@ pub struct CatalogCallable {
     pub id: CallableId,
     /// SQL-qualified callable name.
     pub qualified_name: String,
-    /// Scalar or table result shape.
+    /// Scalar, aggregate, window, or table result behavior.
     pub kind: CallableKind,
     /// Ordered logical argument types.
     pub arguments: Vec<TypeId>,
-    /// Scalar result type, when `kind` is scalar.
+    /// Scalar result type for scalar, aggregate, and window callables.
     pub scalar_result: Option<TypeId>,
     /// Table result columns, when `kind` is table.
     pub table_columns: Vec<TableOutputColumn>,
+    /// PostgreSQL volatility.
+    pub volatility: Volatility,
+    /// Whether SQL NULL in any input forces a NULL scalar result or no table rows.
+    pub strict: bool,
+    /// Scalar result nullability contract, when a scalar result exists.
+    pub scalar_result_nullability: Option<Nullability>,
+    /// Exact catalog-owned row-production fact.
+    pub cardinality: CallableCardinality,
+    /// Aggregate empty-input behavior, for aggregate callables.
+    pub aggregate_empty: Option<AggregateEmptyBehavior>,
     /// PostgreSQL identity-argument rendering used by the live oracle.
     pub postgres_identity_arguments: String,
     /// PostgreSQL result rendering used by the live oracle.
@@ -73,22 +140,81 @@ pub struct CatalogCallable {
     pub builtin: bool,
 }
 
+/// Semantic facts for one curated PostgreSQL callable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CallableFacts {
+    pub(crate) kind: CallableKind,
+    pub(crate) volatility: Volatility,
+    pub(crate) strict: bool,
+    pub(crate) scalar_result_nullability: Option<Nullability>,
+    pub(crate) cardinality: CallableCardinality,
+    pub(crate) aggregate_empty: Option<AggregateEmptyBehavior>,
+}
+
+impl CallableFacts {
+    pub(crate) const fn scalar(facts: ScalarCallableFacts) -> Self {
+        Self {
+            kind: CallableKind::Scalar,
+            volatility: facts.volatility,
+            strict: facts.strict,
+            scalar_result_nullability: Some(facts.result_nullability),
+            cardinality: CallableCardinality::ExactlyOne,
+            aggregate_empty: None,
+        }
+    }
+
+    pub(crate) const fn table(facts: TableCallableFacts) -> Self {
+        Self {
+            kind: CallableKind::Table,
+            volatility: facts.volatility,
+            strict: facts.strict,
+            scalar_result_nullability: None,
+            cardinality: facts.cardinality,
+            aggregate_empty: None,
+        }
+    }
+}
+
 impl CatalogCallable {
     pub(crate) fn scalar(
         postgres_major: u16,
         signature: ScalarSignature,
         postgres_identity_arguments: String,
         postgres_result_type: String,
+        facts: ScalarCallableFacts,
+        builtin: bool,
+    ) -> Self {
+        Self::scalar_with_facts(
+            postgres_major,
+            signature,
+            postgres_identity_arguments,
+            postgres_result_type,
+            CallableFacts::scalar(facts),
+            builtin,
+        )
+    }
+
+    pub(crate) fn scalar_with_facts(
+        postgres_major: u16,
+        signature: ScalarSignature,
+        postgres_identity_arguments: String,
+        postgres_result_type: String,
+        facts: CallableFacts,
         builtin: bool,
     ) -> Self {
         let id = stable_scalar_id(postgres_major, &signature);
         Self {
             id,
             qualified_name: signature.qualified_name,
-            kind: CallableKind::Scalar,
+            kind: facts.kind,
             arguments: signature.arguments,
             scalar_result: Some(signature.result),
             table_columns: Vec::new(),
+            volatility: facts.volatility,
+            strict: facts.strict,
+            scalar_result_nullability: facts.scalar_result_nullability,
+            cardinality: facts.cardinality,
+            aggregate_empty: facts.aggregate_empty,
             postgres_identity_arguments,
             postgres_result_type,
             builtin,
@@ -100,16 +226,23 @@ impl CatalogCallable {
         signature: TableSignature,
         postgres_identity_arguments: String,
         postgres_result_type: String,
+        facts: TableCallableFacts,
         builtin: bool,
     ) -> Self {
         let id = stable_table_id(postgres_major, &signature);
+        let facts = CallableFacts::table(facts);
         Self {
             id,
             qualified_name: signature.qualified_name,
-            kind: CallableKind::Table,
+            kind: facts.kind,
             arguments: signature.arguments,
             scalar_result: None,
             table_columns: signature.columns,
+            volatility: facts.volatility,
+            strict: facts.strict,
+            scalar_result_nullability: facts.scalar_result_nullability,
+            cardinality: facts.cardinality,
+            aggregate_empty: facts.aggregate_empty,
             postgres_identity_arguments,
             postgres_result_type,
             builtin,

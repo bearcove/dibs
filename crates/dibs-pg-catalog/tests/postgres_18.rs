@@ -1,4 +1,4 @@
-use dibs_pg_catalog::{CallableKind, CatalogSnapshot, PgTypeKind};
+use dibs_pg_catalog::{CallableKind, CatalogSnapshot, PgTypeCategory, PgTypeKind, Volatility};
 use dockside::{Container, containers};
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -103,6 +103,8 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
                 n.nspname,
                 t.typname,
                 t.typtype::text,
+                t.typcategory::text,
+                t.typispreferred,
                 COALESCE(en.nspname || '.' || e.typname, ''),
                 COALESCE(bn.nspname || '.' || b.typname, '')
             FROM pg_type t
@@ -127,7 +129,9 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
                 format!("{}.{}", row.get::<_, String>(0), row.get::<_, String>(1)),
                 row.get::<_, String>(2),
                 row.get::<_, String>(3),
-                row.get::<_, String>(4),
+                row.get::<_, bool>(4),
+                row.get::<_, String>(5),
+                row.get::<_, String>(6),
             )
         })
         .collect();
@@ -140,7 +144,20 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
                     PgTypeKind::Base | PgTypeKind::Array => "b".to_string(),
                     PgTypeKind::Domain => "d".to_string(),
                     PgTypeKind::Enum => "e".to_string(),
+                    PgTypeKind::Pseudo => "p".to_string(),
                 },
+                match ty.category {
+                    PgTypeCategory::Array => "A",
+                    PgTypeCategory::Boolean => "B",
+                    PgTypeCategory::DateTime => "D",
+                    PgTypeCategory::Numeric => "N",
+                    PgTypeCategory::Pseudo => "P",
+                    PgTypeCategory::String => "S",
+                    PgTypeCategory::Unknown => "X",
+                    PgTypeCategory::UserDefined => "U",
+                }
+                .to_string(),
+                ty.preferred,
                 ty.element_type
                     .as_ref()
                     .and_then(|id| catalog.type_by_id(id))
@@ -164,6 +181,8 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
                 p.proname,
                 p.prokind::text,
                 p.proretset,
+                p.provolatile::text,
+                p.proisstrict,
                 pg_catalog.pg_get_function_identity_arguments(p.oid),
                 pg_catalog.format_type(p.prorettype, NULL)
             FROM pg_proc p
@@ -183,7 +202,7 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
             .filter(|row| {
                 format!("{}.{}", row.get::<_, String>(0), row.get::<_, String>(1))
                     == callable.qualified_name
-                    && row.get::<_, String>(4) == callable.postgres_identity_arguments
+                    && row.get::<_, String>(6) == callable.postgres_identity_arguments
             })
             .collect();
         assert_eq!(
@@ -194,10 +213,26 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
             callable.postgres_identity_arguments
         );
         let row = matching[0];
-        assert_eq!(row.get::<_, String>(2), "f");
+        assert_eq!(
+            row.get::<_, String>(2),
+            match callable.kind {
+                CallableKind::Scalar | CallableKind::Table => "f",
+                CallableKind::Aggregate => "a",
+                CallableKind::Window => "w",
+            }
+        );
         assert_eq!(row.get::<_, bool>(3), callable.kind == CallableKind::Table);
         assert_eq!(
-            row.get::<_, String>(5),
+            row.get::<_, String>(4),
+            match callable.volatility {
+                Volatility::Immutable => "i",
+                Volatility::Stable => "s",
+                Volatility::Volatile => "v",
+            }
+        );
+        assert_eq!(row.get::<_, bool>(5), callable.strict);
+        assert_eq!(
+            row.get::<_, String>(7),
             callable.postgres_result_type,
             "result type mismatch for {}({})",
             callable.qualified_name,

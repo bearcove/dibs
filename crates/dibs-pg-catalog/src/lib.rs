@@ -11,7 +11,9 @@ mod type_system;
 
 pub use array::{PgArray, PgArrayDimension, PgArrayError};
 pub use callable::{
-    CallableKind, CatalogCallable, ScalarSignature, TableOutputColumn, TableSignature,
+    AggregateEmptyBehavior, CallableCardinality, CallableKind, CatalogCallable,
+    ScalarCallableFacts, ScalarSignature, TableCallableFacts, TableOutputColumn, TableSignature,
+    Volatility,
 };
 pub use codec::{ApiLanguage, CodecBinding};
 pub use id::{
@@ -24,8 +26,8 @@ pub use snapshot::{
     SchemaFingerprint, UniqueConstraint,
 };
 pub use type_system::{
-    CatalogType, DomainCollation, DomainConstraint, DomainDefinition, PgTypeKind, TypeRegistration,
-    TypeRegistrationKind,
+    CatalogType, DomainCollation, DomainConstraint, DomainDefinition, PgTypeCategory, PgTypeKind,
+    PolymorphicType, TypeRegistration, TypeRegistrationKind,
 };
 
 /// Catalog construction or exact-registration failure.
@@ -146,5 +148,13 @@ pub enum CatalogError {
         qualified_name: String,
         /// SQL-qualified base type name.
         base_type: String,
+    },
+    /// A pseudo-type was used in a value-bearing or storage position.
+    #[error("PostgreSQL pseudo-type '{id}' is not bindable in {position}")]
+    NonBindablePseudoType {
+        /// Stable pseudo-type identity.
+        id: TypeId,
+        /// Rejected semantic position.
+        position: &'static str,
     },
 }
