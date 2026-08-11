@@ -184,13 +184,7 @@ impl DibsParser {
             source,
             Some(&self.scanner),
         )
-        .map_err(|error| {
-            vec![Diagnostic::parse_failure(
-                source_id,
-                source.len(),
-                error.to_string(),
-            )]
-        })?;
+        .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
         let tree = report
             .accepted_resolved_cst(&self.parser, source)
             .ok_or_else(|| {
@@ -216,13 +210,7 @@ impl DibsParser {
             source,
             Some(&self.scanner),
         )
-        .map_err(|error| {
-            vec![Diagnostic::parse_failure(
-                source_id,
-                source.len(),
-                error.to_string(),
-            )]
-        })?;
+        .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
         let tree = report
             .accepted_resolved_cst(&self.parser, source)
             .ok_or_else(|| {
@@ -355,10 +343,10 @@ impl DibsDocumentSession<'_> {
             .session
             .parse_recovering_document(source)
             .map_err(|error| {
-                vec![Diagnostic::parse_failure(
+                vec![Diagnostic::parse_error(
                     self.source_id,
                     self.session.last_input().map_or(0, str::len),
-                    error.to_string(),
+                    &error,
                 )]
             })?;
         Ok(self.recovering_parse(document))
@@ -374,10 +362,10 @@ impl DibsDocumentSession<'_> {
             .session
             .reparse_recovering_document(edit, source)
             .map_err(|error| {
-                vec![Diagnostic::parse_failure(
+                vec![Diagnostic::parse_error(
                     self.source_id,
                     self.session.last_input().map_or(0, str::len),
-                    error.to_string(),
+                    &error,
                 )]
             })?;
         Ok(self.recovering_parse(document))
