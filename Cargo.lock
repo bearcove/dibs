@@ -1089,6 +1089,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dibs-query-syntax"
+version = "0.1.0"
+dependencies = [
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "snark",
+ "snark-dsl",
+]
+
+[[package]]
 name = "dibs-runtime"
 version = "0.2.0-rc.5"
 dependencies = [
@@ -3605,9 +3614,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.12.3"
+version = "1.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
+checksum = "f1292b7759ae1cb9ec195452d1390a074f0cd8541ab7a5a8c31cd6db45d4a6ba"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3628,9 +3637,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rend"
@@ -4146,6 +4155,33 @@ name = "smallvec"
 version = "2.0.0-alpha.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef784004ca8777809dcdad6ac37629f0a97caee4c685fcea805278d81dd8b857"
+
+[[package]]
+name = "snark"
+version = "0.0.1"
+source = "git+https://github.com/bearcove/snark?rev=173e0fbd612eb5684d510574049c9db9a72b4ea6#173e0fbd612eb5684d510574049c9db9a72b4ea6"
+dependencies = [
+ "aho-corasick",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-json",
+ "indexmap 2.14.0",
+ "regex",
+ "regex-automata",
+ "smallvec 1.15.1",
+ "weavy",
+]
+
+[[package]]
+name = "snark-dsl"
+version = "0.1.0"
+source = "git+https://github.com/bearcove/snark?rev=173e0fbd612eb5684d510574049c9db9a72b4ea6#173e0fbd612eb5684d510574049c9db9a72b4ea6"
+dependencies = [
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-json",
+ "snark",
+ "tempfile",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "socket2"
