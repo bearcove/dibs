@@ -69,7 +69,7 @@ pub mod ast {
     }
 }
 
-use scanner::DibsExternalScanner;
+pub use scanner::DibsExternalScanner;
 use snark::{
     grammar::RawGrammarJson,
     lexical::LexicalFacts,
@@ -118,6 +118,11 @@ impl ResultMode {
 }
 
 const GRAMMAR_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/dibs_query_grammar.json"));
+
+/// Embedded generated grammar JSON used by build-time module generation.
+pub fn embedded_grammar_json() -> &'static str {
+    GRAMMAR_JSON
+}
 
 /// Version of the Dibs source language and PostgreSQL lexical contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

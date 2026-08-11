@@ -2,8 +2,9 @@ use snark::parser::{
     ExternalScanRequest, ExternalScanResult, ExternalScannerHost, ParserExecutionError,
 };
 
+/// PostgreSQL dollar-quoted literal scanner used by the Dibs grammar.
 #[derive(Debug, Default)]
-pub(crate) struct DibsExternalScanner;
+pub struct DibsExternalScanner;
 
 impl ExternalScannerHost for DibsExternalScanner {
     fn scan(
