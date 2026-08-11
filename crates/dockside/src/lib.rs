@@ -13,7 +13,7 @@
 //! use dockside::{Container, Image};
 //!
 //! let container = Container::run(
-//!     Image::new("postgres", "16-alpine")
+//!     Image::new("postgres", "18-alpine")
 //!         .env("POSTGRES_PASSWORD", "test")
 //!         .port(5432)
 //! ).unwrap();
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     #[ignore] // requires docker
     fn test_postgres_container() {
-        let container = Container::run(containers::postgres("16-alpine", "test")).unwrap();
+        let container = Container::run(containers::postgres("18-alpine", "test")).unwrap();
 
         // Wait for postgres to be ready
         container

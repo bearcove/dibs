@@ -9,6 +9,13 @@ fn parse(source: &str) -> dibs_query_syntax::SourceFile {
 }
 
 #[test]
+fn parser_reports_postgresql_18_language_identity() {
+    let version = DibsParser::new().language_version();
+    assert_eq!(version.grammar, 1);
+    assert_eq!(version.postgres_major, 18);
+}
+
+#[test]
 fn parses_query_signature_and_named_binds() {
     let source = r#"
 query FindRun(id: bigint, owner: text?,) -> optional {
@@ -105,7 +112,7 @@ fn lexical_negative_fixture_preserves_only_real_binds() {
 }
 
 #[test]
-fn postgresql_16_unicode_identifier_policy_accepts_non_ascii_letters() {
+fn postgresql_18_unicode_identifier_policy_accepts_non_ascii_letters() {
     let file = parse("query Ångström(étiquette: text) -> one { select :étiquette }");
     assert_eq!(file.queries[0].name.value, "Ångström");
     assert_eq!(file.queries[0].parameters[0].name.value, "étiquette");

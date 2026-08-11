@@ -120,10 +120,10 @@ pub struct LanguageVersion {
 }
 
 impl LanguageVersion {
-    /// Initial declaration grammar targeting PostgreSQL 16 lexical behavior.
-    pub const POSTGRES_16: Self = Self {
+    /// Initial declaration grammar targeting PostgreSQL 18 lexical behavior.
+    pub const POSTGRES_18: Self = Self {
         grammar: 1,
-        postgres_major: 16,
+        postgres_major: 18,
     };
 }
 
@@ -160,7 +160,7 @@ impl DibsParser {
             parser,
             table,
             plan,
-            language_version: LanguageVersion::POSTGRES_16,
+            language_version: LanguageVersion::POSTGRES_18,
             scanner: DibsExternalScanner,
         })
     }
