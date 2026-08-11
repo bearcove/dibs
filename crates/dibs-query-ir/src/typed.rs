@@ -738,6 +738,8 @@ pub struct TypedInsert {
     pub ctes: Vec<TypedCte>,
     /// Stable target table.
     pub target: TableId,
+    /// Revision-local binding for target-column expressions, conflict actions, and RETURNING.
+    pub target_binding: RelationId,
     /// Target columns in semantic order.
     pub columns: Vec<ColumnId>,
     /// Insert source.
@@ -1578,6 +1580,7 @@ fn typed_value_rows_correspond(typed: &[Vec<TypedExpression>], hir: &[Vec<HirExp
 fn typed_insert_corresponds(typed: &TypedInsert, hir: &HirInsert) -> bool {
     typed_ctes_correspond(&typed.ctes, &hir.ctes)
         && typed.target == hir.target
+        && typed.target_binding == hir.target_binding
         && typed.columns == hir.columns
         && typed_insert_source_corresponds(&typed.source, &hir.source)
         && typed_conflict_option_corresponds(typed.conflict.as_ref(), hir.conflict.as_ref())

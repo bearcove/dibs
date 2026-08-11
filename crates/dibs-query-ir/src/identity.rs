@@ -1,8 +1,8 @@
 use dibs_pg_catalog::{SchemaFingerprint, TypeId};
 
 use crate::{
-    ApiOperationName, Parameter, ParameterId, QueryManifest, ReadWriteLockManifest, ReferenceIndex,
-    ResultMode, TypedStatement, Typmod,
+    ApiOperationName, ApiResultTypeName, Parameter, ParameterId, QueryManifest,
+    ReadWriteLockManifest, ReferenceIndex, ResultMode, TypedStatement, Typmod,
 };
 
 macro_rules! hash_identity {
@@ -90,6 +90,8 @@ pub struct PublicIdentityInput {
     pub query_name: String,
     /// Validated target-language operation names as a semantic set.
     pub operation_names: Vec<ApiOperationName>,
+    /// Validated target-language result type names as a semantic set.
+    pub result_type_names: Vec<ApiResultTypeName>,
     /// Parameters in public declaration order.
     pub parameters: Vec<Parameter>,
     /// Fields in public output order.
@@ -185,6 +187,7 @@ struct CanonicalPublicIdentityInput {
     version: u16,
     query_name: String,
     operation_names: Vec<ApiOperationName>,
+    result_type_names: Vec<ApiResultTypeName>,
     parameters: Vec<PublicParameter>,
     output_fields: Vec<PublicOutputField>,
     result_mode: ResultMode,
@@ -196,10 +199,14 @@ impl From<&PublicIdentityInput> for CanonicalPublicIdentityInput {
         let mut operation_names = input.operation_names.clone();
         operation_names.sort();
         operation_names.dedup();
+        let mut result_type_names = input.result_type_names.clone();
+        result_type_names.sort();
+        result_type_names.dedup();
         Self {
             version: input.version,
             query_name: input.query_name.clone(),
             operation_names,
+            result_type_names,
             parameters: input.parameters.iter().map(PublicParameter::from).collect(),
             output_fields: input
                 .output_fields
@@ -850,6 +857,7 @@ impl From<&crate::TypedOrderBy> for SemanticOrderBy {
 struct SemanticInsert {
     ctes: Vec<SemanticCte>,
     target: dibs_pg_catalog::TableId,
+    target_binding: crate::RelationId,
     columns: Vec<dibs_pg_catalog::ColumnId>,
     source: SemanticInsertSource,
     conflict: Option<SemanticConflictClause>,
@@ -861,6 +869,7 @@ impl From<&crate::TypedInsert> for SemanticInsert {
         Self {
             ctes: insert.ctes.iter().map(SemanticCte::from).collect(),
             target: insert.target.clone(),
+            target_binding: insert.target_binding,
             columns: insert.columns.clone(),
             source: SemanticInsertSource::from(&insert.source),
             conflict: insert.conflict.as_ref().map(SemanticConflictClause::from),

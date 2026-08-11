@@ -96,6 +96,11 @@ impl CompiledQuery {
             &self.runtime_assertions,
             &self.ordered_output_fields,
         )?;
+        validate_public_api_names(
+            self.declared_result_mode,
+            &self.manifest.operation_names,
+            &self.manifest.result_type_names,
+        )?;
         if self.query_id != self.resolved_hir.id || self.query_name != self.resolved_hir.name {
             return Err(CompiledQueryError::QueryIdentityMismatch);
         }
@@ -172,6 +177,7 @@ impl CompiledQuery {
             result_mode: self.declared_result_mode,
             transport_envelope: None,
             operation_names: self.manifest.operation_names.clone(),
+            result_type_names: self.manifest.result_type_names.clone(),
         }
     }
 }
@@ -221,6 +227,8 @@ pub enum CompiledQueryError {
     HirTypedMismatch,
     /// Result mode, proof, runtime assertions, and output shape disagree.
     ResultModeMismatch,
+    /// Target-language operation/result type names disagree with the result shape.
+    PublicApiNameMismatch,
     /// Query ID/name differs from resolved HIR.
     QueryIdentityMismatch,
     /// Stored execution identity is stale.
@@ -389,6 +397,28 @@ fn validate_result_mode(
         .then_some(())
         .ok_or(CompiledQueryError::ResultModeMismatch)
 }
+
+fn validate_public_api_names(
+    mode: ResultMode,
+    operations: &[crate::ApiOperationName],
+    result_types: &[crate::ApiResultTypeName],
+) -> Result<(), CompiledQueryError> {
+    let operation_languages: BTreeSet<_> = operations.iter().map(|name| name.language).collect();
+    let result_languages: BTreeSet<_> = result_types.iter().map(|name| name.language).collect();
+    let operations_are_unique = operation_languages.len() == operations.len();
+    let results_are_unique = result_languages.len() == result_types.len();
+    let valid = operations_are_unique
+        && results_are_unique
+        && match mode {
+            ResultMode::Exec => result_types.is_empty(),
+            ResultMode::Many | ResultMode::Optional | ResultMode::One => {
+                operation_languages == result_languages
+            }
+        };
+    valid
+        .then_some(())
+        .ok_or(CompiledQueryError::PublicApiNameMismatch)
+}
 fn validate_manifest(query: &CompiledQuery) -> Result<(), CompiledQueryError> {
     let manifest = &query.manifest;
     let canonical_manifest = manifest.canonicalized();
@@ -414,6 +444,7 @@ fn validate_manifest(query: &CompiledQuery) -> Result<(), CompiledQueryError> {
         && canonical_manifest.generated_output_hashes == generated_outputs
         && manifest.parameters == query.ordered_parameters
         && manifest.operation_names == canonical_manifest.operation_names
+        && manifest.result_type_names == canonical_manifest.result_type_names
         && manifest.output_fields == query.ordered_output_fields
         && manifest.inferred_cardinality == query.inferred_cardinality
         && manifest.runtime_assertions == query.runtime_assertions

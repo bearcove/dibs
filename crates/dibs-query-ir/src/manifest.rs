@@ -81,6 +81,37 @@ impl ApiOperationName {
         valid_target_identifier(self.language, &self.name)
     }
 }
+
+/// Validated target-language generated result type name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[facet(invariants = ApiResultTypeName::is_valid)]
+pub struct ApiResultTypeName {
+    /// Target language.
+    pub language: TargetLanguage,
+    /// Exact validated generated result type identifier.
+    pub name: String,
+}
+
+impl ApiResultTypeName {
+    /// Creates a validated target-language result type name.
+    pub fn try_new(
+        language: TargetLanguage,
+        name: impl Into<String>,
+    ) -> Result<Self, ApiContractError> {
+        let value = Self {
+            language,
+            name: name.into(),
+        };
+        value
+            .is_valid()
+            .then_some(value)
+            .ok_or(ApiContractError::InvalidIdentifier)
+    }
+
+    fn is_valid(&self) -> bool {
+        valid_target_identifier(self.language, &self.name)
+    }
+}
 /// Target-language parameter ownership/borrowing contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
 #[repr(u8)]
@@ -618,6 +649,8 @@ pub struct QueryManifest {
     pub catalog_schema_fingerprint: SchemaFingerprint,
     /// Validated target-language operation names as a semantic set.
     pub operation_names: Vec<ApiOperationName>,
+    /// Validated target-language result type names as a semantic set; empty for rowless execution.
+    pub result_type_names: Vec<ApiResultTypeName>,
     /// Hash of deterministic normalized SQL.
     pub normalized_sql_hash: ContentHash,
     /// Hash of authored source content.
@@ -671,6 +704,8 @@ impl QueryManifest {
         value.opaque_analysis_boundaries.dedup();
         value.operation_names.sort();
         value.operation_names.dedup();
+        value.result_type_names.sort();
+        value.result_type_names.dedup();
         for parameter in &mut value.parameters {
             parameter.api_contracts.sort();
             parameter.api_contracts.dedup();
