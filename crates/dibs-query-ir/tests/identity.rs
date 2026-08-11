@@ -882,6 +882,7 @@ fn typed_arguments_and_values_cannot_desynchronize() {
         coercion: None,
     };
     let call = TypedExpressionKind::Call(Box::new(dibs_query_ir::TypedCall {
+        authored_callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:app.identity"),
         callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:app.identity"),
         arguments: vec![argument],
         distinct: false,
@@ -901,6 +902,135 @@ fn typed_arguments_and_values_cannot_desynchronize() {
         ])
         .is_err()
     );
+}
+
+#[test]
+fn hir_correspondence_uses_authored_ids_while_execution_uses_resolved_ids() {
+    let hir_call = HirExpression {
+        id: ExpressionId::new(70),
+        origin: origin(1, 0, 8),
+        kind: HirExpressionKind::Call(Box::new(dibs_query_ir::HirCall {
+            callable_id: dibs_pg_catalog::CallableId::new("unresolved:function:app.pick"),
+            arguments: vec![hir_integer("1")],
+            distinct: false,
+            star: false,
+            order_by: Vec::new(),
+            filter: None,
+            within_group: Vec::new(),
+            over: None,
+        })),
+    };
+    let typed_call = TypedExpression {
+        id: ExpressionId::new(70),
+        origin: origin(1, 0, 8),
+        type_id: type_id(),
+        typmod: None,
+        nullability: Nullability::nullable(NullabilityEvidence::Conservative),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::Call(Box::new(dibs_query_ir::TypedCall {
+            authored_callable_id: dibs_pg_catalog::CallableId::new("unresolved:function:app.pick"),
+            callable_id: dibs_pg_catalog::CallableId::new(
+                "pg18:callable:app.pick(pg_catalog.bigint)",
+            ),
+            arguments: vec![dibs_query_ir::TypedArgument {
+                expression: typed_integer_with_nullability("1", true),
+                coercion: None,
+            }],
+            distinct: false,
+            star: false,
+            order_by: Vec::new(),
+            filter: None,
+            within_group: Vec::new(),
+            over: None,
+        })),
+    };
+    let typed_call_statement = typed_expression_fixture_statement(typed_call.clone());
+    let hir_call_statement = hir_expression_fixture_statement(hir_call);
+    assert!(typed_call_statement.corresponds_to_hir(&hir_call_statement));
+    let mut wrong_authored_call = typed_call_statement.clone();
+    let dibs_query_ir::TypedStatementKind::Select(select) = &mut wrong_authored_call.kind else {
+        unreachable!()
+    };
+    let TypedExpressionKind::Call(call) = &mut select.projections[0].expression.kind else {
+        unreachable!()
+    };
+    call.authored_callable_id = dibs_pg_catalog::CallableId::new("unresolved:function:app.other");
+    assert!(!wrong_authored_call.corresponds_to_hir(&hir_call_statement));
+
+    let hir_operator = HirExpression {
+        id: ExpressionId::new(71),
+        origin: origin(1, 0, 5),
+        kind: HirExpressionKind::Operator {
+            operator_id: dibs_pg_catalog::OperatorId::new("unresolved:operator:pg_catalog.+"),
+            operands: vec![hir_integer("1"), hir_integer("1")],
+        },
+    };
+    let typed_operator = TypedExpression {
+        id: ExpressionId::new(71),
+        origin: origin(1, 0, 5),
+        type_id: type_id(),
+        typmod: None,
+        nullability: Nullability::nullable(NullabilityEvidence::Conservative),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::Operator {
+            authored_operator_id: dibs_pg_catalog::OperatorId::new(
+                "unresolved:operator:pg_catalog.+",
+            ),
+            operator_id: dibs_pg_catalog::OperatorId::new(
+                "pg18:operator:pg_catalog.+(pg_catalog.bigint,pg_catalog.bigint)",
+            ),
+            operands: vec![
+                dibs_query_ir::TypedArgument {
+                    expression: typed_integer_with_nullability("1", true),
+                    coercion: None,
+                },
+                dibs_query_ir::TypedArgument {
+                    expression: typed_integer_with_nullability("1", true),
+                    coercion: None,
+                },
+            ],
+        },
+    };
+    let typed_operator_statement = typed_expression_fixture_statement(typed_operator);
+    let hir_operator_statement = hir_expression_fixture_statement(hir_operator);
+    assert!(typed_operator_statement.corresponds_to_hir(&hir_operator_statement));
+    let mut wrong_authored_operator = typed_operator_statement;
+    let dibs_query_ir::TypedStatementKind::Select(select) = &mut wrong_authored_operator.kind
+    else {
+        unreachable!()
+    };
+    let TypedExpressionKind::Operator {
+        authored_operator_id,
+        ..
+    } = &mut select.projections[0].expression.kind
+    else {
+        unreachable!()
+    };
+    *authored_operator_id = dibs_pg_catalog::OperatorId::new("unresolved:operator:pg_catalog.-");
+    assert!(!wrong_authored_operator.corresponds_to_hir(&hir_operator_statement));
+
+    let base_execution = fixture_query("job", origin(1, 21, 24)).execution_identity_input();
+    let mut first = base_execution.clone();
+    first.statement = typed_expression_fixture_statement(typed_call.clone());
+    let mut second = first.clone();
+    {
+        let dibs_query_ir::TypedStatementKind::Select(select) = &mut second.statement.kind else {
+            unreachable!()
+        };
+        let TypedExpressionKind::Call(call) = &mut select.projections[0].expression.kind else {
+            unreachable!()
+        };
+        call.authored_callable_id = dibs_pg_catalog::CallableId::new("unresolved:function:renamed");
+    }
+    assert_eq!(execution_identity(&first), execution_identity(&second));
+    let dibs_query_ir::TypedStatementKind::Select(select) = &mut second.statement.kind else {
+        unreachable!()
+    };
+    let TypedExpressionKind::Call(call) = &mut select.projections[0].expression.kind else {
+        unreachable!()
+    };
+    call.callable_id = dibs_pg_catalog::CallableId::new("pg18:callable:app.pick(pg_catalog.text)");
+    assert_ne!(execution_identity(&first), execution_identity(&second));
 }
 
 #[test]
@@ -1050,6 +1180,7 @@ fn structural_syntax_operators_do_not_require_catalog_render_names() {
         nullability: Nullability::nullable(NullabilityEvidence::Conservative),
         volatility: Volatility::Immutable,
         kind: TypedExpressionKind::Operator {
+            authored_operator_id: dibs_pg_catalog::OperatorId::new("pg18:operator:syntax:AND"),
             operator_id: dibs_pg_catalog::OperatorId::new("pg18:operator:syntax:AND"),
             operands: vec![
                 dibs_query_ir::TypedArgument {
@@ -1228,6 +1359,60 @@ fn relation_statement_fixture() -> HirStatement {
             ctes: Vec::new(),
             distinct: dibs_query_ir::SelectDistinct::AllRows,
             projections: Vec::new(),
+            from: Vec::new(),
+            predicate: None,
+            group_by: Vec::new(),
+            having: None,
+            windows: Vec::new(),
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+            locks: Vec::new(),
+        })),
+    }
+}
+
+fn hir_expression_fixture_statement(expression: HirExpression) -> HirStatement {
+    HirStatement {
+        id: StatementId::new(70),
+        origin: expression.origin.clone(),
+        kind: dibs_query_ir::HirStatementKind::Select(Box::new(HirSelect {
+            recursive: false,
+            ctes: Vec::new(),
+            distinct: dibs_query_ir::SelectDistinct::AllRows,
+            projections: vec![HirProjection {
+                field_id: FieldId::new(70),
+                alias: "value".to_string(),
+                alias_origin: expression.origin.clone(),
+                expression,
+            }],
+            from: Vec::new(),
+            predicate: None,
+            group_by: Vec::new(),
+            having: None,
+            windows: Vec::new(),
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+            locks: Vec::new(),
+        })),
+    }
+}
+
+fn typed_expression_fixture_statement(expression: TypedExpression) -> TypedStatement {
+    TypedStatement {
+        id: StatementId::new(70),
+        origin: expression.origin.clone(),
+        cardinality: Cardinality::exactly_one(),
+        kind: dibs_query_ir::TypedStatementKind::Select(Box::new(TypedSelect {
+            recursive: false,
+            ctes: Vec::new(),
+            distinct: dibs_query_ir::SelectDistinct::AllRows,
+            projections: vec![dibs_query_ir::TypedProjection {
+                field_id: FieldId::new(70),
+                sql_label: "value".to_string(),
+                expression,
+            }],
             from: Vec::new(),
             predicate: None,
             group_by: Vec::new(),

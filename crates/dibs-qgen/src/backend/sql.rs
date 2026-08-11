@@ -78,6 +78,29 @@ pub fn render_compiled_sql(query: &CompiledQuery) -> Result<RenderedSql, SqlRend
     query
         .validate()
         .map_err(SqlRenderError::InvalidCompiledQuery)?;
+    render_checked_surfaces(query)
+}
+
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn render_compiler_surfaces(
+    query: &CompiledQuery,
+) -> Result<RenderedSql, SqlRenderError> {
+    query
+        .typed_statement
+        .validate()
+        .map_err(|_| SqlRenderError::InvalidArtifact("invalid typed statement"))?;
+    if !query
+        .typed_statement
+        .corresponds_to_hir(&query.resolved_hir.statement)
+    {
+        return Err(SqlRenderError::InvalidArtifact(
+            "resolved HIR and typed statement diverge",
+        ));
+    }
+    render_checked_surfaces(query)
+}
+
+fn render_checked_surfaces(query: &CompiledQuery) -> Result<RenderedSql, SqlRenderError> {
     if query.compiler_versions.supported_postgres_major != 18 {
         return Err(SqlRenderError::UnsupportedPostgresMajor(
             query.compiler_versions.supported_postgres_major,
@@ -591,6 +614,7 @@ impl<'a> Renderer<'a> {
             TypedExpressionKind::Operator {
                 operator_id,
                 operands,
+                ..
             } => self.render_operator(sql, operator_id, operands),
             TypedExpressionKind::Cast {
                 expression,
@@ -781,6 +805,25 @@ impl<'a> Renderer<'a> {
         operator_id: &OperatorId,
         operands: &'a [TypedArgument],
     ) -> Result<(), SqlRenderError> {
+        if let Some(token) = syntax_operator_token(operator_id) {
+            return match (token, operands) {
+                ("NOT", [operand]) => {
+                    sql.push_str("NOT (");
+                    self.render_argument(sql, operand)?;
+                    sql.push(')');
+                    Ok(())
+                }
+                ("AND" | "OR", [left, right]) => {
+                    self.render_argument(sql, left)?;
+                    sql.push(' ');
+                    sql.push_str(token);
+                    sql.push(' ');
+                    self.render_argument(sql, right)?;
+                    Ok(())
+                }
+                _ => Err(SqlRenderError::InvalidArtifact("syntax operator arity")),
+            };
+        }
         let components = self
             .query
             .catalog_render_names
@@ -1366,6 +1409,15 @@ fn valid_typmod(value: &str) -> bool {
         && value[open + 1..value.len() - 1]
             .bytes()
             .all(|byte| byte.is_ascii_digit() || byte == b',' || byte == b' ' || byte == b'-')
+}
+
+fn syntax_operator_token(id: &OperatorId) -> Option<&'static str> {
+    match id.as_str() {
+        "pg18:operator:syntax:AND" => Some("AND"),
+        "pg18:operator:syntax:OR" => Some("OR"),
+        "pg18:operator:syntax:NOT" => Some("NOT"),
+        _ => None,
+    }
 }
 
 fn render_qualified_identifier(sql: &mut String, components: &[String]) {

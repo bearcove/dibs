@@ -100,6 +100,7 @@ fn full_select_and_call_vocabulary_round_trips_with_facet_json() {
         }),
         volatility: Volatility::Immutable,
         kind: TypedExpressionKind::Call(Box::new(TypedCall {
+            authored_callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
             callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
             arguments: Vec::new(),
             distinct: true,
@@ -205,6 +206,7 @@ fn checked_typed_ir_rejects_full_language_hir_divergence() {
                     }),
                     volatility: Volatility::Immutable,
                     kind: TypedExpressionKind::Call(Box::new(TypedCall {
+                        authored_callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
                         callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
                         arguments: Vec::new(),
                         distinct: true,
@@ -468,6 +470,7 @@ fn invalid_window_and_call_shapes_are_rejected() {
         }),
         volatility: Volatility::Immutable,
         kind: TypedExpressionKind::Call(Box::new(TypedCall {
+            authored_callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
             callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
             arguments: vec![TypedArgument {
                 expression: typed_integer(3, "1"),
