@@ -11,5 +11,10 @@ build = "build.rs"
 snark.workspace = true
 facet.workspace = true
 
+margin.workspace = true
+
+[dev-dependencies]
+margin-term.workspace = true
+
 [build-dependencies]
 snark-dsl = { workspace = true, features = ["typed-ast"] }

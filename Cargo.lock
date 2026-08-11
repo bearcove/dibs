@@ -1093,6 +1093,8 @@ name = "dibs-query-syntax"
 version = "0.1.0"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
+ "margin-term 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
  "snark",
  "snark-dsl",
 ]
@@ -1509,8 +1511,8 @@ dependencies = [
  "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-format",
  "facet-reflect",
- "margin",
- "margin-term",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
+ "margin-term 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
  "serde_json",
  "styx-format",
  "styx-parse",
@@ -2607,12 +2609,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "margin"
+version = "0.10.0-rc.1"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
+dependencies = [
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "unicode-width",
+]
+
+[[package]]
 name = "margin-term"
 version = "0.10.0-rc.1"
 source = "git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a#2dcfc039aa43e14fa004238d00bd9eeb16bf859a"
 dependencies = [
  "arborium-theme",
- "margin",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
+ "unicode-width",
+]
+
+[[package]]
+name = "margin-term"
+version = "0.10.0-rc.1"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
+dependencies = [
+ "arborium-theme",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
  "unicode-width",
 ]
 
@@ -4159,7 +4180,7 @@ checksum = "ef784004ca8777809dcdad6ac37629f0a97caee4c685fcea805278d81dd8b857"
 [[package]]
 name = "snark"
 version = "0.0.1"
-source = "git+https://github.com/bearcove/snark?rev=173e0fbd612eb5684d510574049c9db9a72b4ea6#173e0fbd612eb5684d510574049c9db9a72b4ea6"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
 dependencies = [
  "aho-corasick",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -4174,7 +4195,7 @@ dependencies = [
 [[package]]
 name = "snark-dsl"
 version = "0.1.0"
-source = "git+https://github.com/bearcove/snark?rev=173e0fbd612eb5684d510574049c9db9a72b4ea6#173e0fbd612eb5684d510574049c9db9a72b4ea6"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-json",
