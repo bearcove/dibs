@@ -1079,8 +1079,12 @@ dependencies = [
  "camino",
  "codegen",
  "dibs-db-schema",
+ "dibs-pg-catalog",
+ "dibs-qgen-generated-api-fixture",
+ "dibs-query-ir",
  "dibs-query-schema",
  "dibs-query-syntax",
+ "dibs-query-typing",
  "dibs-sql",
  "dockside",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
@@ -1091,6 +1095,17 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing",
+]
+
+[[package]]
+name = "dibs-qgen-generated-api-fixture"
+version = "0.0.0"
+dependencies = [
+ "dibs-pg-catalog",
+ "dibs-qgen",
+ "dibs-query-ir",
+ "dibs-runtime",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
 ]
 
 [[package]]
@@ -1125,6 +1140,17 @@ dependencies = [
  "margin-term 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
  "snark",
  "snark-dsl",
+]
+
+[[package]]
+name = "dibs-query-typing"
+version = "0.1.0"
+dependencies = [
+ "dibs-db-schema",
+ "dibs-pg-catalog",
+ "dibs-query-ir",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
