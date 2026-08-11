@@ -1037,6 +1037,75 @@ fn checked_compiled_query_rejects_hir_typed_divergence() {
 }
 
 #[test]
+fn structural_syntax_operators_do_not_require_catalog_render_names() {
+    let mut query = fixture_query("job", origin(1, 21, 24));
+    let dibs_query_ir::TypedStatementKind::Select(select) = &mut query.typed_statement.kind else {
+        unreachable!()
+    };
+    select.predicate = Some(TypedExpression {
+        id: ExpressionId::new(90),
+        origin: origin(1, 26, 38),
+        type_id: type_id(),
+        typmod: None,
+        nullability: Nullability::nullable(NullabilityEvidence::Conservative),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::Operator {
+            operator_id: dibs_pg_catalog::OperatorId::new("pg18:operator:syntax:AND"),
+            operands: vec![
+                dibs_query_ir::TypedArgument {
+                    expression: typed_integer_with_nullability("1", true),
+                    coercion: None,
+                },
+                dibs_query_ir::TypedArgument {
+                    expression: typed_integer_with_nullability("1", true),
+                    coercion: None,
+                },
+            ],
+        },
+    });
+    let dibs_query_ir::HirStatementKind::Select(select) = &mut query.resolved_hir.statement.kind
+    else {
+        unreachable!()
+    };
+    select.predicate = Some(HirExpression {
+        id: ExpressionId::new(90),
+        origin: origin(1, 26, 38),
+        kind: HirExpressionKind::Operator {
+            operator_id: dibs_pg_catalog::OperatorId::new("pg18:operator:syntax:AND"),
+            operands: vec![hir_integer("1"), hir_integer("1")],
+        },
+    });
+    query.execution_semantics_id = execution_identity(&query.execution_identity_input());
+    query.manifest.execution_semantics_id = query.execution_semantics_id.clone();
+    query.manifest_identity = ManifestIdentity::from_manifest(&query.manifest).unwrap();
+    query.artifact_hashes.manifest = dibs_query_ir::ContentHash::of_json(&query.manifest).unwrap();
+
+    query.validate().unwrap();
+
+    let mut nested_catalog_operand = query;
+    let dibs_query_ir::TypedStatementKind::Select(select) =
+        &mut nested_catalog_operand.typed_statement.kind
+    else {
+        unreachable!()
+    };
+    let Some(TypedExpression {
+        kind: TypedExpressionKind::Operator { operands, .. },
+        ..
+    }) = &mut select.predicate
+    else {
+        unreachable!()
+    };
+    operands[0].expression.kind = TypedExpressionKind::Column {
+        binding: dibs_query_ir::RelationId::new(1),
+        column_id: ColumnId::new("pg18:column:public.missing.id"),
+    };
+    assert!(matches!(
+        nested_catalog_operand.validate(),
+        Err(dibs_query_ir::CompiledQueryError::MissingCatalogRenderName)
+    ));
+}
+
+#[test]
 fn result_modes_require_matching_cardinality_assertions_and_row_shape() {
     let mut one_without_lower_assertion = fixture_query("job", origin(1, 21, 24));
     one_without_lower_assertion.declared_result_mode = ResultMode::One;
@@ -1128,15 +1197,23 @@ fn hir_integer(value: &str) -> HirExpression {
 }
 
 fn typed_integer(value: &str) -> TypedExpression {
+    typed_integer_with_nullability(value, false)
+}
+
+fn typed_integer_with_nullability(value: &str, nullable: bool) -> TypedExpression {
     TypedExpression {
         id: ExpressionId::new(10),
         origin: origin(1, 0, 1),
         type_id: type_id(),
         typmod: None,
-        nullability: Nullability::not_null(NullabilityEvidence::CallableContract {
-            callable_id: dibs_pg_catalog::CallableId::new("pg18:literal:integer"),
-            proves_non_null: true,
-        }),
+        nullability: if nullable {
+            Nullability::nullable(NullabilityEvidence::Conservative)
+        } else {
+            Nullability::not_null(NullabilityEvidence::CallableContract {
+                callable_id: dibs_pg_catalog::CallableId::new("pg18:literal:integer"),
+                proves_non_null: true,
+            })
+        },
         volatility: Volatility::Immutable,
         kind: TypedExpressionKind::Literal(dibs_query_ir::HirLiteral::Integer(value.to_string())),
     }
