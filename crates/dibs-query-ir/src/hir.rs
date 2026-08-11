@@ -69,8 +69,12 @@ pub enum HirStatementKind {
 /// Resolved `SELECT` topology.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct HirSelect {
+    /// Whether the WITH list is explicitly recursive.
+    pub recursive: bool,
     /// CTEs in authored order.
     pub ctes: Vec<HirCte>,
+    /// SELECT duplicate-elimination policy.
+    pub distinct: SelectDistinct<HirExpression>,
     /// Projection fields in authored output order.
     pub projections: Vec<HirProjection>,
     /// Source relations in authored semantic order.
@@ -81,6 +85,8 @@ pub struct HirSelect {
     pub group_by: Vec<HirExpression>,
     /// Optional HAVING expression.
     pub having: Option<HirExpression>,
+    /// Named WINDOW definitions in authored order.
+    pub windows: Vec<HirNamedWindow>,
     /// Ordering terms in authored order.
     pub order_by: Vec<HirOrderBy>,
     /// Optional limit expression.
@@ -131,6 +137,15 @@ pub struct HirProjection {
     pub expression: HirExpression,
 }
 
+/// Authored relation alias retained for deterministic SQL rendering.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+pub struct RelationAlias {
+    /// Alias identifier.
+    pub name: String,
+    /// Optional table-function/derived-table column alias list in authored order.
+    pub column_names: Vec<String>,
+}
+
 /// Resolved relation binding with complete recursive topology.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct HirRelation {
@@ -139,7 +154,7 @@ pub struct HirRelation {
     /// Relation source origin.
     pub origin: SourceOrigin,
     /// Optional authored alias; never intrinsic object identity.
-    pub alias: Option<String>,
+    pub alias: Option<RelationAlias>,
     /// Resolved relation topology.
     pub kind: HirRelationKind,
 }
@@ -268,13 +283,8 @@ pub enum HirExpressionKind {
         /// Stable catalog column identity.
         column_id: ColumnId,
     },
-    /// Resolved function call.
-    Call {
-        /// Stable catalog callable identity.
-        callable_id: CallableId,
-        /// Arguments in authored semantic order.
-        arguments: Vec<HirExpression>,
-    },
+    /// Resolved function call with all PostgreSQL call modifiers.
+    Call(Box<HirCall>),
     /// Resolved unary/binary/postfix operator.
     Operator {
         /// Stable catalog operator identity.
@@ -348,14 +358,141 @@ pub struct HirCaseBranch {
 }
 
 /// One resolved ordering term.
+pub type HirOrderBy = OrderBy<HirExpression>;
+
+/// SELECT duplicate-elimination policy.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
-pub struct HirOrderBy {
+#[repr(u8)]
+pub enum SelectDistinct<E> {
+    /// Preserve all input rows.
+    AllRows,
+    /// Eliminate duplicate projected rows.
+    Distinct,
+    /// Keep the first row for each authored DISTINCT ON key tuple.
+    On(Vec<E>),
+}
+
+/// One resolved function call with aggregate and window modifiers.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+pub struct HirCall {
+    /// Stable catalog callable identity.
+    pub callable_id: CallableId,
+    /// Arguments in authored semantic order.
+    pub arguments: Vec<HirExpression>,
+    /// Whether the argument tuple is duplicate-eliminated.
+    pub distinct: bool,
+    /// Whether the call uses the `*` argument form.
+    pub star: bool,
+    /// Aggregate-local ORDER BY terms.
+    pub order_by: Vec<HirOrderBy>,
+    /// Optional aggregate FILTER predicate.
+    pub filter: Option<Box<HirExpression>>,
+    /// Ordered-set aggregate WITHIN GROUP ordering.
+    pub within_group: Vec<HirOrderBy>,
+    /// Optional window application.
+    pub over: Option<WindowReference<HirExpression>>,
+}
+
+/// One named WINDOW definition.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+pub struct HirNamedWindow {
+    /// Window identifier.
+    pub name: String,
+    /// Exact definition origin.
+    pub origin: SourceOrigin,
+    /// Window specification.
+    pub specification: WindowSpec<HirExpression>,
+}
+
+/// Named or inline OVER-clause window reference.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+pub enum WindowReference<E> {
+    /// Reference a WINDOW definition by name.
+    Named(String),
+    /// Use an inline parenthesized specification.
+    Inline(WindowSpec<E>),
+}
+
+/// PostgreSQL window specification.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+pub struct WindowSpec<E> {
+    /// Optional inherited named window.
+    pub existing: Option<String>,
+    /// PARTITION BY expressions in authored order.
+    pub partition_by: Vec<E>,
+    /// ORDER BY terms in authored order.
+    pub order_by: Vec<OrderBy<E>>,
+    /// Optional frame clause.
+    pub frame: Option<WindowFrame<E>>,
+}
+
+/// Generic authored ordering term shared by resolved and typed window vocabulary.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+pub struct OrderBy<E> {
     /// Ordering expression.
-    pub expression: HirExpression,
+    pub expression: E,
     /// Sort direction.
     pub direction: SortDirection,
     /// Null ordering.
     pub nulls: NullsOrder,
+}
+
+/// PostgreSQL window frame clause.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+pub struct WindowFrame<E> {
+    /// Frame unit.
+    pub mode: WindowFrameMode,
+    /// Starting bound.
+    pub start: FrameBound<E>,
+    /// Optional ending bound for BETWEEN form.
+    pub end: Option<FrameBound<E>>,
+    /// Row exclusion policy.
+    pub exclusion: WindowExclusion,
+}
+
+/// Window frame unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[repr(u8)]
+pub enum WindowFrameMode {
+    /// Physical rows.
+    Rows,
+    /// Ordering-peer range.
+    Range,
+    /// Ordering peer groups.
+    Groups,
+}
+
+/// One window frame boundary.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+pub enum FrameBound<E> {
+    /// UNBOUNDED PRECEDING.
+    UnboundedPreceding,
+    /// Expression PRECEDING.
+    Preceding(E),
+    /// CURRENT ROW.
+    CurrentRow,
+    /// Expression FOLLOWING.
+    Following(E),
+    /// UNBOUNDED FOLLOWING.
+    UnboundedFollowing,
+}
+
+/// Window frame exclusion policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[repr(u8)]
+pub enum WindowExclusion {
+    /// No explicit EXCLUDE clause.
+    None,
+    /// EXCLUDE CURRENT ROW.
+    CurrentRow,
+    /// EXCLUDE GROUP.
+    Group,
+    /// EXCLUDE TIES.
+    Ties,
+    /// EXCLUDE NO OTHERS.
+    NoOthers,
 }
 
 /// SQL sort direction.

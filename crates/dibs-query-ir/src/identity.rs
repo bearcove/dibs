@@ -1,8 +1,8 @@
 use dibs_pg_catalog::{SchemaFingerprint, TypeId};
 
 use crate::{
-    Parameter, ParameterId, QueryManifest, ReadWriteLockManifest, ReferenceIndex, ResultMode,
-    TypedStatement, Typmod,
+    ApiOperationName, Parameter, ParameterId, QueryManifest, ReadWriteLockManifest, ReferenceIndex,
+    ResultMode, TypedStatement, Typmod,
 };
 
 macro_rules! hash_identity {
@@ -88,6 +88,8 @@ pub struct PublicIdentityInput {
     pub version: u16,
     /// Public declaration name.
     pub query_name: String,
+    /// Validated target-language operation names as a semantic set.
+    pub operation_names: Vec<ApiOperationName>,
     /// Parameters in public declaration order.
     pub parameters: Vec<Parameter>,
     /// Fields in public output order.
@@ -154,13 +156,16 @@ impl From<&ExecutionIdentityInput> for CanonicalExecutionIdentityInput {
                 access: reference.access,
             })
             .collect();
+        let mut runtime_assertions = input.runtime_assertions.clone();
+        runtime_assertions.sort();
+        runtime_assertions.dedup();
         Self {
             version: input.version,
             postgres_major: input.postgres_major,
             statement: SemanticStatement::from(&input.statement),
             parameters: input.parameters.clone(),
             result_mode: input.result_mode,
-            runtime_assertions: input.runtime_assertions.clone(),
+            runtime_assertions,
             references,
             read_write_lock_manifest: input.read_write_lock_manifest.canonicalized(),
             catalog_schema_fingerprint: input.catalog_schema_fingerprint.clone(),
@@ -179,6 +184,7 @@ struct SemanticReference {
 struct CanonicalPublicIdentityInput {
     version: u16,
     query_name: String,
+    operation_names: Vec<ApiOperationName>,
     parameters: Vec<PublicParameter>,
     output_fields: Vec<PublicOutputField>,
     result_mode: ResultMode,
@@ -187,9 +193,13 @@ struct CanonicalPublicIdentityInput {
 
 impl From<&PublicIdentityInput> for CanonicalPublicIdentityInput {
     fn from(input: &PublicIdentityInput) -> Self {
+        let mut operation_names = input.operation_names.clone();
+        operation_names.sort();
+        operation_names.dedup();
         Self {
             version: input.version,
             query_name: input.query_name.clone(),
+            operation_names,
             parameters: input.parameters.iter().map(PublicParameter::from).collect(),
             output_fields: input
                 .output_fields
@@ -212,15 +222,15 @@ struct PublicParameter {
     pg_codec_id: dibs_pg_catalog::PgCodecId,
     wire_codec_id: dibs_pg_catalog::WireCodecId,
     bind_format: crate::BindFormat,
-    api_types: Vec<crate::ApiTypeMapping>,
+    api_contracts: Vec<crate::ParameterApiContract>,
     sensitivity: crate::Sensitivity,
 }
 
 impl From<&Parameter> for PublicParameter {
     fn from(parameter: &Parameter) -> Self {
-        let mut api_types = parameter.api_types.clone();
-        api_types.sort();
-        api_types.dedup();
+        let mut api_contracts = parameter.api_contracts.clone();
+        api_contracts.sort();
+        api_contracts.dedup();
         Self {
             ordinal: parameter.ordinal,
             source_name: parameter.source_name.clone(),
@@ -230,7 +240,7 @@ impl From<&Parameter> for PublicParameter {
             pg_codec_id: parameter.pg_codec_id.clone(),
             wire_codec_id: parameter.wire_codec_id.clone(),
             bind_format: parameter.bind_format,
-            api_types,
+            api_contracts,
             sensitivity: parameter.sensitivity,
         }
     }
@@ -322,12 +332,15 @@ impl From<&crate::TypedStatementKind> for SemanticStatementKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 struct SemanticSelect {
+    recursive: bool,
     ctes: Vec<SemanticCte>,
+    distinct: SemanticSelectDistinct,
     projections: Vec<SemanticProjection>,
     from: Vec<SemanticRelation>,
     predicate: Option<SemanticExpression>,
     group_by: Vec<SemanticExpression>,
     having: Option<SemanticExpression>,
+    windows: Vec<SemanticNamedWindow>,
     order_by: Vec<SemanticOrderBy>,
     limit: Option<crate::TypedLimit>,
     offset: Option<crate::TypedLimit>,
@@ -337,7 +350,9 @@ struct SemanticSelect {
 impl From<&crate::TypedSelect> for SemanticSelect {
     fn from(select: &crate::TypedSelect) -> Self {
         Self {
+            recursive: select.recursive,
             ctes: select.ctes.iter().map(SemanticCte::from).collect(),
+            distinct: SemanticSelectDistinct::from(&select.distinct),
             projections: select
                 .projections
                 .iter()
@@ -351,10 +366,140 @@ impl From<&crate::TypedSelect> for SemanticSelect {
                 .map(SemanticExpression::from)
                 .collect(),
             having: select.having.as_ref().map(SemanticExpression::from),
+            windows: select
+                .windows
+                .iter()
+                .map(SemanticNamedWindow::from)
+                .collect(),
             order_by: select.order_by.iter().map(SemanticOrderBy::from).collect(),
             limit: select.limit.clone(),
             offset: select.offset.clone(),
             locks: select.locks.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+enum SemanticSelectDistinct {
+    AllRows,
+    Distinct,
+    On(Vec<SemanticExpression>),
+}
+
+impl From<&crate::SelectDistinct<crate::TypedExpression>> for SemanticSelectDistinct {
+    fn from(distinct: &crate::SelectDistinct<crate::TypedExpression>) -> Self {
+        match distinct {
+            crate::SelectDistinct::AllRows => Self::AllRows,
+            crate::SelectDistinct::Distinct => Self::Distinct,
+            crate::SelectDistinct::On(expressions) => {
+                Self::On(expressions.iter().map(SemanticExpression::from).collect())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+struct SemanticNamedWindow {
+    name: String,
+    specification: SemanticWindowSpec,
+}
+
+impl From<&crate::TypedNamedWindow> for SemanticNamedWindow {
+    fn from(window: &crate::TypedNamedWindow) -> Self {
+        Self {
+            name: window.name.clone(),
+            specification: SemanticWindowSpec::from(&window.specification),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+enum SemanticWindowReference {
+    Named(String),
+    Inline(Box<SemanticWindowSpec>),
+}
+
+impl From<&crate::WindowReference<crate::TypedExpression>> for SemanticWindowReference {
+    fn from(window: &crate::WindowReference<crate::TypedExpression>) -> Self {
+        match window {
+            crate::WindowReference::Named(name) => Self::Named(name.clone()),
+            crate::WindowReference::Inline(specification) => {
+                Self::Inline(Box::new(SemanticWindowSpec::from(specification)))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+struct SemanticWindowSpec {
+    existing: Option<String>,
+    partition_by: Vec<SemanticExpression>,
+    order_by: Vec<SemanticOrderBy>,
+    frame: Option<SemanticWindowFrame>,
+}
+
+impl From<&crate::WindowSpec<crate::TypedExpression>> for SemanticWindowSpec {
+    fn from(specification: &crate::WindowSpec<crate::TypedExpression>) -> Self {
+        Self {
+            existing: specification.existing.clone(),
+            partition_by: specification
+                .partition_by
+                .iter()
+                .map(SemanticExpression::from)
+                .collect(),
+            order_by: specification
+                .order_by
+                .iter()
+                .map(SemanticOrderBy::from)
+                .collect(),
+            frame: specification.frame.as_ref().map(SemanticWindowFrame::from),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+struct SemanticWindowFrame {
+    mode: crate::WindowFrameMode,
+    start: SemanticFrameBound,
+    end: Option<SemanticFrameBound>,
+    exclusion: crate::WindowExclusion,
+}
+
+impl From<&crate::WindowFrame<crate::TypedExpression>> for SemanticWindowFrame {
+    fn from(frame: &crate::WindowFrame<crate::TypedExpression>) -> Self {
+        Self {
+            mode: frame.mode,
+            start: SemanticFrameBound::from(&frame.start),
+            end: frame.end.as_ref().map(SemanticFrameBound::from),
+            exclusion: frame.exclusion,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+enum SemanticFrameBound {
+    UnboundedPreceding,
+    Preceding(SemanticExpression),
+    CurrentRow,
+    Following(SemanticExpression),
+    UnboundedFollowing,
+}
+
+impl From<&crate::FrameBound<crate::TypedExpression>> for SemanticFrameBound {
+    fn from(bound: &crate::FrameBound<crate::TypedExpression>) -> Self {
+        match bound {
+            crate::FrameBound::UnboundedPreceding => Self::UnboundedPreceding,
+            crate::FrameBound::Preceding(expression) => {
+                Self::Preceding(SemanticExpression::from(expression))
+            }
+            crate::FrameBound::CurrentRow => Self::CurrentRow,
+            crate::FrameBound::Following(expression) => {
+                Self::Following(SemanticExpression::from(expression))
+            }
+            crate::FrameBound::UnboundedFollowing => Self::UnboundedFollowing,
         }
     }
 }
@@ -532,6 +677,12 @@ enum SemanticExpressionKind {
         callable_id: dibs_pg_catalog::CallableId,
         arguments: Vec<SemanticExpression>,
         coercions: Vec<Option<crate::TypedCoercion>>,
+        distinct: bool,
+        star: bool,
+        order_by: Vec<SemanticOrderBy>,
+        filter: Option<Box<SemanticExpression>>,
+        within_group: Vec<SemanticOrderBy>,
+        over: Option<SemanticWindowReference>,
     },
     Operator {
         operator_id: dibs_pg_catalog::OperatorId,
@@ -574,19 +725,31 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 binding: *binding,
                 column_id: column_id.clone(),
             },
-            crate::TypedExpressionKind::Call {
-                callable_id,
-                arguments,
-            } => Self::Call {
-                callable_id: callable_id.clone(),
-                arguments: arguments
+            crate::TypedExpressionKind::Call(call) => Self::Call {
+                callable_id: call.callable_id.clone(),
+                arguments: call
+                    .arguments
                     .iter()
                     .map(|argument| SemanticExpression::from(&argument.expression))
                     .collect(),
-                coercions: arguments
+                coercions: call
+                    .arguments
                     .iter()
                     .map(|argument| argument.coercion.clone())
                     .collect(),
+                distinct: call.distinct,
+                star: call.star,
+                order_by: call.order_by.iter().map(SemanticOrderBy::from).collect(),
+                filter: call
+                    .filter
+                    .as_ref()
+                    .map(|expression| Box::new(SemanticExpression::from(expression.as_ref()))),
+                within_group: call
+                    .within_group
+                    .iter()
+                    .map(SemanticOrderBy::from)
+                    .collect(),
+                over: call.over.as_ref().map(SemanticWindowReference::from),
             },
             crate::TypedExpressionKind::Operator {
                 operator_id,

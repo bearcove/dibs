@@ -52,6 +52,266 @@ pub struct ApiFieldName {
     pub name: String,
 }
 
+/// Validated target-language generated operation name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[facet(invariants = ApiOperationName::is_valid)]
+pub struct ApiOperationName {
+    /// Target language.
+    pub language: TargetLanguage,
+    /// Exact validated generated function/method name.
+    pub name: String,
+}
+
+impl ApiOperationName {
+    /// Creates a validated target-language operation name.
+    pub fn try_new(
+        language: TargetLanguage,
+        name: impl Into<String>,
+    ) -> Result<Self, ApiContractError> {
+        let value = Self {
+            language,
+            name: name.into(),
+        };
+        valid_target_identifier(value.language, &value.name)
+            .then_some(value)
+            .ok_or(ApiContractError::InvalidIdentifier)
+    }
+
+    fn is_valid(&self) -> bool {
+        valid_target_identifier(self.language, &self.name)
+    }
+}
+/// Target-language parameter ownership/borrowing contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[repr(u8)]
+pub enum ParameterPassing {
+    /// Pass the API value by value.
+    Owned,
+    /// Borrow the API value immutably.
+    SharedReference,
+    /// Borrow string contents as `str` rather than the owned string type.
+    StringSlice,
+    /// Borrow byte contents as a byte slice rather than the owned byte container.
+    ByteSlice,
+}
+
+/// How a generated target parameter becomes a PostgreSQL bind value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[repr(u8)]
+pub enum ParameterBindAdapter {
+    /// The declared API value implements the PostgreSQL bind contract directly.
+    Direct,
+    /// Borrowed wrapper/newtype dereferences to the bind value.
+    Deref,
+    /// Serialize the application Facet value into a PostgreSQL JSONB adapter.
+    FacetJsonb,
+    /// Convert a typed array/container into the PostgreSQL array adapter.
+    PgArray,
+    /// Convert an application model through a named lossless adapter type.
+    Named(ApiTypeId),
+}
+
+/// Complete target-language bind contract for one parameter.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[facet(invariants = ParameterApiContract::is_valid)]
+pub struct ParameterApiContract {
+    /// Target language.
+    pub language: TargetLanguage,
+    /// Validated generated parameter name.
+    pub name: String,
+    /// Public target-language parameter type.
+    pub api_type: ApiTypeId,
+    /// Ownership or borrowing at the generated API boundary.
+    pub passing: ParameterPassing,
+    /// Lossless conversion into the PostgreSQL bind representation.
+    pub bind_adapter: ParameterBindAdapter,
+}
+
+impl ParameterApiContract {
+    /// Creates a validated target-language parameter bind contract.
+    pub fn try_new(
+        language: TargetLanguage,
+        name: impl Into<String>,
+        api_type: ApiTypeId,
+        passing: ParameterPassing,
+        bind_adapter: ParameterBindAdapter,
+    ) -> Result<Self, ApiContractError> {
+        let value = Self {
+            language,
+            name: name.into(),
+            api_type,
+            passing,
+            bind_adapter,
+        };
+        value
+            .is_valid()
+            .then_some(value)
+            .ok_or(ApiContractError::IncoherentBindContract)
+    }
+
+    fn is_valid(&self) -> bool {
+        if !valid_target_identifier(self.language, &self.name) {
+            return false;
+        }
+        match self.bind_adapter {
+            ParameterBindAdapter::Direct => true,
+            ParameterBindAdapter::Deref
+            | ParameterBindAdapter::FacetJsonb
+            | ParameterBindAdapter::PgArray
+            | ParameterBindAdapter::Named(_) => {
+                matches!(self.passing, ParameterPassing::SharedReference)
+            }
+        }
+    }
+}
+
+/// Invalid target-language generated API contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApiContractError {
+    /// Target name is not a valid non-keyword identifier.
+    InvalidIdentifier,
+    /// Ownership/borrowing and bind adapter cannot be applied coherently.
+    IncoherentBindContract,
+}
+
+impl std::fmt::Display for ApiContractError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidIdentifier => formatter.write_str("invalid generated target identifier"),
+            Self::IncoherentBindContract => {
+                formatter.write_str("incoherent generated parameter bind contract")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ApiContractError {}
+
+fn valid_target_identifier(language: TargetLanguage, name: &str) -> bool {
+    let mut characters = name.chars();
+    let Some(first) = characters.next() else {
+        return false;
+    };
+    let lexical = (first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric());
+    lexical && !target_keywords(language).contains(&name)
+}
+
+fn target_keywords(language: TargetLanguage) -> &'static [&'static str] {
+    match language {
+        TargetLanguage::Rust => &[
+            "Self", "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else",
+            "enum", "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match",
+            "mod", "move", "mut", "pub", "ref", "return", "self", "static", "struct", "super",
+            "trait", "true", "type", "union", "unsafe", "use", "where", "while",
+        ],
+        TargetLanguage::TypeScript => &[
+            "break",
+            "case",
+            "catch",
+            "class",
+            "const",
+            "continue",
+            "debugger",
+            "default",
+            "delete",
+            "do",
+            "else",
+            "enum",
+            "export",
+            "extends",
+            "false",
+            "finally",
+            "for",
+            "function",
+            "if",
+            "import",
+            "in",
+            "instanceof",
+            "new",
+            "null",
+            "return",
+            "super",
+            "switch",
+            "this",
+            "throw",
+            "true",
+            "try",
+            "typeof",
+            "var",
+            "void",
+            "while",
+            "with",
+            "yield",
+        ],
+        TargetLanguage::Swift => &[
+            "associatedtype",
+            "class",
+            "deinit",
+            "enum",
+            "extension",
+            "fileprivate",
+            "func",
+            "import",
+            "init",
+            "inout",
+            "internal",
+            "let",
+            "open",
+            "operator",
+            "private",
+            "protocol",
+            "public",
+            "rethrows",
+            "static",
+            "struct",
+            "subscript",
+            "typealias",
+            "var",
+            "break",
+            "case",
+            "continue",
+            "default",
+            "defer",
+            "do",
+            "else",
+            "fallthrough",
+            "for",
+            "guard",
+            "if",
+            "in",
+            "repeat",
+            "return",
+            "switch",
+            "where",
+            "while",
+        ],
+    }
+}
+
+fn valid_render_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains('\0')
+}
+
+fn valid_target_identifier_set(names: &[ApiFieldName]) -> bool {
+    canonical_unique_languages(
+        names,
+        |name| name.language,
+        |name| valid_target_identifier(name.language, &name.name),
+    )
+}
+
+fn canonical_unique_languages<T>(
+    values: &[T],
+    language: impl Fn(&T) -> TargetLanguage,
+    valid: impl Fn(&T) -> bool,
+) -> bool {
+    values
+        .windows(2)
+        .all(|pair| language(&pair[0]) < language(&pair[1]))
+        && values.iter().all(valid)
+}
+
 /// PostgreSQL bind format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
 #[repr(u8)]
@@ -78,6 +338,7 @@ pub enum Sensitivity {
 
 /// Immutable ordered parameter contract.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[facet(invariants = Parameter::is_valid)]
 pub struct Parameter {
     /// Stable revision-local parameter identity.
     pub id: ParameterId,
@@ -99,14 +360,25 @@ pub struct Parameter {
     pub wire_codec_id: WireCodecId,
     /// PostgreSQL bind format.
     pub bind_format: BindFormat,
-    /// Target-language mappings, canonically ordered by language.
-    pub api_types: Vec<ApiTypeMapping>,
+    /// Target-language bind contracts, canonically ordered by language.
+    pub api_contracts: Vec<ParameterApiContract>,
     /// Redaction classification.
     pub sensitivity: Sensitivity,
 }
 
+impl Parameter {
+    fn is_valid(&self) -> bool {
+        canonical_unique_languages(
+            &self.api_contracts,
+            |contract| contract.language,
+            ParameterApiContract::is_valid,
+        )
+    }
+}
+
 /// Immutable ordered output-field contract.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[facet(invariants = OutputField::is_valid)]
 pub struct OutputField {
     /// Stable revision-local output identity.
     pub id: FieldId,
@@ -136,6 +408,14 @@ pub struct OutputField {
     pub lineage_root: crate::LineageNodeId,
     /// Security classification.
     pub sensitivity: Sensitivity,
+}
+
+impl OutputField {
+    fn is_valid(&self) -> bool {
+        valid_render_name(&self.sql_label)
+            && valid_target_identifier_set(&self.api_names)
+            && canonical_unique_languages(&self.api_types, |mapping| mapping.language, |_| true)
+    }
 }
 
 /// One PostgreSQL positional bind in deterministic execution order.
@@ -336,6 +616,8 @@ pub struct QueryManifest {
     pub compiler_versions: CompilerVersions,
     /// Stable schema/catalog fingerprint.
     pub catalog_schema_fingerprint: SchemaFingerprint,
+    /// Validated target-language operation names as a semantic set.
+    pub operation_names: Vec<ApiOperationName>,
     /// Hash of deterministic normalized SQL.
     pub normalized_sql_hash: ContentHash,
     /// Hash of authored source content.
@@ -387,9 +669,11 @@ impl QueryManifest {
         value.lineage = value.lineage.canonicalized();
         value.opaque_analysis_boundaries.sort();
         value.opaque_analysis_boundaries.dedup();
+        value.operation_names.sort();
+        value.operation_names.dedup();
         for parameter in &mut value.parameters {
-            parameter.api_types.sort();
-            parameter.api_types.dedup();
+            parameter.api_contracts.sort();
+            parameter.api_contracts.dedup();
         }
         for field in &mut value.output_fields {
             field.api_types.sort();

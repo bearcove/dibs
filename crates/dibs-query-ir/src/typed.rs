@@ -3,11 +3,13 @@ use dibs_pg_catalog::{
 };
 
 use crate::{
-    AssignmentId, Cardinality, CteId, CteMaterialization, ExpressionId, FieldId, HirAssignment,
-    HirCaseBranch, HirConflictAction, HirConflictClause, HirConflictTarget, HirCte, HirDelete,
-    HirExpression, HirExpressionKind, HirInsert, HirInsertSource, HirLiteral, HirLockClause,
-    HirOrderBy, HirProjection, HirRelation, HirRelationKind, HirSelect, HirStatement,
-    HirStatementKind, HirUpdate, Nullability, ParameterId, RelationId, SourceOrigin, StatementId,
+    AssignmentId, Cardinality, CteId, CteMaterialization, ExpressionId, FieldId, FrameBound,
+    HirAssignment, HirCall, HirCaseBranch, HirConflictAction, HirConflictClause, HirConflictTarget,
+    HirCte, HirDelete, HirExpression, HirExpressionKind, HirInsert, HirInsertSource, HirLiteral,
+    HirLockClause, HirNamedWindow, HirOrderBy, HirProjection, HirRelation, HirRelationKind,
+    HirSelect, HirStatement, HirStatementKind, HirUpdate, Nullability, OrderBy, ParameterId,
+    RelationAlias, RelationId, SelectDistinct, SourceOrigin, StatementId, WindowFrame,
+    WindowReference, WindowSpec,
 };
 
 /// PostgreSQL typmod retained as canonical semantic spelling.
@@ -162,8 +164,12 @@ pub enum TypedStatementKind {
 /// Typed `SELECT` topology.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct TypedSelect {
+    /// Whether the WITH list is explicitly recursive.
+    pub recursive: bool,
     /// CTEs in authored order.
     pub ctes: Vec<TypedCte>,
+    /// SELECT duplicate-elimination policy.
+    pub distinct: SelectDistinct<TypedExpression>,
     /// Output projections in semantic order.
     pub projections: Vec<TypedProjection>,
     /// Source relations in semantic order.
@@ -174,6 +180,8 @@ pub struct TypedSelect {
     pub group_by: Vec<TypedExpression>,
     /// Optional Boolean HAVING expression.
     pub having: Option<TypedExpression>,
+    /// Named WINDOW definitions in authored order.
+    pub windows: Vec<TypedNamedWindow>,
     /// Ordering terms in authored order.
     pub order_by: Vec<TypedOrderBy>,
     /// Optional typed limit.
@@ -185,8 +193,10 @@ pub struct TypedSelect {
 }
 
 impl TypedSelect {
-    fn validate(&self) -> Result<(), TypedShapeError> {
+    /// Validates all nested typed expressions and full SELECT topology.
+    pub fn validate(&self) -> Result<(), TypedShapeError> {
         validate_ctes(&self.ctes)?;
+        validate_select_distinct(&self.distinct)?;
         validate_projections(&self.projections)?;
         for relation in &self.from {
             relation.validate()?;
@@ -196,9 +206,11 @@ impl TypedSelect {
             expression.validate()?;
         }
         validate_expression_option(self.having.as_ref())?;
-        for order in &self.order_by {
-            order.expression.validate()?;
+        for window in &self.windows {
+            window.validate()?;
         }
+        validate_ordering(&self.order_by)?;
+        validate_lock_targets(&self.locks, &self.from)?;
         Ok(())
     }
 }
@@ -209,32 +221,46 @@ impl TypedSelect {
 pub struct TypedCte {
     /// Revision-local CTE identity.
     pub id: CteId,
+    /// Authored CTE render name.
+    name: String,
     /// Materialization policy.
     pub materialization: CteMaterialization,
     /// Typed statement.
     pub statement: Box<TypedStatement>,
     /// Output field identities in order.
     output_fields: Vec<FieldId>,
+    /// Authored CTE output-column names in projection order.
+    output_names: Vec<String>,
 }
 
 impl TypedCte {
     /// Creates a CTE after checking output field identity and arity.
     pub fn try_new(
         id: CteId,
+        name: String,
         materialization: CteMaterialization,
         statement: Box<TypedStatement>,
         output_fields: Vec<FieldId>,
+        output_names: Vec<String>,
     ) -> Result<Self, TypedShapeError> {
         let value = Self {
             id,
+            name,
             materialization,
             statement,
             output_fields,
+            output_names,
         };
         value
             .is_valid()
             .then_some(value)
             .ok_or(TypedShapeError::CteOutput)
+    }
+
+    /// Returns the authored CTE name used by deterministic SQL rendering.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Returns output field identities in projection order.
@@ -243,17 +269,39 @@ impl TypedCte {
         &self.output_fields
     }
 
+    /// Returns authored CTE output-column names in projection order.
+    #[must_use]
+    pub fn output_names(&self) -> &[String] {
+        &self.output_names
+    }
+
     fn is_valid(&self) -> bool {
-        statement_projection_fields(&self.statement).as_slice() == self.output_fields
+        let projections = statement_projections(&self.statement);
+        projections.len() == self.output_fields.len()
+            && self.output_names.len() == self.output_fields.len()
+            && projections
+                .iter()
+                .zip(&self.output_fields)
+                .zip(&self.output_names)
+                .all(|((projection, field), name)| {
+                    projection.field_id == *field && projection.sql_label == *name
+                })
+            && valid_render_identifier(&self.name)
+            && self
+                .output_names
+                .iter()
+                .all(|name| valid_render_identifier(name))
             && self.statement.validate().is_ok()
     }
 }
 
-/// Typed projection.
+/// Typed projection with its exact PostgreSQL output label.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct TypedProjection {
     /// Stable local output field identity.
     pub field_id: FieldId,
+    /// Exact SQL output label.
+    pub sql_label: String,
     /// Typed expression.
     pub expression: TypedExpression,
 }
@@ -265,6 +313,8 @@ pub struct TypedRelation {
     pub id: RelationId,
     /// Source origin.
     pub origin: SourceOrigin,
+    /// Optional authored relation/table-function alias and column aliases.
+    pub alias: Option<RelationAlias>,
     /// Inferred cardinality.
     pub cardinality: Cardinality,
     /// Relation topology.
@@ -276,6 +326,15 @@ impl TypedRelation {
         self.cardinality
             .validate()
             .map_err(|_| TypedShapeError::Cardinality)?;
+        if self.alias.as_ref().is_some_and(|alias| {
+            !valid_render_identifier(&alias.name)
+                || alias
+                    .column_names
+                    .iter()
+                    .any(|name| !valid_render_identifier(name))
+        }) {
+            return Err(TypedShapeError::RenderName);
+        }
         match &self.kind {
             TypedRelationKind::Table { .. } | TypedRelationKind::Cte { .. } => Ok(()),
             TypedRelationKind::Subquery(statement) => statement.validate(),
@@ -420,7 +479,7 @@ impl TypedExpression {
             | TypedExpressionKind::Parameter(_)
             | TypedExpressionKind::Column { .. }
             | TypedExpressionKind::CteColumn { .. } => Ok(()),
-            TypedExpressionKind::Call { arguments, .. } => validate_arguments(arguments),
+            TypedExpressionKind::Call(call) => call.validate(),
             TypedExpressionKind::Operator { operands, .. } => validate_arguments(operands),
             TypedExpressionKind::Cast { expression, .. }
             | TypedExpressionKind::Collate { expression, .. } => expression.validate(),
@@ -478,13 +537,8 @@ pub enum TypedExpressionKind {
         /// Stable column identity.
         column_id: ColumnId,
     },
-    /// Typed function call.
-    Call {
-        /// Stable callable identity.
-        callable_id: CallableId,
-        /// Paired typed arguments and their optional coercions.
-        arguments: Vec<TypedArgument>,
-    },
+    /// Typed function call with aggregate and window modifiers.
+    Call(Box<TypedCall>),
     /// Typed operator application.
     Operator {
         /// Stable operator identity.
@@ -558,14 +612,66 @@ pub struct TypedCaseBranch {
 }
 
 /// One typed ordering term.
+pub type TypedOrderBy = OrderBy<TypedExpression>;
+
+/// One typed function call with PostgreSQL aggregate and window modifiers.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
-pub struct TypedOrderBy {
-    /// Typed ordering expression.
-    pub expression: TypedExpression,
-    /// Direction.
-    pub direction: crate::SortDirection,
-    /// Null ordering.
-    pub nulls: crate::NullsOrder,
+pub struct TypedCall {
+    /// Stable callable identity.
+    pub callable_id: CallableId,
+    /// Paired typed arguments and their optional coercions.
+    pub arguments: Vec<TypedArgument>,
+    /// Whether the argument tuple is duplicate-eliminated.
+    pub distinct: bool,
+    /// Whether the call uses the `*` argument form.
+    pub star: bool,
+    /// Aggregate-local ORDER BY terms.
+    pub order_by: Vec<TypedOrderBy>,
+    /// Optional aggregate FILTER predicate.
+    pub filter: Option<Box<TypedExpression>>,
+    /// Ordered-set aggregate WITHIN GROUP ordering.
+    pub within_group: Vec<TypedOrderBy>,
+    /// Optional window application.
+    pub over: Option<WindowReference<TypedExpression>>,
+}
+
+impl TypedCall {
+    fn validate(&self) -> Result<(), TypedShapeError> {
+        if self.star && (!self.arguments.is_empty() || self.distinct || !self.order_by.is_empty()) {
+            return Err(TypedShapeError::Call);
+        }
+        if !self.within_group.is_empty()
+            && (!self.order_by.is_empty() || self.distinct || self.star)
+        {
+            return Err(TypedShapeError::Call);
+        }
+        validate_arguments(&self.arguments)?;
+        validate_ordering(&self.order_by)?;
+        validate_expression_option(self.filter.as_deref())?;
+        validate_ordering(&self.within_group)?;
+        if let Some(over) = &self.over {
+            validate_window_reference(over)?;
+        }
+        Ok(())
+    }
+}
+
+/// One typed named WINDOW definition.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+pub struct TypedNamedWindow {
+    /// Window identifier.
+    pub name: String,
+    /// Typed window specification.
+    pub specification: WindowSpec<TypedExpression>,
+}
+
+impl TypedNamedWindow {
+    fn validate(&self) -> Result<(), TypedShapeError> {
+        if !valid_render_identifier(&self.name) {
+            return Err(TypedShapeError::Window);
+        }
+        validate_window_spec(&self.specification)
+    }
 }
 
 /// Constant or parameter-driven LIMIT/OFFSET.
@@ -846,6 +952,14 @@ pub enum TypedShapeError {
     Nullability,
     /// Invalid PostgreSQL conflict target/action combination.
     Conflict,
+    /// Invalid function-call modifier combination.
+    Call,
+    /// Invalid window definition, reference, or frame.
+    Window,
+    /// Invalid authored SQL identifier retained for deterministic rendering.
+    RenderName,
+    /// Row lock names a relation binding outside this SELECT input topology.
+    LockTarget,
 }
 
 impl std::fmt::Display for TypedShapeError {
@@ -864,23 +978,23 @@ impl std::fmt::Display for TypedShapeError {
             Self::Conflict => {
                 formatter.write_str("invalid PostgreSQL conflict target/action shape")
             }
+            Self::Call => formatter.write_str("invalid PostgreSQL function-call modifier shape"),
+            Self::Window => formatter.write_str("invalid PostgreSQL window or frame shape"),
+            Self::RenderName => formatter.write_str("invalid authored SQL render identifier"),
+            Self::LockTarget => formatter.write_str("row lock targets an unknown relation binding"),
         }
     }
 }
 
 impl std::error::Error for TypedShapeError {}
 
-fn statement_projection_fields(statement: &TypedStatement) -> Vec<FieldId> {
-    let projections = match &statement.kind {
+fn statement_projections(statement: &TypedStatement) -> &[TypedProjection] {
+    match &statement.kind {
         TypedStatementKind::Select(select) => &select.projections,
         TypedStatementKind::Insert(insert) => &insert.returning,
         TypedStatementKind::Update(update) => &update.returning,
         TypedStatementKind::Delete(delete) => &delete.returning,
-    };
-    projections
-        .iter()
-        .map(|projection| projection.field_id)
-        .collect()
+    }
 }
 
 fn validate_arguments(arguments: &[TypedArgument]) -> Result<(), TypedShapeError> {
@@ -888,6 +1002,103 @@ fn validate_arguments(arguments: &[TypedArgument]) -> Result<(), TypedShapeError
         argument.expression.validate()?;
     }
     Ok(())
+}
+
+fn validate_select_distinct(
+    distinct: &SelectDistinct<TypedExpression>,
+) -> Result<(), TypedShapeError> {
+    match distinct {
+        SelectDistinct::AllRows | SelectDistinct::Distinct => Ok(()),
+        SelectDistinct::On(expressions) if expressions.is_empty() => Err(TypedShapeError::Call),
+        SelectDistinct::On(expressions) => {
+            for expression in expressions {
+                expression.validate()?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_ordering(ordering: &[TypedOrderBy]) -> Result<(), TypedShapeError> {
+    for order in ordering {
+        order.expression.validate()?;
+    }
+    Ok(())
+}
+
+fn validate_window_reference(
+    window: &WindowReference<TypedExpression>,
+) -> Result<(), TypedShapeError> {
+    match window {
+        WindowReference::Named(name) => valid_render_identifier(name)
+            .then_some(())
+            .ok_or(TypedShapeError::Window),
+        WindowReference::Inline(specification) => validate_window_spec(specification),
+    }
+}
+
+fn validate_window_spec(
+    specification: &WindowSpec<TypedExpression>,
+) -> Result<(), TypedShapeError> {
+    if specification
+        .existing
+        .as_deref()
+        .is_some_and(|name| !valid_render_identifier(name))
+    {
+        return Err(TypedShapeError::Window);
+    }
+    for expression in &specification.partition_by {
+        expression.validate()?;
+    }
+    validate_ordering(&specification.order_by)?;
+    if let Some(frame) = &specification.frame {
+        validate_window_frame(frame)?;
+    }
+    Ok(())
+}
+
+fn validate_window_frame(frame: &WindowFrame<TypedExpression>) -> Result<(), TypedShapeError> {
+    validate_frame_bound(&frame.start)?;
+    if let Some(end) = &frame.end {
+        validate_frame_bound(end)?;
+        if frame_bound_rank(&frame.start) > frame_bound_rank(end) {
+            return Err(TypedShapeError::Window);
+        }
+    }
+    if matches!(frame.start, FrameBound::UnboundedFollowing)
+        || frame
+            .end
+            .as_ref()
+            .is_some_and(|end| matches!(end, FrameBound::UnboundedPreceding))
+    {
+        return Err(TypedShapeError::Window);
+    }
+    Ok(())
+}
+
+fn validate_frame_bound(bound: &FrameBound<TypedExpression>) -> Result<(), TypedShapeError> {
+    match bound {
+        FrameBound::Preceding(expression) | FrameBound::Following(expression) => {
+            expression.validate()
+        }
+        FrameBound::UnboundedPreceding
+        | FrameBound::CurrentRow
+        | FrameBound::UnboundedFollowing => Ok(()),
+    }
+}
+
+fn frame_bound_rank(bound: &FrameBound<TypedExpression>) -> u8 {
+    match bound {
+        FrameBound::UnboundedPreceding => 0,
+        FrameBound::Preceding(_) => 1,
+        FrameBound::CurrentRow => 2,
+        FrameBound::Following(_) => 3,
+        FrameBound::UnboundedFollowing => 4,
+    }
+}
+
+fn valid_render_identifier(name: &str) -> bool {
+    !name.is_empty() && !name.contains('\0')
 }
 
 fn validate_ctes(ctes: &[TypedCte]) -> Result<(), TypedShapeError> {
@@ -901,9 +1112,39 @@ fn validate_ctes(ctes: &[TypedCte]) -> Result<(), TypedShapeError> {
 
 fn validate_projections(projections: &[TypedProjection]) -> Result<(), TypedShapeError> {
     for projection in projections {
+        if !valid_render_identifier(&projection.sql_label) {
+            return Err(TypedShapeError::RenderName);
+        }
         projection.expression.validate()?;
     }
     Ok(())
+}
+
+fn validate_lock_targets(
+    locks: &[HirLockClause],
+    relations: &[TypedRelation],
+) -> Result<(), TypedShapeError> {
+    let mut available = std::collections::BTreeSet::new();
+    for relation in relations {
+        collect_relation_ids(relation, &mut available);
+    }
+    locks
+        .iter()
+        .flat_map(|lock| &lock.targets)
+        .all(|target| available.contains(target))
+        .then_some(())
+        .ok_or(TypedShapeError::LockTarget)
+}
+
+fn collect_relation_ids(
+    relation: &TypedRelation,
+    available: &mut std::collections::BTreeSet<RelationId>,
+) {
+    available.insert(relation.id);
+    if let TypedRelationKind::Join { left, right, .. } = &relation.kind {
+        collect_relation_ids(left, available);
+        collect_relation_ids(right, available);
+    }
 }
 
 fn validate_expression_option(expression: Option<&TypedExpression>) -> Result<(), TypedShapeError> {
@@ -932,22 +1173,48 @@ fn typed_statement_kind_corresponds(typed: &TypedStatementKind, hir: &HirStateme
 }
 
 fn typed_select_corresponds(typed: &TypedSelect, hir: &HirSelect) -> bool {
-    typed_ctes_correspond(&typed.ctes, &hir.ctes)
+    typed.recursive == hir.recursive
+        && typed_ctes_correspond(&typed.ctes, &hir.ctes)
+        && typed_select_distinct_corresponds(&typed.distinct, &hir.distinct)
         && typed_projections_correspond(&typed.projections, &hir.projections)
         && typed_relations_correspond(&typed.from, &hir.from)
         && typed_expression_option_corresponds(typed.predicate.as_ref(), hir.predicate.as_ref())
         && typed_expressions_correspond(&typed.group_by, &hir.group_by)
         && typed_expression_option_corresponds(typed.having.as_ref(), hir.having.as_ref())
+        && typed_named_windows_correspond(&typed.windows, &hir.windows)
         && typed_ordering_corresponds(&typed.order_by, &hir.order_by)
         && typed_limit_corresponds(typed.limit.as_ref(), hir.limit.as_ref())
         && typed_limit_corresponds(typed.offset.as_ref(), hir.offset.as_ref())
         && typed.locks == hir.locks
 }
 
+fn typed_select_distinct_corresponds(
+    typed: &SelectDistinct<TypedExpression>,
+    hir: &SelectDistinct<HirExpression>,
+) -> bool {
+    match (typed, hir) {
+        (SelectDistinct::AllRows, SelectDistinct::AllRows)
+        | (SelectDistinct::Distinct, SelectDistinct::Distinct) => true,
+        (SelectDistinct::On(typed), SelectDistinct::On(hir)) => {
+            typed_expressions_correspond(typed, hir)
+        }
+        _ => false,
+    }
+}
+
+fn typed_named_windows_correspond(typed: &[TypedNamedWindow], hir: &[HirNamedWindow]) -> bool {
+    typed.len() == hir.len()
+        && typed.iter().zip(hir).all(|(typed, hir)| {
+            typed.name == hir.name
+                && typed_window_spec_corresponds(&typed.specification, &hir.specification)
+        })
+}
+
 fn typed_ctes_correspond(typed: &[TypedCte], hir: &[HirCte]) -> bool {
     typed.len() == hir.len()
         && typed.iter().zip(hir).all(|(typed, hir)| {
             typed.id == hir.id
+                && typed.name == hir.name
                 && typed.materialization == hir.materialization
                 && typed.statement.corresponds_to_hir(&hir.statement)
         })
@@ -957,6 +1224,7 @@ fn typed_projections_correspond(typed: &[TypedProjection], hir: &[HirProjection]
     typed.len() == hir.len()
         && typed.iter().zip(hir).all(|(typed, hir)| {
             typed.field_id == hir.field_id
+                && typed.sql_label == hir.alias
                 && typed_expression_corresponds(&typed.expression, &hir.expression)
         })
 }
@@ -971,6 +1239,7 @@ fn typed_relations_correspond(typed: &[TypedRelation], hir: &[HirRelation]) -> b
 
 fn typed_relation_corresponds(typed: &TypedRelation, hir: &HirRelation) -> bool {
     typed.id == hir.id
+        && typed.alias == hir.alias
         && match (&typed.kind, &hir.kind) {
             (
                 TypedRelationKind::Table { table_id: typed },
@@ -1063,23 +1332,10 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
                     column_id: hir_column,
                 },
             ) => typed_binding == hir_binding && typed_column == hir_column,
-            (
-                TypedExpressionKind::Call {
-                    callable_id: typed_callable,
-                    arguments: typed_arguments,
-                },
-                HirExpressionKind::Call {
-                    callable_id: hir_callable,
-                    arguments: hir_arguments,
-                },
-            ) => {
-                typed_callable == hir_callable
-                    && typed_arguments.len() == hir_arguments.len()
-                    && typed_arguments
-                        .iter()
-                        .zip(hir_arguments)
-                        .all(|(typed, hir)| typed_expression_corresponds(&typed.expression, hir))
+            (TypedExpressionKind::Call(typed), HirExpressionKind::Call(hir)) => {
+                typed_call_corresponds(typed, hir)
             }
+
             (
                 TypedExpressionKind::Operator {
                     operator_id: typed_operator,
@@ -1171,6 +1427,88 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
             ) => typed_cte == hir_cte && typed_field == hir_field,
             _ => false,
         }
+}
+fn typed_call_corresponds(typed: &TypedCall, hir: &HirCall) -> bool {
+    typed.callable_id == hir.callable_id
+        && typed.distinct == hir.distinct
+        && typed.star == hir.star
+        && typed.arguments.len() == hir.arguments.len()
+        && typed
+            .arguments
+            .iter()
+            .zip(&hir.arguments)
+            .all(|(typed, hir)| typed_expression_corresponds(&typed.expression, hir))
+        && typed_ordering_corresponds(&typed.order_by, &hir.order_by)
+        && typed_boxed_expression_option_corresponds(typed.filter.as_deref(), hir.filter.as_deref())
+        && typed_ordering_corresponds(&typed.within_group, &hir.within_group)
+        && typed_window_reference_option_corresponds(typed.over.as_ref(), hir.over.as_ref())
+}
+
+fn typed_window_reference_option_corresponds(
+    typed: Option<&WindowReference<TypedExpression>>,
+    hir: Option<&WindowReference<HirExpression>>,
+) -> bool {
+    match (typed, hir) {
+        (Some(WindowReference::Named(typed)), Some(WindowReference::Named(hir))) => typed == hir,
+        (Some(WindowReference::Inline(typed)), Some(WindowReference::Inline(hir))) => {
+            typed_window_spec_corresponds(typed, hir)
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn typed_window_spec_corresponds(
+    typed: &WindowSpec<TypedExpression>,
+    hir: &WindowSpec<HirExpression>,
+) -> bool {
+    typed.existing == hir.existing
+        && typed_expressions_correspond(&typed.partition_by, &hir.partition_by)
+        && typed_ordering_corresponds(&typed.order_by, &hir.order_by)
+        && typed_window_frame_option_corresponds(typed.frame.as_ref(), hir.frame.as_ref())
+}
+
+fn typed_window_frame_option_corresponds(
+    typed: Option<&WindowFrame<TypedExpression>>,
+    hir: Option<&WindowFrame<HirExpression>>,
+) -> bool {
+    match (typed, hir) {
+        (Some(typed), Some(hir)) => {
+            typed.mode == hir.mode
+                && typed.exclusion == hir.exclusion
+                && typed_frame_bound_corresponds(&typed.start, &hir.start)
+                && typed_frame_bound_option_corresponds(typed.end.as_ref(), hir.end.as_ref())
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn typed_frame_bound_option_corresponds(
+    typed: Option<&FrameBound<TypedExpression>>,
+    hir: Option<&FrameBound<HirExpression>>,
+) -> bool {
+    match (typed, hir) {
+        (Some(typed), Some(hir)) => typed_frame_bound_corresponds(typed, hir),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn typed_frame_bound_corresponds(
+    typed: &FrameBound<TypedExpression>,
+    hir: &FrameBound<HirExpression>,
+) -> bool {
+    match (typed, hir) {
+        (FrameBound::UnboundedPreceding, FrameBound::UnboundedPreceding)
+        | (FrameBound::CurrentRow, FrameBound::CurrentRow)
+        | (FrameBound::UnboundedFollowing, FrameBound::UnboundedFollowing) => true,
+        (FrameBound::Preceding(typed), FrameBound::Preceding(hir))
+        | (FrameBound::Following(typed), FrameBound::Following(hir)) => {
+            typed_expression_corresponds(typed, hir)
+        }
+        _ => false,
+    }
 }
 
 fn typed_case_branches_correspond(typed: &[TypedCaseBranch], hir: &[HirCaseBranch]) -> bool {
