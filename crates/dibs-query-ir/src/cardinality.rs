@@ -89,26 +89,76 @@ pub enum CardinalityEvidence {
 
 /// Proof-bearing relational row-count range.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[facet(invariants = Cardinality::is_valid)]
 pub struct Cardinality {
-    /// Proven lower bound.
-    pub lower: LowerBound,
-    /// Proven upper bound.
-    pub upper: UpperBound,
-    /// Ordered proof chain.
-    pub proof: Vec<CardinalityEvidence>,
+    lower: LowerBound,
+    upper: UpperBound,
+    proof: Vec<CardinalityEvidence>,
 }
 
 impl Cardinality {
-    /// Creates a cardinality with explicit proof.
-    #[must_use]
-    pub fn new(lower: LowerBound, upper: UpperBound, proof: Vec<CardinalityEvidence>) -> Self {
-        Self {
+    /// Creates a cardinality after validating bound consistency.
+    pub fn try_new(
+        lower: LowerBound,
+        upper: UpperBound,
+        proof: Vec<CardinalityEvidence>,
+    ) -> Result<Self, CardinalityError> {
+        let value = Self {
             lower,
             upper,
             proof,
-        }
+        };
+        value.is_valid().then_some(value).ok_or(CardinalityError)
     }
 
+    fn new(lower: LowerBound, upper: UpperBound, proof: Vec<CardinalityEvidence>) -> Self {
+        Self::try_new(lower, upper, proof).expect("internal cardinality constructor is sound")
+    }
+
+    /// Returns the proven lower bound.
+    #[must_use]
+    pub const fn lower(&self) -> LowerBound {
+        self.lower
+    }
+
+    /// Returns the proven upper bound.
+    #[must_use]
+    pub const fn upper(&self) -> UpperBound {
+        self.upper
+    }
+
+    /// Returns the ordered proof chain.
+    #[must_use]
+    pub fn proof(&self) -> &[CardinalityEvidence] {
+        &self.proof
+    }
+
+    /// Validates the cardinality invariant.
+    pub fn validate(&self) -> Result<(), CardinalityError> {
+        self.is_valid().then_some(()).ok_or(CardinalityError)
+    }
+
+    fn is_valid(&self) -> bool {
+        !matches!(
+            (self.lower, self.upper),
+            (LowerBound::One, UpperBound::Zero) | (_, UpperBound::Finite(0))
+        )
+    }
+}
+
+/// Invalid contradictory cardinality bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CardinalityError;
+
+impl std::fmt::Display for CardinalityError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("cardinality lower bound exceeds upper bound")
+    }
+}
+
+impl std::error::Error for CardinalityError {}
+
+impl Cardinality {
     /// Zero rows.
     #[must_use]
     pub fn empty() -> Self {
@@ -242,11 +292,10 @@ pub enum NullabilityEvidence {
 
 /// Conservative, proof-bearing expression nullability.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[facet(invariants = Nullability::is_valid)]
 pub struct Nullability {
-    /// Whether SQL `NULL` is possible.
-    pub nullable: bool,
-    /// Ordered proof chain. Non-null values require positive evidence.
-    pub evidence: Vec<NullabilityEvidence>,
+    nullable: bool,
+    evidence: Vec<NullabilityEvidence>,
 }
 
 impl Nullability {
@@ -259,13 +308,19 @@ impl Nullability {
         }
     }
 
-    /// Creates a proven non-null value.
+    /// Creates a proven non-null value, panicking only on an internal invalid proof.
     #[must_use]
     pub fn not_null(evidence: NullabilityEvidence) -> Self {
-        Self {
+        Self::try_not_null(evidence).expect("internal non-null proof is positive")
+    }
+
+    /// Creates a non-null value only from positive proof evidence.
+    pub fn try_not_null(evidence: NullabilityEvidence) -> Result<Self, NullabilityError> {
+        let value = Self {
             nullable: false,
             evidence: vec![evidence],
-        }
+        };
+        value.is_valid().then_some(value).ok_or(NullabilityError)
     }
 
     /// Returns whether SQL `NULL` is possible.
@@ -274,19 +329,51 @@ impl Nullability {
         self.nullable
     }
 
+    /// Returns the ordered evidence chain.
+    #[must_use]
+    pub fn evidence(&self) -> &[NullabilityEvidence] {
+        &self.evidence
+    }
+
     /// Returns whether positive evidence accompanies a non-null claim.
     #[must_use]
     pub fn has_non_null_proof(&self) -> bool {
-        !self.nullable
-            && self.evidence.iter().any(|evidence| {
-                matches!(
-                    evidence,
-                    NullabilityEvidence::BaseColumnNotNull { .. }
-                        | NullabilityEvidence::CallableContract {
-                            proves_non_null: true,
-                            ..
-                        }
-                )
-            })
+        !self.nullable && self.evidence.iter().any(positive_non_null_evidence)
+    }
+
+    fn is_valid(&self) -> bool {
+        self.nullable || self.has_non_null_proof()
+    }
+
+    /// Validates the nullability invariant.
+    pub fn validate(&self) -> Result<(), NullabilityError> {
+        self.is_valid().then_some(()).ok_or(NullabilityError)
     }
 }
+
+fn positive_non_null_evidence(evidence: &NullabilityEvidence) -> bool {
+    matches!(
+        evidence,
+        NullabilityEvidence::BaseColumnNotNull { .. }
+            | NullabilityEvidence::CastPropagation
+            | NullabilityEvidence::CtePropagation { .. }
+            | NullabilityEvidence::SetOperationPropagation
+            | NullabilityEvidence::MutationReturning
+            | NullabilityEvidence::CallableContract {
+                proves_non_null: true,
+                ..
+            }
+    )
+}
+
+/// Invalid non-null claim without positive proof.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NullabilityError;
+
+impl std::fmt::Display for NullabilityError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("non-null values require positive proof evidence")
+    }
+}
+
+impl std::error::Error for NullabilityError {}

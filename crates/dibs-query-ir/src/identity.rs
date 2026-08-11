@@ -71,6 +71,8 @@ pub struct ExecutionIdentityInput {
     pub parameters: Vec<ExecutionParameter>,
     /// Runtime result mode when it affects execution enforcement.
     pub result_mode: ResultMode,
+    /// Runtime row/value assertions affecting execution enforcement.
+    pub runtime_assertions: Vec<crate::RuntimeAssertion>,
     /// Stable resolved semantic references.
     pub references: ReferenceIndex,
     /// Reads/writes/locks/volatility/mutation topology.
@@ -133,6 +135,7 @@ struct CanonicalExecutionIdentityInput {
     statement: SemanticStatement,
     parameters: Vec<ExecutionParameter>,
     result_mode: ResultMode,
+    runtime_assertions: Vec<crate::RuntimeAssertion>,
     references: Vec<SemanticReference>,
     read_write_lock_manifest: ReadWriteLockManifest,
     catalog_schema_fingerprint: SchemaFingerprint,
@@ -157,6 +160,7 @@ impl From<&ExecutionIdentityInput> for CanonicalExecutionIdentityInput {
             statement: SemanticStatement::from(&input.statement),
             parameters: input.parameters.clone(),
             result_mode: input.result_mode,
+            runtime_assertions: input.runtime_assertions.clone(),
             references,
             read_write_lock_manifest: input.read_write_lock_manifest.canonicalized(),
             catalog_schema_fingerprint: input.catalog_schema_fingerprint.clone(),
@@ -369,7 +373,7 @@ impl From<&crate::TypedCte> for SemanticCte {
             id: cte.id,
             materialization: cte.materialization,
             statement: Box::new(SemanticStatement::from(cte.statement.as_ref())),
-            output_fields: cte.output_fields.clone(),
+            output_fields: cte.output_fields().to_vec(),
         }
     }
 }
@@ -472,6 +476,7 @@ impl From<&crate::TypedRelationKind> for SemanticRelationKind {
             },
             crate::TypedRelationKind::Values { rows } => Self::Values {
                 rows: rows
+                    .rows()
                     .iter()
                     .map(|row| row.iter().map(SemanticExpression::from).collect())
                     .collect(),
@@ -572,20 +577,30 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
             crate::TypedExpressionKind::Call {
                 callable_id,
                 arguments,
-                coercions,
             } => Self::Call {
                 callable_id: callable_id.clone(),
-                arguments: arguments.iter().map(SemanticExpression::from).collect(),
-                coercions: coercions.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| SemanticExpression::from(&argument.expression))
+                    .collect(),
+                coercions: arguments
+                    .iter()
+                    .map(|argument| argument.coercion.clone())
+                    .collect(),
             },
             crate::TypedExpressionKind::Operator {
                 operator_id,
                 operands,
-                coercions,
             } => Self::Operator {
                 operator_id: operator_id.clone(),
-                operands: operands.iter().map(SemanticExpression::from).collect(),
-                coercions: coercions.clone(),
+                operands: operands
+                    .iter()
+                    .map(|operand| SemanticExpression::from(&operand.expression))
+                    .collect(),
+                coercions: operands
+                    .iter()
+                    .map(|operand| operand.coercion.clone())
+                    .collect(),
             },
             crate::TypedExpressionKind::Cast {
                 cast_id,
@@ -707,7 +722,8 @@ impl From<&crate::TypedInsertSource> for SemanticInsertSource {
     fn from(source: &crate::TypedInsertSource) -> Self {
         match source {
             crate::TypedInsertSource::Values(rows) => Self::Values(
-                rows.iter()
+                rows.rows()
+                    .iter()
                     .map(|row| row.iter().map(SemanticExpression::from).collect())
                     .collect(),
             ),
@@ -721,20 +737,40 @@ impl From<&crate::TypedInsertSource> for SemanticInsertSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 struct SemanticConflictClause {
-    target: Vec<SemanticExpression>,
-    predicate: Option<SemanticExpression>,
+    target: SemanticConflictTarget,
     action: SemanticConflictAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+enum SemanticConflictTarget {
+    Constraint(dibs_pg_catalog::ConstraintId),
+    Inference {
+        expressions: Vec<SemanticExpression>,
+        predicate: Option<Box<SemanticExpression>>,
+    },
+    Unspecified,
 }
 
 impl From<&crate::TypedConflictClause> for SemanticConflictClause {
     fn from(conflict: &crate::TypedConflictClause) -> Self {
+        let target = match &conflict.target {
+            crate::ConflictTarget::Constraint(constraint) => {
+                SemanticConflictTarget::Constraint(constraint.clone())
+            }
+            crate::ConflictTarget::Inference {
+                expressions,
+                predicate,
+            } => SemanticConflictTarget::Inference {
+                expressions: expressions.iter().map(SemanticExpression::from).collect(),
+                predicate: predicate
+                    .as_ref()
+                    .map(|value| Box::new(SemanticExpression::from(value.as_ref()))),
+            },
+            crate::ConflictTarget::Unspecified => SemanticConflictTarget::Unspecified,
+        };
         Self {
-            target: conflict
-                .target
-                .iter()
-                .map(SemanticExpression::from)
-                .collect(),
-            predicate: conflict.predicate.as_ref().map(SemanticExpression::from),
+            target,
             action: SemanticConflictAction::from(&conflict.action),
         }
     }

@@ -57,13 +57,13 @@ pub struct HirStatement {
 #[repr(u8)]
 pub enum HirStatementKind {
     /// Row-producing `SELECT`/`VALUES` statement.
-    Select(HirSelect),
+    Select(Box<HirSelect>),
     /// `INSERT` statement.
-    Insert(HirInsert),
+    Insert(Box<HirInsert>),
     /// `UPDATE` statement.
-    Update(HirUpdate),
+    Update(Box<HirUpdate>),
     /// `DELETE` statement.
-    Delete(HirDelete),
+    Delete(Box<HirDelete>),
 }
 
 /// Resolved `SELECT` topology.
@@ -131,17 +131,115 @@ pub struct HirProjection {
     pub expression: HirExpression,
 }
 
-/// Resolved base relation binding.
+/// Resolved relation binding with complete recursive topology.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct HirRelation {
     /// Revision-local binding identity.
     pub id: RelationId,
     /// Relation source origin.
     pub origin: SourceOrigin,
-    /// Stable catalog table identity.
-    pub table_id: TableId,
     /// Optional authored alias; never intrinsic object identity.
     pub alias: Option<String>,
+    /// Resolved relation topology.
+    pub kind: HirRelationKind,
+}
+
+/// Complete resolved relation vocabulary consumed by typed lowering.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+pub enum HirRelationKind {
+    /// Stable catalog table.
+    Table {
+        /// Stable table identity.
+        table_id: TableId,
+    },
+    /// CTE use.
+    Cte {
+        /// Revision-local CTE identity.
+        cte_id: CteId,
+    },
+    /// Derived table/subquery.
+    Subquery(Box<HirStatement>),
+    /// Resolved table-function call.
+    Function {
+        /// Stable callable identity.
+        callable_id: CallableId,
+        /// Arguments in authored semantic order.
+        arguments: Vec<HirExpression>,
+    },
+    /// Join retaining exact input topology.
+    Join {
+        /// Join kind.
+        kind: crate::JoinKind,
+        /// Left relation.
+        left: Box<HirRelation>,
+        /// Right relation.
+        right: Box<HirRelation>,
+        /// Optional join predicate.
+        predicate: Option<Box<HirExpression>>,
+        /// Whether the right relation is lateral.
+        lateral: bool,
+    },
+    /// Rectangular VALUES relation.
+    Values {
+        /// Ordered rectangular rows.
+        rows: HirValues,
+    },
+    /// Set-operation relation.
+    SetOperation {
+        /// Set-operation kind.
+        kind: crate::SetOperationKind,
+        /// Whether duplicates are retained.
+        all: bool,
+        /// Left input statement.
+        left: Box<HirStatement>,
+        /// Right input statement.
+        right: Box<HirStatement>,
+    },
+}
+
+/// Validated non-empty rectangular resolved VALUES rows.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[facet(invariants = HirValues::is_valid)]
+pub struct HirValues {
+    rows: Vec<Vec<HirExpression>>,
+}
+
+impl HirValues {
+    /// Creates non-empty rectangular VALUES rows.
+    pub fn try_new(rows: Vec<Vec<HirExpression>>) -> Result<Self, ValuesShapeError> {
+        let value = Self { rows };
+        value.is_valid().then_some(value).ok_or(ValuesShapeError)
+    }
+
+    /// Returns rows in authored order.
+    #[must_use]
+    pub fn rows(&self) -> &[Vec<HirExpression>] {
+        &self.rows
+    }
+
+    fn is_valid(&self) -> bool {
+        rectangular_rows(&self.rows)
+    }
+}
+
+/// Invalid empty or ragged VALUES shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ValuesShapeError;
+
+impl std::fmt::Display for ValuesShapeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("VALUES must contain non-empty rows with equal arity")
+    }
+}
+
+impl std::error::Error for ValuesShapeError {}
+
+fn rectangular_rows<T>(rows: &[Vec<T>]) -> bool {
+    let Some(first) = rows.first() else {
+        return false;
+    };
+    !first.is_empty() && rows.iter().all(|row| row.len() == first.len())
 }
 
 /// Resolved scalar expression.
@@ -340,8 +438,8 @@ pub struct HirInsert {
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 #[repr(u8)]
 pub enum HirInsertSource {
-    /// Ordered rows and columns.
-    Values(Vec<Vec<HirExpression>>),
+    /// Ordered rectangular rows and columns.
+    Values(HirValues),
     /// Query source.
     Select(Box<HirStatement>),
     /// `DEFAULT VALUES`.
@@ -351,14 +449,27 @@ pub enum HirInsertSource {
 /// Resolved conflict handling.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct HirConflictClause {
-    /// Optional named stable constraint.
-    pub constraint_id: Option<ConstraintId>,
-    /// Ordered inferred conflict-target expressions.
-    pub target: Vec<HirExpression>,
-    /// Optional target predicate.
-    pub predicate: Option<HirExpression>,
+    /// Mutually exclusive PostgreSQL conflict target form.
+    pub target: HirConflictTarget,
     /// Conflict action.
     pub action: HirConflictAction,
+}
+
+/// Resolved mutually exclusive PostgreSQL conflict target.
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+#[repr(u8)]
+pub enum HirConflictTarget {
+    /// Named `ON CONSTRAINT` target.
+    Constraint(ConstraintId),
+    /// Inferred expression target with optional predicate.
+    Inference {
+        /// Ordered target expressions.
+        expressions: Vec<HirExpression>,
+        /// Optional target predicate.
+        predicate: Option<Box<HirExpression>>,
+    },
+    /// No explicit target, valid for `DO NOTHING`.
+    Unspecified,
 }
 
 /// Resolved conflict action.

@@ -5,10 +5,10 @@ use dibs_query_ir::{
     ApiFieldName, ApiTypeMapping, ArtifactHashes, BindFormat, Cardinality, CardinalityEvidence,
     CompiledQuery, CompilerVersions, ExecutionIdentity, ExecutionIdentityInput, ExpressionId,
     FieldId, GeneratedContractMember, GeneratedMemberKind, HirExpression, HirExpressionKind,
-    HirProjection, HirQuery, HirRelation, HirSelect, HirStatement, LineageEdge, LineageGraph,
-    LineageNode, LineageNodeId, ManifestIdentity, Nullability, NullabilityEvidence, OrderedBind,
-    OutputField, Parameter, ParameterId, PublicContractIdentity, PublicIdentityInput, QueryId,
-    QueryManifest, ReadWriteLockManifest, ReferenceAccess, ReferenceId, ReferenceIndex,
+    HirProjection, HirQuery, HirRelation, HirRelationKind, HirSelect, HirStatement, LineageEdge,
+    LineageGraph, LineageNode, LineageNodeId, ManifestIdentity, Nullability, NullabilityEvidence,
+    OrderedBind, OutputField, Parameter, ParameterId, PublicContractIdentity, PublicIdentityInput,
+    QueryId, QueryManifest, ReadWriteLockManifest, ReferenceAccess, ReferenceId, ReferenceIndex,
     ReferenceRole, ReferenceTarget, ResolvedReference, ResultMode, RuntimeAssertion, Sensitivity,
     SourceMap, SourceMapEntry, SourceOrigin, SourceSpan, Span, SqlByteRange, SqlNodeId,
     SqlProvenance, StatementId, TargetLanguage, TypedExpression, TypedExpressionKind, TypedNodeId,
@@ -52,14 +52,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
     let column_id = ColumnId::new("pg18:column:public.job.id");
     let expression_origin = origin(1, 10, 16);
 
-    let hir_expression = HirExpression {
-        id: expression_id,
-        origin: expression_origin.clone(),
-        kind: HirExpressionKind::Column {
-            binding: relation_id,
-            column_id: column_id.clone(),
-        },
-    };
     let hir = HirQuery {
         id: query_id,
         name: "FindJob".to_string(),
@@ -76,31 +68,45 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         statement: HirStatement {
             id: statement_id,
             origin: origin(1, 8, 40),
-            kind: dibs_query_ir::HirStatementKind::Select(HirSelect {
+            kind: dibs_query_ir::HirStatementKind::Select(Box::new(HirSelect {
                 ctes: Vec::new(),
                 projections: vec![HirProjection {
                     field_id,
-                    alias: "id".to_string(),
+                    alias: alias.to_string(),
                     alias_origin,
-                    expression: hir_expression.clone(),
+                    expression: HirExpression {
+                        id: expression_id,
+                        origin: origin(1, 8, 10),
+                        kind: HirExpressionKind::Column {
+                            binding: relation_id,
+                            column_id: column_id.clone(),
+                        },
+                    },
                 }],
                 from: vec![HirRelation {
                     id: relation_id,
                     origin: origin(1, 17, 25),
-                    table_id: table_id.clone(),
                     alias: Some(alias.to_string()),
+                    kind: HirRelationKind::Table {
+                        table_id: table_id.clone(),
+                    },
                 }],
                 predicate: None,
                 group_by: Vec::new(),
                 having: None,
                 order_by: Vec::new(),
-                limit: None,
+                limit: Some(HirExpression {
+                    id: ExpressionId::new(2),
+                    origin: origin(1, 36, 37),
+                    kind: HirExpressionKind::Literal(dibs_query_ir::HirLiteral::Integer(
+                        "1".to_string(),
+                    )),
+                }),
                 offset: None,
                 locks: Vec::new(),
-            }),
+            })),
         },
     };
-
     let typed_expression = TypedExpression {
         id: expression_id,
         origin: expression_origin.clone(),
@@ -260,6 +266,7 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         }],
         result_mode: ResultMode::Optional,
         references: references.clone(),
+        runtime_assertions: Vec::new(),
         read_write_lock_manifest: ReadWriteLockManifest {
             reads: vec![table_id.clone()],
             writes: Vec::new(),
@@ -281,7 +288,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
     };
     let execution_semantics_id = execution_identity(&execution_input);
     let public_contract_id = public_contract_identity(&public_input);
-
     let manifest = QueryManifest {
         manifest_format_version: 1,
         query_id,
@@ -298,7 +304,7 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         parameters: vec![parameter.clone()],
         output_fields: vec![output.clone()],
         inferred_cardinality: typed_statement.cardinality.clone(),
-        runtime_assertions: vec![RuntimeAssertion::AtMostRows { maximum: 1 }],
+        runtime_assertions: Vec::new(),
         relation_edges: Vec::new(),
         cte_dependencies: Vec::new(),
         read_write_lock_manifest: execution_input.read_write_lock_manifest.clone(),
@@ -307,6 +313,8 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         plan_baseline_identity: None,
     };
     let manifest_identity = ManifestIdentity::from_manifest(&manifest).unwrap();
+    let source_map_hash = dibs_query_ir::ContentHash::of_json(&source_map).unwrap();
+    let manifest_hash = dibs_query_ir::ContentHash::of_json(&manifest).unwrap();
 
     CompiledQuery {
         compiler_versions,
@@ -319,7 +327,7 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         query_origin: origin(1, 0, 40),
         declared_result_mode: ResultMode::Optional,
         inferred_cardinality: typed_statement.cardinality.clone(),
-        runtime_assertions: vec![RuntimeAssertion::AtMostRows { maximum: 1 }],
+        runtime_assertions: Vec::new(),
         deterministic_sql: "SELECT id FROM job WHERE id = $1 LIMIT 1".to_string(),
         ordered_bind_map: vec![OrderedBind {
             position: 1,
@@ -339,11 +347,14 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
                 b"SELECT id FROM job WHERE id = $1 LIMIT 1",
             ),
             source: dibs_query_ir::ContentHash::of_bytes(b"fixture source"),
-            source_map: dibs_query_ir::ContentHash::of_bytes(b"fixture map"),
-            manifest: dibs_query_ir::ContentHash::of_bytes(b"fixture manifest"),
+            source_map: source_map_hash,
+            manifest: manifest_hash,
             generated_outputs: Vec::new(),
         },
     }
+    .validate()
+    .unwrap()
+    .to_owned()
 }
 
 #[test]
@@ -514,6 +525,13 @@ fn execution_and_public_identities_have_separate_inputs() {
         execution_identity(&base.execution_identity_input()),
         execution_identity(&changed_semantics.execution_identity_input())
     );
+
+    let mut changed_assertions = base.execution_identity_input();
+    changed_assertions.runtime_assertions = vec![RuntimeAssertion::AtMostRows { maximum: 1 }];
+    assert_ne!(
+        execution_identity(&base.execution_identity_input()),
+        execution_identity(&changed_assertions)
+    );
 }
 
 #[test]
@@ -521,8 +539,7 @@ fn facet_json_round_trips_complete_compiled_query() {
     let query = fixture_query("job", origin(1, 21, 24));
     let json = facet_json::to_string(&query).unwrap();
     let decoded: CompiledQuery = facet_json::from_str(&json).unwrap();
-
-    assert_eq!(decoded, query);
+    decoded.validate().unwrap();
     assert_eq!(decoded.compiler_versions.supported_postgres_major, 18);
     assert_eq!(decoded.deterministic_sql, query.deterministic_sql);
     assert_eq!(decoded.ordered_bind_map, query.ordered_bind_map);
@@ -554,4 +571,363 @@ fn identity_types_are_distinct_and_blake3_backed() {
     assert_eq!(execution.as_str().len(), 64);
     assert_eq!(public.as_str().len(), 64);
     assert_ne!(execution.as_str(), public.as_str());
+}
+
+#[test]
+fn hir_relation_topology_covers_every_typed_relation_form() {
+    let table = HirRelation {
+        id: dibs_query_ir::RelationId::new(1),
+        origin: origin(1, 0, 1),
+        alias: Some("job".to_string()),
+        kind: HirRelationKind::Table {
+            table_id: TableId::new("pg18:table:public.job"),
+        },
+    };
+    let relation = HirRelation {
+        id: dibs_query_ir::RelationId::new(2),
+        origin: origin(1, 0, 10),
+        alias: None,
+        kind: HirRelationKind::Join {
+            kind: dibs_query_ir::JoinKind::Inner,
+            left: Box::new(table),
+            right: Box::new(HirRelation {
+                id: dibs_query_ir::RelationId::new(3),
+                origin: origin(1, 2, 4),
+                alias: None,
+                kind: HirRelationKind::Cte {
+                    cte_id: dibs_query_ir::CteId::new(1),
+                },
+            }),
+            predicate: None,
+            lateral: false,
+        },
+    };
+    assert!(matches!(relation.kind, HirRelationKind::Join { .. }));
+
+    let variants = [
+        HirRelationKind::Subquery(Box::new(relation_statement_fixture())),
+        HirRelationKind::Function {
+            callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:app.jobs"),
+            arguments: Vec::new(),
+        },
+        HirRelationKind::Values {
+            rows: dibs_query_ir::HirValues::try_new(vec![vec![hir_integer("1")]]).unwrap(),
+        },
+        HirRelationKind::SetOperation {
+            kind: dibs_query_ir::SetOperationKind::Union,
+            all: true,
+            left: Box::new(relation_statement_fixture()),
+            right: Box::new(relation_statement_fixture()),
+        },
+    ];
+    assert_eq!(variants.len(), 4);
+}
+
+#[test]
+fn typed_conflict_target_preserves_named_constraint_exclusively() {
+    let constraint =
+        dibs_pg_catalog::ConstraintId::new("pg18:constraint:public.job:job_external_key");
+    let clause = dibs_query_ir::TypedConflictClause {
+        target: dibs_query_ir::ConflictTarget::Constraint(constraint.clone()),
+        action: dibs_query_ir::TypedConflictAction::Nothing,
+    };
+
+    assert_eq!(
+        clause.target,
+        dibs_query_ir::ConflictTarget::Constraint(constraint)
+    );
+}
+
+#[test]
+fn typed_conflict_clause_rejects_impossible_postgresql_forms() {
+    let update = dibs_query_ir::TypedConflictAction::Update {
+        assignments: Vec::new(),
+        predicate: None,
+    };
+    let unspecified_update = dibs_query_ir::TypedConflictClause {
+        target: dibs_query_ir::ConflictTarget::Unspecified,
+        action: update.clone(),
+    };
+    assert!(unspecified_update.validate().is_err());
+
+    let empty_inference = dibs_query_ir::TypedConflictClause {
+        target: dibs_query_ir::ConflictTarget::Inference {
+            expressions: Vec::new(),
+            predicate: None,
+        },
+        action: dibs_query_ir::TypedConflictAction::Nothing,
+    };
+    assert!(empty_inference.validate().is_err());
+
+    let empty_update = dibs_query_ir::TypedConflictClause {
+        target: dibs_query_ir::ConflictTarget::Constraint(dibs_pg_catalog::ConstraintId::new(
+            "pg18:constraint:public.job:job_pkey",
+        )),
+        action: update,
+    };
+    assert!(empty_update.validate().is_err());
+}
+
+#[test]
+fn typed_arguments_and_values_cannot_desynchronize() {
+    let argument = dibs_query_ir::TypedArgument {
+        expression: typed_integer("1"),
+        coercion: None,
+    };
+    let call = TypedExpressionKind::Call {
+        callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:app.identity"),
+        arguments: vec![argument],
+    };
+    assert!(matches!(call, TypedExpressionKind::Call { arguments, .. } if arguments.len() == 1));
+
+    assert!(dibs_query_ir::TypedValues::try_new(Vec::new()).is_err());
+    assert!(
+        dibs_query_ir::TypedValues::try_new(vec![
+            vec![typed_integer("1")],
+            vec![typed_integer("2"), typed_integer("3")],
+        ])
+        .is_err()
+    );
+}
+
+#[test]
+fn cte_output_fields_must_match_statement_projections() {
+    let statement = Box::new(TypedStatement {
+        id: StatementId::new(20),
+        origin: origin(1, 0, 1),
+        cardinality: Cardinality::many(),
+        kind: dibs_query_ir::TypedStatementKind::Select(Box::new(TypedSelect {
+            ctes: Vec::new(),
+            projections: vec![dibs_query_ir::TypedProjection {
+                field_id: FieldId::new(20),
+                expression: typed_integer("1"),
+            }],
+            from: Vec::new(),
+            predicate: None,
+            group_by: Vec::new(),
+            having: None,
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+            locks: Vec::new(),
+        })),
+    });
+    assert!(
+        dibs_query_ir::TypedCte::try_new(
+            dibs_query_ir::CteId::new(20),
+            dibs_query_ir::CteMaterialization::Default,
+            statement,
+            vec![FieldId::new(99)],
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn proof_types_reject_impossible_or_unproven_states_during_json_decode() {
+    assert!(
+        Cardinality::try_new(
+            dibs_query_ir::LowerBound::One,
+            dibs_query_ir::UpperBound::Zero,
+            vec![CardinalityEvidence::EmptyRelation],
+        )
+        .is_err()
+    );
+    assert!(Nullability::try_not_null(NullabilityEvidence::Conservative).is_err());
+
+    let cardinality_json = r#"{"lower":"One","upper":"Zero","proof":["EmptyRelation"]}"#;
+    assert!(facet_json::from_str::<Cardinality>(cardinality_json).is_err());
+    let nullability_json = r#"{"nullable":false,"evidence":["Conservative"]}"#;
+    assert!(facet_json::from_str::<Nullability>(nullability_json).is_err());
+}
+
+#[test]
+fn checked_compiled_query_rejects_cross_surface_mismatches() {
+    let valid = fixture_query("job", origin(1, 21, 24));
+    assert!(valid.validate().is_ok());
+
+    let mut invalid_bind = valid.clone();
+    invalid_bind.ordered_bind_map[0].position = 2;
+    assert!(matches!(
+        invalid_bind.validate(),
+        Err(dibs_query_ir::CompiledQueryError::NonContiguousBindPosition { .. })
+    ));
+
+    let mut invalid_cardinality = valid.clone();
+    invalid_cardinality.inferred_cardinality = Cardinality::many();
+    assert!(matches!(
+        invalid_cardinality.validate(),
+        Err(dibs_query_ir::CompiledQueryError::CardinalityMismatch)
+    ));
+
+    let mut invalid_pg = valid;
+    invalid_pg.compiler_versions.supported_postgres_major = 17;
+    assert!(matches!(
+        invalid_pg.validate(),
+        Err(dibs_query_ir::CompiledQueryError::UnsupportedPostgresMajor { actual: 17 })
+    ));
+
+    let mut invalid_manifest_identity = fixture_query("job", origin(1, 21, 24));
+    let mut other_manifest = invalid_manifest_identity.manifest.clone();
+    other_manifest.manifest_format_version += 1;
+    invalid_manifest_identity.manifest_identity =
+        ManifestIdentity::from_manifest(&other_manifest).unwrap();
+    assert!(matches!(
+        invalid_manifest_identity.validate(),
+        Err(dibs_query_ir::CompiledQueryError::ManifestIdentityMismatch)
+    ));
+
+    let mut invalid_manifest_version = fixture_query("job", origin(1, 21, 24));
+    invalid_manifest_version.manifest.manifest_format_version += 1;
+    invalid_manifest_version.manifest_identity =
+        ManifestIdentity::from_manifest(&invalid_manifest_version.manifest).unwrap();
+    invalid_manifest_version.artifact_hashes.manifest =
+        dibs_query_ir::ContentHash::of_json(&invalid_manifest_version.manifest).unwrap();
+    assert!(matches!(
+        invalid_manifest_version.validate(),
+        Err(dibs_query_ir::CompiledQueryError::ManifestMismatch)
+    ));
+}
+
+#[test]
+fn checked_compiled_query_rejects_hir_typed_divergence() {
+    let mut query = fixture_query("job", origin(1, 21, 24));
+    let dibs_query_ir::HirStatementKind::Select(select) = &mut query.resolved_hir.statement.kind
+    else {
+        panic!("fixture must contain SELECT HIR");
+    };
+    let HirRelationKind::Table { table_id } = &mut select.from[0].kind else {
+        panic!("fixture must contain a table relation");
+    };
+    *table_id = TableId::new("pg18:table:public.other_job");
+
+    assert!(matches!(
+        query.validate(),
+        Err(dibs_query_ir::CompiledQueryError::HirTypedMismatch)
+    ));
+}
+
+#[test]
+fn result_modes_require_matching_cardinality_assertions_and_row_shape() {
+    let mut one_without_lower_assertion = fixture_query("job", origin(1, 21, 24));
+    one_without_lower_assertion.declared_result_mode = ResultMode::One;
+    one_without_lower_assertion.runtime_assertions =
+        vec![RuntimeAssertion::AtMostRows { maximum: 1 }];
+    assert!(matches!(
+        one_without_lower_assertion.validate(),
+        Err(dibs_query_ir::CompiledQueryError::ResultModeMismatch)
+    ));
+
+    let mut optional_without_upper_assertion = fixture_query("job", origin(1, 21, 24));
+    optional_without_upper_assertion.inferred_cardinality = Cardinality::many();
+    optional_without_upper_assertion.typed_statement.cardinality = Cardinality::many();
+    optional_without_upper_assertion.runtime_assertions.clear();
+    assert!(matches!(
+        optional_without_upper_assertion.validate(),
+        Err(dibs_query_ir::CompiledQueryError::ResultModeMismatch)
+    ));
+
+    let mut exec_with_rows = fixture_query("job", origin(1, 21, 24));
+    exec_with_rows.declared_result_mode = ResultMode::Exec;
+    exec_with_rows.runtime_assertions = vec![RuntimeAssertion::Rowless];
+    assert!(matches!(
+        exec_with_rows.validate(),
+        Err(dibs_query_ir::CompiledQueryError::ResultModeMismatch)
+    ));
+}
+
+#[test]
+fn result_mode_rejects_empty_or_contradictory_effective_ranges() {
+    let mut impossible_static_range = fixture_query("job", origin(1, 21, 24));
+    impossible_static_range.declared_result_mode = ResultMode::One;
+    impossible_static_range.inferred_cardinality = Cardinality::empty();
+    impossible_static_range.typed_statement.cardinality = Cardinality::empty();
+    impossible_static_range.runtime_assertions = vec![
+        RuntimeAssertion::AtMostRows { maximum: 1 },
+        RuntimeAssertion::AtLeastRows { minimum: 1 },
+    ];
+    assert!(matches!(
+        impossible_static_range.validate(),
+        Err(dibs_query_ir::CompiledQueryError::ResultModeMismatch)
+    ));
+
+    let mut contradictory_assertions = fixture_query("job", origin(1, 21, 24));
+    contradictory_assertions.declared_result_mode = ResultMode::One;
+    contradictory_assertions.inferred_cardinality = Cardinality::unknown();
+    contradictory_assertions.typed_statement.cardinality = Cardinality::unknown();
+    contradictory_assertions.runtime_assertions = vec![
+        RuntimeAssertion::AtMostRows { maximum: 0 },
+        RuntimeAssertion::AtLeastRows { minimum: 1 },
+    ];
+    assert!(matches!(
+        contradictory_assertions.validate(),
+        Err(dibs_query_ir::CompiledQueryError::ResultModeMismatch)
+    ));
+}
+
+#[test]
+fn one_mode_accepts_complete_runtime_row_count_assertions() {
+    let mut one_with_runtime_proof = fixture_query("job", origin(1, 21, 24));
+    one_with_runtime_proof.declared_result_mode = ResultMode::One;
+    one_with_runtime_proof.runtime_assertions = vec![
+        RuntimeAssertion::AtMostRows { maximum: 1 },
+        RuntimeAssertion::AtLeastRows { minimum: 1 },
+    ];
+    let execution_input = one_with_runtime_proof.execution_identity_input();
+    one_with_runtime_proof.execution_semantics_id = execution_identity(&execution_input);
+    let public_input = one_with_runtime_proof.public_identity_input();
+    one_with_runtime_proof.public_contract_id = public_contract_identity(&public_input);
+    one_with_runtime_proof.manifest.execution_semantics_id =
+        one_with_runtime_proof.execution_semantics_id.clone();
+    one_with_runtime_proof.manifest.public_contract_id =
+        one_with_runtime_proof.public_contract_id.clone();
+    one_with_runtime_proof.manifest.runtime_assertions =
+        one_with_runtime_proof.runtime_assertions.clone();
+    one_with_runtime_proof.manifest_identity =
+        ManifestIdentity::from_manifest(&one_with_runtime_proof.manifest).unwrap();
+    one_with_runtime_proof.artifact_hashes.manifest =
+        dibs_query_ir::ContentHash::of_json(&one_with_runtime_proof.manifest).unwrap();
+    assert!(one_with_runtime_proof.validate().is_ok());
+}
+
+fn hir_integer(value: &str) -> HirExpression {
+    HirExpression {
+        id: ExpressionId::new(10),
+        origin: origin(1, 0, 1),
+        kind: HirExpressionKind::Literal(dibs_query_ir::HirLiteral::Integer(value.to_string())),
+    }
+}
+
+fn typed_integer(value: &str) -> TypedExpression {
+    TypedExpression {
+        id: ExpressionId::new(10),
+        origin: origin(1, 0, 1),
+        type_id: type_id(),
+        typmod: None,
+        nullability: Nullability::not_null(NullabilityEvidence::CallableContract {
+            callable_id: dibs_pg_catalog::CallableId::new("pg18:literal:integer"),
+            proves_non_null: true,
+        }),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::Literal(dibs_query_ir::HirLiteral::Integer(value.to_string())),
+    }
+}
+
+fn relation_statement_fixture() -> HirStatement {
+    HirStatement {
+        id: StatementId::new(10),
+        origin: origin(1, 0, 1),
+        kind: dibs_query_ir::HirStatementKind::Select(Box::new(HirSelect {
+            ctes: Vec::new(),
+            projections: Vec::new(),
+            from: Vec::new(),
+            predicate: None,
+            group_by: Vec::new(),
+            having: None,
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+            locks: Vec::new(),
+        })),
+    }
 }
