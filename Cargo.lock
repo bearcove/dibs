@@ -1049,6 +1049,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dibs-pg-catalog"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dibs-db-schema",
+ "dockside",
+ "indexmap 2.14.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+]
+
+[[package]]
 name = "dibs-proto"
 version = "0.2.0-rc.5"
 dependencies = [
