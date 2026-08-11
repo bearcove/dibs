@@ -431,6 +431,7 @@ fn renders_insert_conflicts_and_returning() {
                 update_statement(2, vec![projection(20, "id", integer(20, "1"))]),
             )],
             target: TableId::new(WIDGET),
+            target_binding: RelationId::new(1),
             columns: vec![ColumnId::new(ID), ColumnId::new(NAME)],
             source: TypedInsertSource::Values(
                 TypedValues::try_new(vec![vec![parameter(1, 2), string(2, "O'Reilly")]]).unwrap(),
@@ -461,6 +462,7 @@ fn renders_insert_conflicts_and_returning() {
         kind: TypedStatementKind::Insert(Box::new(TypedInsert {
             ctes: vec![],
             target: TableId::new(WIDGET),
+            target_binding: RelationId::new(1),
             columns: vec![ColumnId::new(NAME)],
             source: TypedInsertSource::DefaultValues,
             conflict: Some(TypedConflictClause {
@@ -482,6 +484,7 @@ fn renders_insert_conflicts_and_returning() {
         kind: TypedStatementKind::Insert(Box::new(TypedInsert {
             ctes: vec![],
             target: TableId::new(WIDGET),
+            target_binding: RelationId::new(1),
             columns: vec![],
             source: TypedInsertSource::Select(Box::new(select_statement(
                 5,
@@ -820,6 +823,7 @@ fn fixture_query(statement: TypedStatement, parameter_ids: &[ParameterId]) -> Co
         version: 1,
         query_name: "Fixture".to_string(),
         operation_names: vec![],
+        result_type_names: vec![],
         parameters: parameters.clone(),
         output_fields: output_fields.clone(),
         result_mode,
@@ -835,6 +839,7 @@ fn fixture_query(statement: TypedStatement, parameter_ids: &[ParameterId]) -> Co
         compiler_versions: compiler_versions.clone(),
         catalog_schema_fingerprint: schema.clone(),
         operation_names: vec![],
+        result_type_names: vec![],
         normalized_sql_hash: dibs_query_ir::ContentHash::of_bytes(b""),
         source_hash: dibs_query_ir::ContentHash::of_bytes(b"fixture"),
         source_map_hash: dibs_query_ir::ContentHash::of_json(&source_map).unwrap(),
@@ -1203,6 +1208,7 @@ fn hir_insert(insert: &TypedInsert) -> dibs_query_ir::HirInsert {
     dibs_query_ir::HirInsert {
         ctes: insert.ctes.iter().map(hir_cte).collect(),
         target: insert.target.clone(),
+        target_binding: insert.target_binding,
         columns: insert.columns.clone(),
         source: match &insert.source {
             TypedInsertSource::Values(values) => HirInsertSource::Values(

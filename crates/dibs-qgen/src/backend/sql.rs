@@ -254,7 +254,7 @@ impl<'a> Renderer<'a> {
                 TypedInsertSource::Select(statement) => self.render_statement(sql, statement)?,
                 TypedInsertSource::DefaultValues => sql.push_str("DEFAULT VALUES"),
             }
-            self.push_target_relation(insert.target.clone(), Some(RelationId::new(1)));
+            self.push_target_relation(insert.target.clone(), Some(insert.target_binding));
             let target_result = (|| {
                 if let Some(conflict) = &insert.conflict {
                     self.render_conflict(sql, conflict)?;
