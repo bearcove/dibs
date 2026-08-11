@@ -3,7 +3,8 @@ use dibs_db_schema::{
     SourceLocation, Table, TriggerCheckConstraint,
 };
 use dibs_pg_catalog::{
-    ApiLanguage, ApiTypeId, CallableKind, CatalogError, CatalogSnapshot, Nullability, PgTypeKind,
+    ApiLanguage, ApiTypeId, CallableKind, CatalogError, CatalogSnapshot, DomainCollation,
+    DomainConstraint, Nullability, PgArray, PgArrayDimension, PgArrayError, PgTypeKind,
     ScalarSignature, TableOutputColumn, TableSignature, TypeRegistration, TypeRegistrationKind,
 };
 use indexmap::IndexMap;
@@ -61,6 +62,80 @@ fn bigint_has_separate_pg_wire_and_api_identities() {
     assert_eq!(bigint.rust_api_type.as_str(), "i64");
     assert_eq!(bigint.typescript_api_type.as_str(), "bigint");
     assert_ne!(bigint.typescript_api_type.as_str(), "number");
+}
+
+#[test]
+fn postgres_arrays_use_shape_aware_lossless_api_model() {
+    let catalog = CatalogSnapshot::postgres_18_fixture();
+    let bigints = catalog.resolve_type("pg_catalog.bigint[]").unwrap();
+
+    assert_eq!(bigints.rust_api_type.as_str(), "PgArray<i64>");
+    assert_eq!(bigints.typescript_api_type.as_str(), "PgArray<bigint>");
+    assert!(!bigints.rust_api_type.as_str().starts_with("Vec<"));
+    assert!(
+        !bigints
+            .typescript_api_type
+            .as_str()
+            .starts_with("ReadonlyArray<")
+    );
+
+    let value = PgArray::try_new(
+        vec![Some(10_i64), None, Some(30), Some(40)],
+        vec![
+            PgArrayDimension {
+                length: 2,
+                lower_bound: -1,
+            },
+            PgArrayDimension {
+                length: 2,
+                lower_bound: 5,
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(value.rank(), 2);
+    assert_eq!(value.dimensions()[0].lower_bound, -1);
+    assert_eq!(value.dimensions()[1].length, 2);
+    assert_eq!(value.elements(), &[Some(10), None, Some(30), Some(40)]);
+
+    assert_eq!(
+        PgArray::try_new(
+            vec![Some(1_i64)],
+            vec![PgArrayDimension {
+                length: 2,
+                lower_bound: 1,
+            }],
+        ),
+        Err(PgArrayError::ElementCountMismatch {
+            expected: 2,
+            actual: 1,
+        })
+    );
+}
+
+#[test]
+fn postgres_empty_array_has_zero_rank_and_zero_elements() {
+    let value = PgArray::<i64>::try_new(Vec::new(), Vec::new()).unwrap();
+
+    assert_eq!(value.rank(), 0);
+    assert!(value.dimensions().is_empty());
+    assert!(value.elements().is_empty());
+}
+
+#[test]
+fn postgres_array_rejects_unencodable_dimension_length() {
+    assert_eq!(
+        PgArray::<i64>::try_new(
+            Vec::new(),
+            vec![PgArrayDimension {
+                length: i32::MAX as usize + 1,
+                lower_bound: 1,
+            }],
+        ),
+        Err(PgArrayError::DimensionLengthOutOfRange {
+            length: i32::MAX as usize + 1,
+        })
+    );
 }
 
 #[test]
@@ -205,6 +280,14 @@ fn registered_enum_and_domain_have_distinct_stable_type_relationships() {
             qualified_name: "app.positive_bigint".to_string(),
             kind: TypeRegistrationKind::Domain {
                 base_type: "pg_catalog.bigint".to_string(),
+                base_typmod: None,
+                not_null: true,
+                default: None,
+                collation: DomainCollation::None,
+                constraints: vec![DomainConstraint {
+                    name: "positive_bigint_check".to_string(),
+                    expression: "VALUE > 0".to_string(),
+                }],
             },
         })
         .unwrap();
@@ -220,13 +303,142 @@ fn registered_enum_and_domain_have_distinct_stable_type_relationships() {
 
     let domain = catalog.type_by_id(&domain_id).unwrap();
     assert_eq!(domain.kind, PgTypeKind::Domain);
+    let definition = domain.domain.as_ref().unwrap();
     assert_eq!(
-        domain.base_type.as_ref(),
-        Some(&catalog.resolve_type("pg_catalog.bigint").unwrap().id)
+        definition.base_type,
+        catalog.resolve_type("pg_catalog.bigint").unwrap().id
     );
+    assert_eq!(definition.base_typmod, None);
+    assert!(definition.not_null);
+    assert_eq!(definition.default, None);
+    assert_eq!(definition.collation, None);
+    assert_eq!(definition.constraints[0].name, "positive_bigint_check");
+    assert_eq!(definition.constraints[0].expression, "VALUE > 0");
     assert_eq!(domain.rust_api_type.as_str(), "i64");
     assert_eq!(domain.typescript_api_type.as_str(), "bigint");
     assert_ne!(enum_id, domain_id);
+}
+
+#[test]
+fn domain_definition_changes_identity_and_fingerprint() {
+    fn snapshot(default: Option<&str>, not_null: bool, expression: &str) -> CatalogSnapshot {
+        let mut catalog = CatalogSnapshot::postgres_18_fixture();
+        catalog
+            .register_type(TypeRegistration {
+                qualified_name: "app.constrained_bigint".to_string(),
+                kind: TypeRegistrationKind::Domain {
+                    base_type: "pg_catalog.bigint".to_string(),
+                    base_typmod: Some("precision=18".to_string()),
+                    not_null,
+                    default: default.map(str::to_string),
+                    collation: DomainCollation::None,
+                    constraints: vec![DomainConstraint {
+                        name: "constrained_bigint_check".to_string(),
+                        expression: expression.to_string(),
+                    }],
+                },
+            })
+            .unwrap();
+        catalog
+    }
+
+    let baseline = snapshot(Some("1"), true, "VALUE > 0");
+    let changed_default = snapshot(Some("2"), true, "VALUE > 0");
+    let changed_nullability = snapshot(Some("1"), false, "VALUE > 0");
+    let changed_constraint = snapshot(Some("1"), true, "VALUE >= 0");
+
+    let baseline_type = baseline.resolve_type("app.constrained_bigint").unwrap();
+    assert_ne!(
+        baseline_type.id,
+        changed_default
+            .resolve_type("app.constrained_bigint")
+            .unwrap()
+            .id
+    );
+    assert_ne!(baseline.fingerprint(), changed_default.fingerprint());
+    assert_ne!(baseline.fingerprint(), changed_nullability.fingerprint());
+    assert_ne!(baseline.fingerprint(), changed_constraint.fingerprint());
+}
+
+#[test]
+fn domain_rejects_collation_for_noncollatable_base() {
+    let mut catalog = CatalogSnapshot::postgres_18_fixture();
+
+    assert_eq!(
+        catalog.register_type(TypeRegistration {
+            qualified_name: "app.collated_bigint".to_string(),
+            kind: TypeRegistrationKind::Domain {
+                base_type: "pg_catalog.bigint".to_string(),
+                base_typmod: None,
+                not_null: false,
+                default: None,
+                collation: DomainCollation::Explicit(dibs_pg_catalog::CollationId::new(
+                    "pg18:collation:pg_catalog.default",
+                )),
+                constraints: Vec::new(),
+            },
+        }),
+        Err(CatalogError::InvalidDomainCollation {
+            qualified_name: "app.collated_bigint".to_string(),
+            base_type: "pg_catalog.bigint".to_string(),
+        })
+    );
+}
+
+#[test]
+fn domain_rejects_unknown_or_wrong_version_collation() {
+    for collation in [
+        dibs_pg_catalog::CollationId::new("pg18:collation:app.missing"),
+        dibs_pg_catalog::CollationId::new("pg17:collation:pg_catalog.default"),
+    ] {
+        let mut catalog = CatalogSnapshot::postgres_18_fixture();
+        assert_eq!(
+            catalog.register_type(TypeRegistration {
+                qualified_name: "app.bad_text_collation".to_string(),
+                kind: TypeRegistrationKind::Domain {
+                    base_type: "pg_catalog.text".to_string(),
+                    base_typmod: None,
+                    not_null: false,
+                    default: None,
+                    collation: DomainCollation::Explicit(collation.clone()),
+                    constraints: Vec::new(),
+                },
+            }),
+            Err(CatalogError::UnknownCollation { id: collation })
+        );
+    }
+}
+
+#[test]
+fn domain_constraint_names_must_be_unique() {
+    let mut catalog = CatalogSnapshot::postgres_18_fixture();
+
+    assert_eq!(
+        catalog.register_type(TypeRegistration {
+            qualified_name: "app.duplicate_checks".to_string(),
+            kind: TypeRegistrationKind::Domain {
+                base_type: "pg_catalog.bigint".to_string(),
+                base_typmod: None,
+                not_null: false,
+                default: None,
+                collation: DomainCollation::None,
+                constraints: vec![
+                    DomainConstraint {
+                        name: "value_check".to_string(),
+                        expression: "VALUE > 0".to_string(),
+                    },
+                    DomainConstraint {
+                        name: "value_check".to_string(),
+                        expression: "VALUE < 100".to_string(),
+                    },
+                ],
+            },
+        }),
+        Err(CatalogError::DuplicateDomainConstraintName {
+            qualified_name: "app.duplicate_checks".to_string(),
+            constraint: "value_check".to_string(),
+        })
+    );
 }
 
 #[test]
@@ -247,6 +459,11 @@ fn unsupported_mappings_return_typed_errors_without_lossy_fallback() {
             qualified_name: "app.bad_domain".to_string(),
             kind: TypeRegistrationKind::Domain {
                 base_type: "pg_catalog.xml".to_string(),
+                base_typmod: None,
+                not_null: false,
+                default: None,
+                collation: DomainCollation::None,
+                constraints: Vec::new(),
             },
         }),
         Err(CatalogError::UnknownType {
@@ -273,7 +490,7 @@ fn scalar_and_table_registration_are_exact_and_duplicate_safe() {
     let scalar_id = catalog.register_scalar(scalar.clone()).unwrap();
     assert_eq!(
         scalar_id.as_str(),
-        "pg18:callable:scalar:app.add_one(pg18:type:base:pg_catalog.bigint)->pg18:type:base:pg_catalog.bigint"
+        "pg18:callable:function:app.add_one(pg18:type:base:pg_catalog.bigint)"
     );
     assert_eq!(
         catalog.callable_by_id(&scalar_id).unwrap().kind,
@@ -281,7 +498,10 @@ fn scalar_and_table_registration_are_exact_and_duplicate_safe() {
     );
     assert_eq!(
         catalog.register_scalar(scalar),
-        Err(CatalogError::DuplicateCallable { id: scalar_id })
+        Err(CatalogError::DuplicateCallableSignature {
+            qualified_name: "app.add_one".to_string(),
+            arguments: vec![bigint.clone()],
+        })
     );
 
     let table = TableSignature {
@@ -349,6 +569,90 @@ fn registration_rejects_postgres_overload_collisions_by_name_and_inputs() {
         Err(CatalogError::DuplicateCallableSignature {
             qualified_name: "app.same_inputs".to_string(),
             arguments: vec![bigint],
+        })
+    );
+}
+
+#[test]
+fn return_only_callable_changes_keep_identity_and_collide_in_postgres() {
+    let mut catalog = CatalogSnapshot::postgres_18_fixture();
+    let bigint = catalog
+        .resolve_type("pg_catalog.bigint")
+        .unwrap()
+        .id
+        .clone();
+    let text = catalog.resolve_type("pg_catalog.text").unwrap().id.clone();
+    let bigint_result = ScalarSignature {
+        qualified_name: "app.same_identity".to_string(),
+        arguments: vec![bigint.clone()],
+        result: bigint.clone(),
+    };
+    let text_result = ScalarSignature {
+        qualified_name: "app.same_identity".to_string(),
+        arguments: vec![bigint.clone()],
+        result: text,
+    };
+
+    let expected_id = text_result.postgres_18_id();
+    assert_eq!(bigint_result.postgres_18_id(), expected_id);
+    let id = catalog.register_scalar(bigint_result).unwrap();
+    assert_eq!(id, expected_id);
+    assert_eq!(
+        catalog.register_scalar(text_result),
+        Err(CatalogError::DuplicateCallableSignature {
+            qualified_name: "app.same_identity".to_string(),
+            arguments: vec![bigint],
+        })
+    );
+}
+
+#[test]
+fn table_output_columns_require_canonical_unquoted_identifiers() {
+    let mut catalog = CatalogSnapshot::postgres_18_fixture();
+    let text = catalog.resolve_type("pg_catalog.text").unwrap().id.clone();
+
+    assert_eq!(
+        catalog.register_table(TableSignature {
+            qualified_name: "app.bad_output".to_string(),
+            arguments: Vec::new(),
+            columns: vec![TableOutputColumn {
+                name: "bad output".to_string(),
+                type_id: text,
+                nullability: Nullability::NotNull,
+            }],
+        }),
+        Err(CatalogError::InvalidOutputColumnName {
+            qualified_name: "app.bad_output".to_string(),
+            column: "bad output".to_string(),
+        })
+    );
+}
+
+#[test]
+fn table_output_columns_must_be_unique() {
+    let mut catalog = CatalogSnapshot::postgres_18_fixture();
+    let text = catalog.resolve_type("pg_catalog.text").unwrap().id.clone();
+
+    assert_eq!(
+        catalog.register_table(TableSignature {
+            qualified_name: "app.duplicate_output".to_string(),
+            arguments: Vec::new(),
+            columns: vec![
+                TableOutputColumn {
+                    name: "value".to_string(),
+                    type_id: text.clone(),
+                    nullability: Nullability::NotNull,
+                },
+                TableOutputColumn {
+                    name: "value".to_string(),
+                    type_id: text,
+                    nullability: Nullability::Nullable,
+                },
+            ],
+        }),
+        Err(CatalogError::DuplicateOutputColumnName {
+            qualified_name: "app.duplicate_output".to_string(),
+            column: "value".to_string(),
         })
     );
 }

@@ -178,8 +178,8 @@ pub(crate) fn array_codec_for_registered(
             element.pg_codec_id.as_str()
         ),
         format!("wire:postgres:array<{}>", element.wire_codec_id.as_str()),
-        format!("Vec<{}>", element.rust_api_type.as_str()),
-        format!("ReadonlyArray<{}>", element.typescript_api_type.as_str()),
+        format!("PgArray<{}>", element.rust_api_type.as_str()),
+        format!("PgArray<{}>", element.typescript_api_type.as_str()),
     )
 }
 
@@ -192,7 +192,7 @@ fn array_codec(
     CodecBinding::new(
         format!("pg18:pg-codec:array<{pg_element}>"),
         format!("wire:postgres:array<{wire_element}>"),
-        format!("Vec<{rust_element}>"),
-        format!("ReadonlyArray<{typescript_element}>"),
+        format!("PgArray<{rust_element}>"),
+        format!("PgArray<{typescript_element}>"),
     )
 }

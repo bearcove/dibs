@@ -64,10 +64,36 @@ async fn setup_postgres() -> (OracleGuard, Client) {
     (OracleGuard(Some(container)), client)
 }
 
+fn require_postgres_18(server_version_num: i32) -> Result<(), String> {
+    if (180_000..190_000).contains(&server_version_num) {
+        Ok(())
+    } else {
+        Err(format!(
+            "PostgreSQL 18 required, server_version_num was {server_version_num}"
+        ))
+    }
+}
+
+#[test]
+fn server_version_gate_accepts_only_postgres_18() {
+    assert_eq!(require_postgres_18(180_000), Ok(()));
+    assert_eq!(require_postgres_18(189_999), Ok(()));
+    assert!(require_postgres_18(179_999).is_err());
+    assert!(require_postgres_18(190_000).is_err());
+}
+
 #[tokio::test]
 async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
     let (oracle_guard, client) = setup_postgres().await;
     let _ = &oracle_guard.0;
+    let server_version_num: i32 = client
+        .query_one("SHOW server_version_num", &[])
+        .await
+        .expect("query server_version_num")
+        .get::<_, String>(0)
+        .parse()
+        .expect("server_version_num is an integer");
+    require_postgres_18(server_version_num).expect("live oracle must be PostgreSQL 18");
     let catalog = CatalogSnapshot::postgres_18_fixture();
 
     let type_rows = client
@@ -120,9 +146,9 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
                     .and_then(|id| catalog.type_by_id(id))
                     .map(|element| element.internal_qualified_name.clone())
                     .unwrap_or_default(),
-                ty.base_type
+                ty.domain
                     .as_ref()
-                    .and_then(|id| catalog.type_by_id(id))
+                    .and_then(|domain| catalog.type_by_id(&domain.base_type))
                     .map(|base| base.internal_qualified_name.clone())
                     .unwrap_or_default(),
             )
