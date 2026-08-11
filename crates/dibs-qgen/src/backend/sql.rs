@@ -406,6 +406,9 @@ impl<'a> Renderer<'a> {
         for (index, projection) in projections.iter().enumerate() {
             comma(sql, index);
             self.render_expression(sql, &projection.expression)?;
+            if let Some(coercion) = &projection.coercion {
+                self.render_coercion(sql, coercion)?;
+            }
             sql.push_str(" AS ");
             quote_identifier(sql, &projection.sql_label);
         }
@@ -567,7 +570,7 @@ impl<'a> Renderer<'a> {
         for (row_index, row) in values.rows().iter().enumerate() {
             comma(sql, row_index);
             sql.push('(');
-            self.render_expression_list(sql, row)?;
+            self.render_arguments(sql, row)?;
             sql.push(')');
         }
         Ok(())
@@ -647,11 +650,11 @@ impl<'a> Renderer<'a> {
                     sql.push_str(" WHEN ");
                     self.render_expression(sql, &branch.when)?;
                     sql.push_str(" THEN ");
-                    self.render_expression(sql, &branch.then)?;
+                    self.render_argument(sql, &branch.then)?;
                 }
                 if let Some(else_expression) = else_expression {
                     sql.push_str(" ELSE ");
-                    self.render_expression(sql, else_expression)?;
+                    self.render_argument(sql, else_expression)?;
                 }
                 sql.push_str(" END");
                 Ok(())
@@ -670,7 +673,7 @@ impl<'a> Renderer<'a> {
             }
             TypedExpressionKind::Array { elements, .. } => {
                 sql.push_str("ARRAY[");
-                self.render_expression_list(sql, elements)?;
+                self.render_arguments(sql, elements)?;
                 sql.push(']');
                 Ok(())
             }

@@ -142,6 +142,7 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
                 sql_label: alias.to_string(),
                 field_id,
                 expression: typed_expression.clone(),
+                coercion: None,
             }],
             from: vec![TypedRelation {
                 id: relation_id,
@@ -894,14 +895,247 @@ fn typed_arguments_and_values_cannot_desynchronize() {
     }));
     assert!(matches!(call, TypedExpressionKind::Call(call) if call.arguments.len() == 1));
 
-    assert!(dibs_query_ir::TypedValues::try_new(Vec::new()).is_err());
+    assert!(dibs_query_ir::TypedValues::try_new(Vec::new(), Vec::new()).is_err());
     assert!(
-        dibs_query_ir::TypedValues::try_new(vec![
-            vec![typed_integer("1")],
-            vec![typed_integer("2"), typed_integer("3")],
-        ])
+        dibs_query_ir::TypedValues::try_new(
+            vec![
+                vec![typed_argument(typed_integer("1"), None)],
+                vec![
+                    typed_argument(typed_integer("2"), None),
+                    typed_argument(typed_integer("3"), None),
+                ],
+            ],
+            Vec::new(),
+        )
         .is_err()
     );
+}
+
+#[test]
+fn use_site_coercions_validate_paths_nullability_and_output_contracts() {
+    let integer = TypeId::new("pg18:type:pg_catalog.integer:base");
+    let bigint = type_id();
+    let numeric = TypeId::new("pg18:type:pg_catalog.numeric:base");
+    let result_nullability = Nullability::not_null(NullabilityEvidence::CastPropagation);
+    let coercion = dibs_query_ir::TypedCoercion {
+        source_type: integer.clone(),
+        target_type: numeric.clone(),
+        target_typmod: None,
+        result_nullability: result_nullability.clone(),
+        evidence: dibs_query_ir::CoercionEvidence::CatalogCastPath {
+            steps: vec![
+                dibs_query_ir::TypedCastStep {
+                    cast_id: dibs_pg_catalog::CastId::new("pg18:cast:integer->bigint"),
+                    source_type: integer.clone(),
+                    target_type: bigint.clone(),
+                    context: dibs_query_ir::CoercionContext::Implicit,
+                },
+                dibs_query_ir::TypedCastStep {
+                    cast_id: dibs_pg_catalog::CastId::new("pg18:cast:bigint->numeric"),
+                    source_type: bigint.clone(),
+                    target_type: numeric.clone(),
+                    context: dibs_query_ir::CoercionContext::Implicit,
+                },
+            ],
+        },
+    };
+    assert!(coercion.validate().is_ok());
+
+    let source = typed_expression_of_type("1", integer.clone());
+    let projection = dibs_query_ir::TypedProjection {
+        field_id: FieldId::new(90),
+        sql_label: "value".to_string(),
+        expression: source.clone(),
+        coercion: Some(coercion.clone()),
+    };
+    assert_eq!(projection.output_type_id(), &numeric);
+    assert_eq!(projection.output_nullability(), &result_nullability);
+
+    let mut discontinuous = coercion.clone();
+    let dibs_query_ir::CoercionEvidence::CatalogCastPath { steps } = &mut discontinuous.evidence
+    else {
+        unreachable!()
+    };
+    steps[1].source_type = integer.clone();
+    assert!(discontinuous.validate().is_err());
+
+    let mut repeated = coercion.clone();
+    let dibs_query_ir::CoercionEvidence::CatalogCastPath { steps } = &mut repeated.evidence else {
+        unreachable!()
+    };
+    steps[1].cast_id = steps[0].cast_id.clone();
+    assert!(repeated.validate().is_err());
+
+    let mut unproven_nullability = coercion.clone();
+    unproven_nullability.result_nullability =
+        Nullability::not_null(NullabilityEvidence::CallableContract {
+            callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:test"),
+            proves_non_null: true,
+        });
+    assert!(unproven_nullability.validate().is_err());
+
+    let redundant = dibs_query_ir::TypedCoercion {
+        source_type: numeric.clone(),
+        target_type: numeric.clone(),
+        target_typmod: None,
+        result_nullability,
+        evidence: dibs_query_ir::CoercionEvidence::Exact,
+    };
+    assert!(redundant.validate().is_err());
+
+    let numeric_values = dibs_query_ir::TypedValues::try_new(
+        vec![
+            vec![typed_argument(source, Some(coercion.clone()))],
+            vec![typed_argument(
+                typed_expression_of_type("1.5", numeric.clone()),
+                None,
+            )],
+        ],
+        vec![dibs_query_ir::TypedValuesColumn {
+            type_id: numeric.clone(),
+            typmod: None,
+            nullability: Nullability::not_null(NullabilityEvidence::ValuesPropagation),
+            common_type: dibs_query_ir::CoercionEvidence::CommonType {
+                resolved: numeric.clone(),
+                inputs: vec![integer, numeric.clone()],
+            },
+        }],
+    )
+    .unwrap();
+    assert_eq!(numeric_values.columns()[0].type_id, numeric);
+
+    let domain = TypeId::new("pg18:type:domain:app.positive_bigint");
+    let domain_source = typed_expression_of_type("1", domain.clone());
+    let domain_coercion = dibs_query_ir::TypedCoercion {
+        source_type: domain.clone(),
+        target_type: type_id(),
+        target_typmod: None,
+        result_nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+        evidence: dibs_query_ir::CoercionEvidence::DomainBase {
+            domain: domain.clone(),
+            base: type_id(),
+        },
+    };
+    let domain_values = dibs_query_ir::TypedValues::try_new(
+        vec![
+            vec![typed_argument(domain_source, Some(domain_coercion))],
+            vec![typed_argument(typed_integer("2"), None)],
+        ],
+        vec![dibs_query_ir::TypedValuesColumn {
+            type_id: type_id(),
+            typmod: None,
+            nullability: Nullability::not_null(NullabilityEvidence::ValuesPropagation),
+            common_type: dibs_query_ir::CoercionEvidence::CommonType {
+                resolved: type_id(),
+                inputs: vec![domain, type_id()],
+            },
+        }],
+    )
+    .unwrap();
+    assert!(matches!(
+        domain_values.rows()[0][0]
+            .coercion
+            .as_ref()
+            .unwrap()
+            .evidence,
+        dibs_query_ir::CoercionEvidence::DomainBase { .. }
+    ));
+}
+
+#[test]
+fn case_array_and_projection_coercions_are_execution_relevant_but_not_hir_topology() {
+    let bigint = type_id();
+    let numeric = TypeId::new("pg18:type:pg_catalog.numeric:base");
+    let coercion = dibs_query_ir::TypedCoercion {
+        source_type: bigint.clone(),
+        target_type: numeric.clone(),
+        target_typmod: None,
+        result_nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+        evidence: dibs_query_ir::CoercionEvidence::CatalogCastPath {
+            steps: vec![dibs_query_ir::TypedCastStep {
+                cast_id: dibs_pg_catalog::CastId::new("pg18:cast:bigint->numeric"),
+                source_type: bigint,
+                target_type: numeric.clone(),
+                context: dibs_query_ir::CoercionContext::Implicit,
+            }],
+        },
+    };
+    let mut base = fixture_query("job", origin(1, 21, 24)).execution_identity_input();
+    {
+        let dibs_query_ir::TypedStatementKind::Select(select) = &mut base.statement.kind else {
+            unreachable!()
+        };
+        select.projections[0].coercion = Some(coercion.clone());
+    }
+    let with_projection = execution_identity(&base);
+    let dibs_query_ir::TypedStatementKind::Select(select) = &mut base.statement.kind else {
+        unreachable!()
+    };
+    select.projections[0].coercion = None;
+
+    let case = TypedExpression {
+        id: ExpressionId::new(91),
+        origin: origin(1, 0, 9),
+        type_id: numeric.clone(),
+        typmod: None,
+        nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::Case {
+            operand: None,
+            branches: vec![dibs_query_ir::TypedCaseBranch {
+                when: TypedExpression {
+                    id: ExpressionId::new(92),
+                    origin: origin(1, 0, 1),
+                    type_id: TypeId::new("pg18:type:pg_catalog.boolean:base"),
+                    typmod: None,
+                    nullability: Nullability::not_null(NullabilityEvidence::CallableContract {
+                        callable_id: dibs_pg_catalog::CallableId::new("pg18:literal:boolean"),
+                        proves_non_null: true,
+                    }),
+                    volatility: Volatility::Immutable,
+                    kind: TypedExpressionKind::Literal(dibs_query_ir::HirLiteral::Boolean(true)),
+                },
+                then: dibs_query_ir::TypedArgument {
+                    expression: typed_integer("1"),
+                    coercion: Some(coercion.clone()),
+                },
+            }],
+            else_expression: Some(Box::new(dibs_query_ir::TypedArgument {
+                expression: typed_integer("2"),
+                coercion: Some(coercion.clone()),
+            })),
+            implicit_else_type: None,
+            result_coercion: dibs_query_ir::CoercionEvidence::CommonType {
+                resolved: numeric.clone(),
+                inputs: vec![type_id(), type_id()],
+            },
+        },
+    };
+    assert!(case.validate().is_ok());
+
+    let array = TypedExpression {
+        id: ExpressionId::new(93),
+        origin: origin(1, 10, 20),
+        type_id: TypeId::new("pg18:type:pg_catalog.numeric[]:array"),
+        typmod: None,
+        nullability: Nullability::not_null(NullabilityEvidence::CallableContract {
+            callable_id: dibs_pg_catalog::CallableId::new("pg18:array:constructor"),
+            proves_non_null: true,
+        }),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::Array {
+            elements: vec![dibs_query_ir::TypedArgument {
+                expression: typed_integer("1"),
+                coercion: Some(coercion),
+            }],
+            coercion: dibs_query_ir::CoercionEvidence::CommonType {
+                resolved: numeric,
+                inputs: vec![type_id()],
+            },
+        },
+    };
+    assert!(array.validate().is_ok());
+    assert_ne!(with_projection, execution_identity(&base));
 }
 
 #[test]
@@ -1047,6 +1281,7 @@ fn cte_output_fields_must_match_statement_projections() {
                 field_id: FieldId::new(20),
                 sql_label: "value".to_string(),
                 expression: typed_integer("1"),
+                coercion: None,
             }],
             from: Vec::new(),
             predicate: None,
@@ -1146,6 +1381,69 @@ fn checked_compiled_query_rejects_cross_surface_mismatches() {
         invalid_manifest_version.validate(),
         Err(dibs_query_ir::CompiledQueryError::ManifestMismatch)
     ));
+}
+
+#[test]
+fn catalog_cast_ids_are_semantic_proofs_not_render_name_requirements() {
+    let mut query = fixture_query("job", origin(1, 21, 24));
+    let integer = TypeId::new("pg18:type:pg_catalog.integer:base");
+    let numeric = TypeId::new("pg18:type:pg_catalog.numeric:base");
+    let dibs_query_ir::TypedStatementKind::Select(select) = &mut query.typed_statement.kind else {
+        unreachable!()
+    };
+    select.projections[0].expression.type_id = integer.clone();
+    select.projections[0].expression.nullability =
+        Nullability::not_null(NullabilityEvidence::CastPropagation);
+    select.projections[0].coercion = Some(dibs_query_ir::TypedCoercion {
+        source_type: integer.clone(),
+        target_type: numeric.clone(),
+        target_typmod: Some(Typmod::new("10,2")),
+        result_nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+        evidence: dibs_query_ir::CoercionEvidence::CatalogCastPath {
+            steps: vec![dibs_query_ir::TypedCastStep {
+                cast_id: dibs_pg_catalog::CastId::new("pg18:cast:integer->numeric"),
+                source_type: integer.clone(),
+                target_type: numeric.clone(),
+                context: dibs_query_ir::CoercionContext::Implicit,
+            }],
+        },
+    });
+    query.ordered_output_fields[0].type_id = numeric.clone();
+    query.ordered_output_fields[0].typmod = Some(Typmod::new("10,2"));
+    query.ordered_output_fields[0].nullability =
+        Nullability::not_null(NullabilityEvidence::CastPropagation);
+    query.catalog_render_names = CatalogRenderNames::try_new(vec![
+        CatalogRenderName::Table {
+            id: TableId::new("pg18:table:public.job"),
+            qualified_name: vec!["public".to_string(), "job".to_string()],
+        },
+        CatalogRenderName::Column {
+            id: ColumnId::new("pg18:column:public.job.id"),
+            name: "id".to_string(),
+        },
+        CatalogRenderName::Type {
+            id: integer,
+            qualified_name: vec!["pg_catalog".to_string(), "integer".to_string()],
+        },
+        CatalogRenderName::Type {
+            id: numeric,
+            qualified_name: vec!["pg_catalog".to_string(), "numeric".to_string()],
+        },
+        CatalogRenderName::Type {
+            id: type_id(),
+            qualified_name: vec!["pg_catalog".to_string(), "bigint".to_string()],
+        },
+    ])
+    .unwrap();
+    query.execution_semantics_id = execution_identity(&query.execution_identity_input());
+    query.public_contract_id = public_contract_identity(&query.public_identity_input());
+    query.manifest.execution_semantics_id = query.execution_semantics_id.clone();
+    query.manifest.output_fields = query.ordered_output_fields.clone();
+    query.manifest.public_contract_id = query.public_contract_id.clone();
+    query.manifest_identity = ManifestIdentity::from_manifest(&query.manifest).unwrap();
+    query.artifact_hashes.manifest = dibs_query_ir::ContentHash::of_json(&query.manifest).unwrap();
+
+    query.validate().unwrap();
 }
 
 #[test]
@@ -1350,6 +1648,12 @@ fn typed_integer_with_nullability(value: &str, nullable: bool) -> TypedExpressio
     }
 }
 
+fn typed_expression_of_type(value: &str, type_id: TypeId) -> TypedExpression {
+    let mut expression = typed_integer(value);
+    expression.type_id = type_id;
+    expression
+}
+
 fn relation_statement_fixture() -> HirStatement {
     HirStatement {
         id: StatementId::new(10),
@@ -1412,6 +1716,7 @@ fn typed_expression_fixture_statement(expression: TypedExpression) -> TypedState
                 field_id: FieldId::new(70),
                 sql_label: "value".to_string(),
                 expression,
+                coercion: None,
             }],
             from: Vec::new(),
             predicate: None,
@@ -1423,5 +1728,15 @@ fn typed_expression_fixture_statement(expression: TypedExpression) -> TypedState
             offset: None,
             locks: Vec::new(),
         })),
+    }
+}
+
+fn typed_argument(
+    expression: TypedExpression,
+    coercion: Option<dibs_query_ir::TypedCoercion>,
+) -> dibs_query_ir::TypedArgument {
+    dibs_query_ir::TypedArgument {
+        expression,
+        coercion,
     }
 }

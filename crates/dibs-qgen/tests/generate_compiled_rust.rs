@@ -661,6 +661,7 @@ fn base_query(
             field_id: FieldId::new(fixture.id),
             sql_label: fixture.sql_label.to_string(),
             expression: typed_literal(fixture),
+            coercion: None,
         })
         .collect::<Vec<_>>();
     let ordered_output_fields: Vec<OutputField> = outputs

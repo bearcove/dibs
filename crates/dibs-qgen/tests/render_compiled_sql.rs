@@ -10,11 +10,12 @@ use dibs_query_ir::{
     HirLiteral, HirLockClause, JoinKind, LockStrength, LockWaitPolicy, Nullability,
     NullabilityEvidence, NullsOrder, OrderedBind, ParameterId, RelationAlias, RelationId,
     SelectDistinct, SetOperationKind, SortDirection, SourceOrigin, SourceSpan, Span, StatementId,
-    TypedArgument, TypedAssignment, TypedCall, TypedCaseBranch, TypedCoercion, TypedConflictAction,
-    TypedConflictClause, TypedCte, TypedDelete, TypedExpression, TypedExpressionKind, TypedInsert,
-    TypedInsertSource, TypedLimit, TypedNamedWindow, TypedOrderBy, TypedProjection, TypedRelation,
-    TypedRelationKind, TypedSelect, TypedStatement, TypedStatementKind, TypedUpdate, TypedValues,
-    Volatility, WindowExclusion, WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
+    TypedArgument, TypedAssignment, TypedCall, TypedCaseBranch, TypedCastStep, TypedCoercion,
+    TypedConflictAction, TypedConflictClause, TypedCte, TypedDelete, TypedExpression,
+    TypedExpressionKind, TypedInsert, TypedInsertSource, TypedLimit, TypedNamedWindow,
+    TypedOrderBy, TypedProjection, TypedRelation, TypedRelationKind, TypedSelect, TypedStatement,
+    TypedStatementKind, TypedUpdate, TypedValues, TypedValuesColumn, Volatility, WindowExclusion,
+    WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
 };
 use dibs_query_syntax::SourceId;
 use sql_backend::{RenderedSql, SqlRenderError, render_compiled_sql};
@@ -79,11 +80,10 @@ fn renders_select_windows_relations_expressions_and_locks() {
         alias: Some(alias("v", &["x", "label"])),
         cardinality: Cardinality::many(),
         kind: TypedRelationKind::Values {
-            rows: TypedValues::try_new(vec![
+            rows: typed_values(vec![
                 vec![integer(40, "1"), string(41, "a")],
                 vec![integer(42, "2"), string(43, "b")],
-            ])
-            .unwrap(),
+            ]),
         },
     };
     let cte_use = TypedRelation {
@@ -177,9 +177,16 @@ fn renders_select_windows_relations_expressions_and_locks() {
             operand: Some(Box::new(column(111, RelationId::new(1), ID))),
             branches: vec![TypedCaseBranch {
                 when: integer(112, "1"),
-                then: collate(113, string(114, "one")),
+                then: TypedArgument {
+                    expression: collate(113, string(114, "one")),
+                    coercion: None,
+                },
             }],
-            else_expression: Some(Box::new(cast_to_text(115, parameter(116, 1)))),
+            else_expression: Some(Box::new(TypedArgument {
+                expression: cast_to_text(115, parameter(116, 1)),
+                coercion: None,
+            })),
+            implicit_else_type: None,
             result_coercion: CoercionEvidence::CommonType {
                 resolved: TypeId::new(TEXT),
                 inputs: vec![TypeId::new(TEXT), TypeId::new(TEXT)],
@@ -222,7 +229,16 @@ fn renders_select_windows_relations_expressions_and_locks() {
                         133,
                         BIGINT,
                         TypedExpressionKind::Array {
-                            elements: vec![integer(134, "1"), integer(135, "2")],
+                            elements: vec![
+                                TypedArgument {
+                                    expression: integer(134, "1"),
+                                    coercion: None,
+                                },
+                                TypedArgument {
+                                    expression: integer(135, "2"),
+                                    coercion: None,
+                                },
+                            ],
                             coercion: CoercionEvidence::CommonType {
                                 resolved: TypeId::new(BIGINT),
                                 inputs: vec![TypeId::new(BIGINT), TypeId::new(BIGINT)],
@@ -435,9 +451,10 @@ fn renders_insert_conflicts_and_returning() {
             target: TableId::new(WIDGET),
             target_binding: RelationId::new(1),
             columns: vec![ColumnId::new(ID), ColumnId::new(NAME)],
-            source: TypedInsertSource::Values(
-                TypedValues::try_new(vec![vec![parameter(1, 2), string(2, "O'Reilly")]]).unwrap(),
-            ),
+            source: TypedInsertSource::Values(typed_values(vec![vec![
+                parameter(1, 2),
+                string(2, "O'Reilly"),
+            ]])),
             conflict: Some(TypedConflictClause {
                 target: ConflictTarget::Inference {
                     expressions: vec![column(3, RelationId::new(1), NAME)],
@@ -755,9 +772,9 @@ fn fixture_query(statement: TypedStatement, parameter_ids: &[ParameterId]) -> Co
             ordinal: u32::try_from(ordinal).unwrap(),
             sql_label: projection.sql_label.clone(),
             public_name: projection.sql_label.clone(),
-            type_id: projection.expression.type_id.clone(),
-            typmod: projection.expression.typmod.clone(),
-            nullability: projection.expression.nullability.clone(),
+            type_id: projection.output_type_id().clone(),
+            typmod: projection.output_typmod().cloned(),
+            nullability: projection.output_nullability().clone(),
             pg_codec_id: dibs_pg_catalog::PgCodecId::new("test"),
             wire_codec_id: dibs_pg_catalog::WireCodecId::new("test"),
             api_types: vec![],
@@ -1025,7 +1042,11 @@ fn hir_relation(relation: &TypedRelation) -> dibs_query_ir::HirRelation {
                 rows: dibs_query_ir::HirValues::try_new(
                     rows.rows()
                         .iter()
-                        .map(|row| row.iter().map(hir_expression).collect())
+                        .map(|row| {
+                            row.iter()
+                                .map(|argument| hir_expression(&argument.expression))
+                                .collect()
+                        })
                         .collect(),
                 )
                 .unwrap(),
@@ -1111,10 +1132,13 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
                     .iter()
                     .map(|branch| HirCaseBranch {
                         when: hir_expression(&branch.when),
-                        then: hir_expression(&branch.then),
+                        then: hir_expression(&branch.then.expression),
                     })
                     .collect(),
-                else_expression: else_expression.as_deref().map(hir_expression).map(Box::new),
+                else_expression: else_expression
+                    .as_deref()
+                    .map(|argument| hir_expression(&argument.expression))
+                    .map(Box::new),
             },
             TypedExpressionKind::ScalarSubquery(statement) => {
                 HirExpressionKind::ScalarSubquery(Box::new(hir_statement(statement)))
@@ -1122,9 +1146,12 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
             TypedExpressionKind::Row(values) => {
                 HirExpressionKind::Row(values.iter().map(hir_expression).collect())
             }
-            TypedExpressionKind::Array { elements, .. } => {
-                HirExpressionKind::Array(elements.iter().map(hir_expression).collect())
-            }
+            TypedExpressionKind::Array { elements, .. } => HirExpressionKind::Array(
+                elements
+                    .iter()
+                    .map(|argument| hir_expression(&argument.expression))
+                    .collect(),
+            ),
             TypedExpressionKind::CteColumn { cte_id, field_id } => HirExpressionKind::CteColumn {
                 cte_id: *cte_id,
                 field_id: *field_id,
@@ -1219,7 +1246,11 @@ fn hir_insert(insert: &TypedInsert) -> dibs_query_ir::HirInsert {
                     values
                         .rows()
                         .iter()
-                        .map(|row| row.iter().map(hir_expression).collect())
+                        .map(|row| {
+                            row.iter()
+                                .map(|argument| hir_expression(&argument.expression))
+                                .collect()
+                        })
                         .collect(),
                 )
                 .unwrap(),
@@ -1443,7 +1474,48 @@ fn projection(id: u32, label: &str, expression: TypedExpression) -> TypedProject
         field_id: FieldId::new(id),
         sql_label: label.to_string(),
         expression,
+        coercion: None,
     }
+}
+
+fn typed_values(rows: Vec<Vec<TypedExpression>>) -> TypedValues {
+    let arguments = rows
+        .into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|expression| TypedArgument {
+                    expression,
+                    coercion: None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let width = arguments[0].len();
+    let columns = (0..width)
+        .map(|column| {
+            let first = &arguments[0][column].expression;
+            let nullable = arguments
+                .iter()
+                .any(|row| row[column].expression.nullability.is_nullable());
+            TypedValuesColumn {
+                type_id: first.type_id.clone(),
+                typmod: first.typmod.clone(),
+                nullability: if nullable {
+                    Nullability::nullable(NullabilityEvidence::ValuesPropagation)
+                } else {
+                    Nullability::not_null(NullabilityEvidence::ValuesPropagation)
+                },
+                common_type: CoercionEvidence::CommonType {
+                    resolved: first.type_id.clone(),
+                    inputs: arguments
+                        .iter()
+                        .map(|row| row[column].expression.type_id.clone())
+                        .collect(),
+                },
+            }
+        })
+        .collect();
+    TypedValues::try_new(arguments, columns).unwrap()
 }
 
 fn table_relation(id: u32, table: &str, alias: Option<RelationAlias>) -> TypedRelation {
@@ -1579,9 +1651,14 @@ fn text_coercion() -> TypedCoercion {
         source_type: TypeId::new(BIGINT),
         target_type: TypeId::new(TEXT),
         target_typmod: None,
-        evidence: CoercionEvidence::CatalogCast {
-            cast_id: CastId::new(CAST_TEXT),
-            context: CoercionContext::Explicit,
+        result_nullability: Nullability::nullable(NullabilityEvidence::CastPropagation),
+        evidence: CoercionEvidence::CatalogCastPath {
+            steps: vec![TypedCastStep {
+                cast_id: CastId::new(CAST_TEXT),
+                source_type: TypeId::new(BIGINT),
+                target_type: TypeId::new(TEXT),
+                context: CoercionContext::Explicit,
+            }],
         },
     }
 }

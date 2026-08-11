@@ -534,6 +534,7 @@ impl From<&crate::TypedCte> for SemanticCte {
 struct SemanticProjection {
     field_id: crate::FieldId,
     expression: SemanticExpression,
+    coercion: Option<crate::TypedCoercion>,
 }
 
 impl From<&crate::TypedProjection> for SemanticProjection {
@@ -541,6 +542,7 @@ impl From<&crate::TypedProjection> for SemanticProjection {
         Self {
             field_id: projection.field_id,
             expression: SemanticExpression::from(&projection.expression),
+            coercion: projection.coercion.clone(),
         }
     }
 }
@@ -584,7 +586,8 @@ enum SemanticRelationKind {
         lateral: bool,
     },
     Values {
-        rows: Vec<Vec<SemanticExpression>>,
+        rows: Vec<Vec<SemanticArgument>>,
+        columns: Vec<crate::TypedValuesColumn>,
     },
     SetOperation {
         kind: crate::SetOperationKind,
@@ -630,8 +633,9 @@ impl From<&crate::TypedRelationKind> for SemanticRelationKind {
                 rows: rows
                     .rows()
                     .iter()
-                    .map(|row| row.iter().map(SemanticExpression::from).collect())
+                    .map(|row| row.iter().map(SemanticArgument::from).collect())
                     .collect(),
+                columns: rows.columns().to_vec(),
             },
             crate::TypedRelationKind::SetOperation {
                 kind,
@@ -708,13 +712,14 @@ enum SemanticExpressionKind {
     Case {
         operand: Option<Box<SemanticExpression>>,
         branches: Vec<SemanticCaseBranch>,
-        else_expression: Option<Box<SemanticExpression>>,
+        else_expression: Option<Box<SemanticArgument>>,
+        implicit_else_type: Option<dibs_pg_catalog::TypeId>,
         result_coercion: crate::CoercionEvidence,
     },
     ScalarSubquery(Box<SemanticStatement>),
     Row(Vec<SemanticExpression>),
     Array {
-        elements: Vec<SemanticExpression>,
+        elements: Vec<SemanticArgument>,
         coercion: crate::CoercionEvidence,
     },
     CteColumn {
@@ -793,6 +798,7 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 operand,
                 branches,
                 else_expression,
+                implicit_else_type,
                 result_coercion,
             } => Self::Case {
                 operand: operand
@@ -801,7 +807,8 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 branches: branches.iter().map(SemanticCaseBranch::from).collect(),
                 else_expression: else_expression
                     .as_ref()
-                    .map(|value| Box::new(SemanticExpression::from(value.as_ref()))),
+                    .map(|value| Box::new(SemanticArgument::from(value.as_ref()))),
+                implicit_else_type: implicit_else_type.clone(),
                 result_coercion: result_coercion.clone(),
             },
             crate::TypedExpressionKind::ScalarSubquery(statement) => {
@@ -811,7 +818,7 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 Self::Row(values.iter().map(SemanticExpression::from).collect())
             }
             crate::TypedExpressionKind::Array { elements, coercion } => Self::Array {
-                elements: elements.iter().map(SemanticExpression::from).collect(),
+                elements: elements.iter().map(SemanticArgument::from).collect(),
                 coercion: coercion.clone(),
             },
             crate::TypedExpressionKind::CteColumn { cte_id, field_id } => Self::CteColumn {
@@ -823,16 +830,31 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+struct SemanticArgument {
+    expression: SemanticExpression,
+    coercion: Option<crate::TypedCoercion>,
+}
+
+impl From<&crate::TypedArgument> for SemanticArgument {
+    fn from(argument: &crate::TypedArgument) -> Self {
+        Self {
+            expression: SemanticExpression::from(&argument.expression),
+            coercion: argument.coercion.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 struct SemanticCaseBranch {
     when: SemanticExpression,
-    then: SemanticExpression,
+    then: SemanticArgument,
 }
 
 impl From<&crate::TypedCaseBranch> for SemanticCaseBranch {
     fn from(branch: &crate::TypedCaseBranch) -> Self {
         Self {
             when: SemanticExpression::from(&branch.when),
-            then: SemanticExpression::from(&branch.then),
+            then: SemanticArgument::from(&branch.then),
         }
     }
 }
@@ -886,7 +908,10 @@ impl From<&crate::TypedInsert> for SemanticInsert {
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 #[repr(u8)]
 enum SemanticInsertSource {
-    Values(Vec<Vec<SemanticExpression>>),
+    Values {
+        rows: Vec<Vec<SemanticArgument>>,
+        columns: Vec<crate::TypedValuesColumn>,
+    },
     Select(Box<SemanticStatement>),
     DefaultValues,
 }
@@ -894,12 +919,14 @@ enum SemanticInsertSource {
 impl From<&crate::TypedInsertSource> for SemanticInsertSource {
     fn from(source: &crate::TypedInsertSource) -> Self {
         match source {
-            crate::TypedInsertSource::Values(rows) => Self::Values(
-                rows.rows()
+            crate::TypedInsertSource::Values(values) => Self::Values {
+                rows: values
+                    .rows()
                     .iter()
-                    .map(|row| row.iter().map(SemanticExpression::from).collect())
+                    .map(|row| row.iter().map(SemanticArgument::from).collect())
                     .collect(),
-            ),
+                columns: values.columns().to_vec(),
+            },
             crate::TypedInsertSource::Select(statement) => {
                 Self::Select(Box::new(SemanticStatement::from(statement.as_ref())))
             }

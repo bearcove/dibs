@@ -286,6 +286,8 @@ pub enum NullabilityEvidence {
     },
     /// Set-operation common output propagation.
     SetOperationPropagation,
+    /// VALUES column common-type and nullability propagation.
+    ValuesPropagation,
     /// Mutation `RETURNING` propagation.
     MutationReturning,
 }
@@ -358,6 +360,7 @@ fn positive_non_null_evidence(evidence: &NullabilityEvidence) -> bool {
             | NullabilityEvidence::CastPropagation
             | NullabilityEvidence::CtePropagation { .. }
             | NullabilityEvidence::SetOperationPropagation
+            | NullabilityEvidence::ValuesPropagation
             | NullabilityEvidence::MutationReturning
             | NullabilityEvidence::CallableContract {
                 proves_non_null: true,

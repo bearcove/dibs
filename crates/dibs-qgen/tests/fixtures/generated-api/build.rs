@@ -165,6 +165,7 @@ fn row_query(
                 field_id,
                 sql_label: "widget_id".to_string(),
                 expression: typed_column,
+                coercion: None,
             }],
             from: vec![TypedRelation {
                 id: relation_id,
