@@ -140,29 +140,45 @@ impl Diagnostic {
     }
 }
 
+/// Failure converting typed Dibs diagnostics into a single-source Margin envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarginDiagnosticConversionError {
+    /// A diagnostic referred to a source other than the source supplied to the conversion.
+    MismatchedSourceId {
+        /// Source identity supplied for the envelope.
+        expected: SourceId,
+        /// Source identity carried by the mismatched diagnostic.
+        actual: SourceId,
+    },
+}
+
 /// Converts Dibs syntax diagnostics into Margin's renderer-neutral envelope.
 ///
-/// `source_name` and `source_text` describe the source document referenced by
-/// every diagnostic. Dibs-specific recovery, repair, and cost fields remain on
-/// the input diagnostics and are not replaced by Margin types.
+/// `source_id`, `source_name`, and `source_text` describe the single source
+/// document referenced by every diagnostic. Dibs-specific recovery, repair,
+/// and cost fields remain on the input diagnostics and are not replaced by
+/// Margin types.
 pub fn to_margin_diagnostics<'a>(
+    source_id: SourceId,
     source_name: impl Into<String>,
     source_text: impl Into<String>,
     diagnostics: impl IntoIterator<Item = &'a Diagnostic>,
-) -> margin::Diagnostics {
-    let mut diagnostics = diagnostics.into_iter().peekable();
-    let source_id = diagnostics
-        .peek()
-        .map(|diagnostic| diagnostic.source_id)
-        .unwrap_or_else(SourceId::test);
-    let reports = diagnostics
-        .map(|diagnostic| margin::Report {
+) -> Result<margin::Diagnostics, MarginDiagnosticConversionError> {
+    let mut reports = Vec::new();
+    for diagnostic in diagnostics {
+        if diagnostic.source_id != source_id {
+            return Err(MarginDiagnosticConversionError::MismatchedSourceId {
+                expected: source_id,
+                actual: diagnostic.source_id,
+            });
+        }
+        reports.push(margin::Report {
             code: Some(diagnostic.code.as_str().to_string()),
             severity: margin::Severity::Error,
             title: diagnostic.message.clone(),
             annotations: vec![margin::Annotation {
                 spans: vec![margin::Span {
-                    source_id: margin::SourceId(diagnostic.source_id.to_string()),
+                    source_id: margin::SourceId(source_id.to_string()),
                     start: diagnostic.primary.start as usize,
                     end: diagnostic.primary.end as usize,
                 }],
@@ -181,10 +197,10 @@ pub fn to_margin_diagnostics<'a>(
                 })
                 .collect(),
             sections: Vec::new(),
-        })
-        .collect();
+        });
+    }
 
-    margin::Diagnostics {
+    Ok(margin::Diagnostics {
         sources: vec![margin::Source {
             id: margin::SourceId(source_id.to_string()),
             name: source_name.into(),
@@ -192,13 +208,13 @@ pub fn to_margin_diagnostics<'a>(
             text: source_text.into(),
         }],
         reports,
-    }
+    })
 }
 #[cfg(test)]
 mod tests {
     use margin::{AnnotationRole, NoteKind};
 
-    use super::{Diagnostic, DiagnosticCode, Repair};
+    use super::{Diagnostic, DiagnosticCode, MarginDiagnosticConversionError, Repair};
     use crate::{SourceId, Span};
 
     #[test]
@@ -219,7 +235,9 @@ mod tests {
             hints: vec!["remove the unexpected token".to_string()],
         };
 
-        let rendered = super::to_margin_diagnostics("queries/example.dibs", source, [&diagnostic]);
+        let rendered =
+            super::to_margin_diagnostics(source_id, "queries/example.dibs", source, [&diagnostic])
+                .unwrap();
 
         assert_eq!(diagnostic.repair, Some(Repair::SkipUnexpected));
         assert_eq!(diagnostic.cost, Some(1));
@@ -255,7 +273,9 @@ mod tests {
             hints: Vec::new(),
         };
 
-        let rendered = super::to_margin_diagnostics("query.dibs", "query ", [&diagnostic]);
+        let rendered =
+            super::to_margin_diagnostics(SourceId::test(), "query.dibs", "query ", [&diagnostic])
+                .unwrap();
         let report = &rendered.reports[0];
 
         assert_eq!(report.code.as_deref(), Some("DIBS-SYNTAX-MISSING"));
@@ -265,5 +285,95 @@ mod tests {
         );
         assert_eq!(report.annotations[0].spans[0].start, 6);
         assert_eq!(report.annotations[0].spans[0].end, 6);
+    }
+
+    #[test]
+    fn margin_conversion_renders_multiple_diagnostics_for_one_source() {
+        let source_id = SourceId::new(7);
+        let source = "query Q() -> one { select § }";
+        let start = source.find('§').unwrap() as u32;
+        let unexpected = Diagnostic {
+            code: DiagnosticCode::UnexpectedToken,
+            source_id,
+            primary: Span::new(start, start + '§'.len_utf8() as u32),
+            unexpected: Some("§".to_string()),
+            expected: None,
+            repair: Some(Repair::SkipUnexpected),
+            cost: Some(1),
+            message: "unexpected \"§\"".to_string(),
+            hints: Vec::new(),
+        };
+        let missing = Diagnostic {
+            code: DiagnosticCode::MissingToken,
+            source_id,
+            primary: Span::empty(source.len() as u32),
+            unexpected: None,
+            expected: Some("semicolon".to_string()),
+            repair: Some(Repair::InsertMissing),
+            cost: Some(1),
+            message: "expected semicolon".to_string(),
+            hints: Vec::new(),
+        };
+
+        let diagnostics = super::to_margin_diagnostics(
+            source_id,
+            "queries/example.dibs",
+            source,
+            [&unexpected, &missing],
+        )
+        .unwrap();
+        let rendered = margin_term::render(
+            &diagnostics,
+            margin_term::TerminalCapabilities {
+                width: 72,
+                glyph_mode: margin_term::GlyphMode::Ascii,
+                color_level: margin_term::ColorLevel::None,
+                hyperlink_mode: margin_term::HyperlinkMode::None,
+                tab_width: 4,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(diagnostics.reports.len(), 2);
+        assert!(
+            rendered.contains("error[DIBS-SYNTAX-UNEXPECTED]"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("error[DIBS-SYNTAX-MISSING]"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn margin_conversion_rejects_mismatched_source_ids() {
+        let expected_source_id = SourceId::new(7);
+        let diagnostic = Diagnostic {
+            code: DiagnosticCode::UnexpectedToken,
+            source_id: SourceId::new(8),
+            primary: Span::new(0, 1),
+            unexpected: Some("x".to_string()),
+            expected: None,
+            repair: Some(Repair::SkipUnexpected),
+            cost: Some(1),
+            message: "unexpected \"x\"".to_string(),
+            hints: Vec::new(),
+        };
+
+        let error = super::to_margin_diagnostics(
+            expected_source_id,
+            "queries/example.dibs",
+            "x",
+            [&diagnostic],
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            MarginDiagnosticConversionError::MismatchedSourceId {
+                expected: expected_source_id,
+                actual: diagnostic.source_id,
+            }
+        );
     }
 }

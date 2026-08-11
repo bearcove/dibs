@@ -73,7 +73,9 @@ use snark::{
 };
 
 pub use ast::{ParameterDecl, PgTypeName, QueryDecl, SourceFile, Statement, StatementNode};
-pub use diagnostic::{Diagnostic, DiagnosticCode, Repair, to_margin_diagnostics};
+pub use diagnostic::{
+    Diagnostic, DiagnosticCode, MarginDiagnosticConversionError, Repair, to_margin_diagnostics,
+};
 /// Tree-sitter-style byte edit descriptor for incremental reparsing.
 pub use snark::parser::ParserInputEdit;
 pub use support::{SourceId, Span, Spanned};

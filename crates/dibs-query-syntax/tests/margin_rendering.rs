@@ -5,7 +5,7 @@ use margin_term::{ColorLevel, GlyphMode, HyperlinkMode, TerminalCapabilities, re
 
 #[test]
 fn plaintext_margin_rendering_contains_dibs_diagnostic_context() {
-    let source = "query Café() -> one {\n  select §\n}\n";
+    let source = "query Café() -> one {\n  select 界 §\n}\n";
     let start = source.find('§').unwrap();
     let diagnostic = Diagnostic {
         code: DiagnosticCode::UnexpectedToken,
@@ -18,7 +18,13 @@ fn plaintext_margin_rendering_contains_dibs_diagnostic_context() {
         message: "unexpected \"§\"".to_string(),
         hints: vec!["remove the unexpected token".to_string()],
     };
-    let diagnostics = to_margin_diagnostics("queries/unicode.dibs", source, [&diagnostic]);
+    let diagnostics = to_margin_diagnostics(
+        SourceId::new(42),
+        "queries/unicode.dibs",
+        source,
+        [&diagnostic],
+    )
+    .unwrap();
 
     let rendered = render(
         &diagnostics,
@@ -38,10 +44,10 @@ fn plaintext_margin_rendering_contains_dibs_diagnostic_context() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("--> queries/unicode.dibs:2:10"),
+        rendered.contains("--> queries/unicode.dibs:2:13"),
         "{rendered}"
     );
-    assert!(rendered.contains("2 |   select §"), "{rendered}");
+    assert!(rendered.contains("2 |   select 界 §"), "{rendered}");
     assert!(rendered.contains("unexpected \"§\""), "{rendered}");
     assert!(
         rendered.contains("= help: remove the unexpected token"),
