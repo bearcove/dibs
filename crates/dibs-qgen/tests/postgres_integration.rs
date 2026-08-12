@@ -286,6 +286,167 @@ fn postgres_18_accepts_compiled_correlation_and_lateral_sql() {
 }
 
 #[test]
+fn postgres_18_accepts_compiled_grouping_and_aggregate_sql() {
+    let Some(postgres) = LocalPostgres18::start() else {
+        return;
+    };
+    postgres
+        .psql("create table run (id bigint primary key); insert into run values (1), (2), (3)")
+        .expect("oracle fixture installs");
+    let parser = DibsParser::new();
+    let schema = Schema {
+        tables: IndexMap::from_iter([(String::from("run"), oracle_run_table())]),
+    };
+    let catalog = CatalogSnapshot::from_schema_postgres_18(&schema).expect("oracle catalog");
+    let source = r#"query Grouped() -> many {
+    select id + 1 as bucket, count(*) as run_count
+    from run
+    group by id + 1
+    having count(*) > 0
+    order by id + 1
+}"#;
+    let compiled = compile_query_source(&parser, SourceId::new(140), source, &catalog)
+        .expect("aggregate oracle query compiles");
+    let query = compiled[0]
+        .validate()
+        .expect("aggregate oracle artifact validates");
+    let rendered = render_compiled_sql(query).expect("aggregate oracle SQL renders");
+    assert_eq!(
+        postgres
+            .psql(&rendered.sql)
+            .expect("aggregate oracle SQL executes"),
+        "2|1\n3|1\n4|1"
+    );
+    postgres
+        .psql(&format!(
+            "prepare dibs_aggregate_oracle as {}; deallocate dibs_aggregate_oracle",
+            rendered.sql
+        ))
+        .expect("aggregate oracle SQL prepares");
+}
+
+#[test]
+fn postgres_18_accepts_compiled_window_sql() {
+    let Some(postgres) = LocalPostgres18::start() else {
+        return;
+    };
+    postgres
+        .psql("create table run (id bigint primary key); insert into run values (1), (2), (3)")
+        .expect("oracle fixture installs");
+    let parser = DibsParser::new();
+    let schema = Schema {
+        tables: IndexMap::from_iter([(String::from("run"), oracle_run_table())]),
+    };
+    let catalog = CatalogSnapshot::from_schema_postgres_18(&schema).expect("oracle catalog");
+    let source = r#"query Ranked() -> many {
+    select id, row_number() over ranked as rank
+    from run
+    window ranked as (
+        order by id
+        rows between unbounded preceding and current row
+    )
+    order by id
+}"#;
+    let compiled = compile_query_source(&parser, SourceId::new(141), source, &catalog)
+        .expect("window oracle query compiles");
+    let query = compiled[0]
+        .validate()
+        .expect("window oracle artifact validates");
+    let rendered = render_compiled_sql(query).expect("window oracle SQL renders");
+    assert_eq!(
+        postgres
+            .psql(&rendered.sql)
+            .expect("window oracle SQL executes"),
+        "1|1\n2|2\n3|3"
+    );
+    postgres
+        .psql(&format!(
+            "prepare dibs_window_oracle as {}; deallocate dibs_window_oracle",
+            rendered.sql
+        ))
+        .expect("window oracle SQL prepares");
+}
+
+#[test]
+fn postgres_18_accepts_compiled_set_sql() {
+    let Some(postgres) = LocalPostgres18::start() else {
+        return;
+    };
+    postgres
+        .psql("create table run (id bigint primary key); insert into run values (1), (2), (3)")
+        .expect("oracle fixture installs");
+    let parser = DibsParser::new();
+    let schema = Schema {
+        tables: IndexMap::from_iter([(String::from("run"), oracle_run_table())]),
+    };
+    let catalog = CatalogSnapshot::from_schema_postgres_18(&schema).expect("oracle catalog");
+    let source = r#"query Combined() -> many {
+    select id from run where id < 3
+    union all
+    select id from run where id > 1
+    order by id
+}"#;
+    let compiled = compile_query_source(&parser, SourceId::new(142), source, &catalog)
+        .expect("set oracle query compiles");
+    let query = compiled[0]
+        .validate()
+        .expect("set oracle artifact validates");
+    let rendered = render_compiled_sql(query).expect("set oracle SQL renders");
+    assert_eq!(
+        postgres
+            .psql(&rendered.sql)
+            .expect("set oracle SQL executes"),
+        "1\n2\n2\n3"
+    );
+    postgres
+        .psql(&format!(
+            "prepare dibs_set_oracle as {}; deallocate dibs_set_oracle",
+            rendered.sql
+        ))
+        .expect("set oracle SQL prepares");
+}
+
+#[test]
+fn postgres_18_accepts_compiled_case_and_array_sql() {
+    let Some(postgres) = LocalPostgres18::start() else {
+        return;
+    };
+    postgres
+        .psql("create table run (id bigint primary key); insert into run values (1), (2)")
+        .expect("oracle fixture installs");
+    let parser = DibsParser::new();
+    let schema = Schema {
+        tables: IndexMap::from_iter([(String::from("run"), oracle_run_table())]),
+    };
+    let catalog = CatalogSnapshot::from_schema_postgres_18(&schema).expect("oracle catalog");
+    let source = r#"query Expressions() -> many {
+    select
+        case when id > 1 then id else 0 end as classified,
+        array[id, id + 1] as neighbors
+    from run
+    order by id
+}"#;
+    let compiled = compile_query_source(&parser, SourceId::new(143), source, &catalog)
+        .expect("expression oracle query compiles");
+    let query = compiled[0]
+        .validate()
+        .expect("expression oracle artifact validates");
+    let rendered = render_compiled_sql(query).expect("expression oracle SQL renders");
+    assert_eq!(
+        postgres
+            .psql(&rendered.sql)
+            .expect("expression oracle SQL executes"),
+        "0|{1,2}\n2|{2,3}"
+    );
+    postgres
+        .psql(&format!(
+            "prepare dibs_expression_oracle as {}; deallocate dibs_expression_oracle",
+            rendered.sql
+        ))
+        .expect("expression oracle SQL prepares");
+}
+
+#[test]
 fn postgres_18_rejects_non_lateral_sibling_correlation() {
     let Some(postgres) = LocalPostgres18::start() else {
         return;

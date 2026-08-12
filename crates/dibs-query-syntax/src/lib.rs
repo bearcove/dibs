@@ -69,14 +69,12 @@ pub mod ast {
 
 use scanner::DibsExternalScanner;
 use snark::{
-    grammar::RawGrammarJson,
-    lexical::LexicalFacts,
     lower::weavy::{
-        RecoveringDocument, WeavyParsePlan, WeavyParseSession,
+        RecoveringDocument, WeavyParseSession,
         parse_prepared_weavy_recovering_with_report_and_scanner,
     },
-    parser::{ParseTable, ParserGrammar, ResolvedCstTree},
-    validated::ValidatedGrammar,
+    module::{BorrowedSnarkModule, SnarkModule},
+    parser::ResolvedCstTree,
 };
 
 pub use ast::{Expression, ParameterDecl, PgTypeName, QueryDecl, Relation, SourceFile, Statement};
@@ -115,7 +113,7 @@ impl ResultMode {
     }
 }
 
-const GRAMMAR_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/dibs_query_grammar.json"));
+const PARSER_MODULE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/dibs_query_parser.weavy"));
 
 /// Version of the Dibs source language and PostgreSQL lexical contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,9 +143,7 @@ pub struct ParserFacts {
 
 /// Prepared Dibs query parser artifacts reusable across documents and edits.
 pub struct DibsParser {
-    parser: ParserGrammar,
-    table: ParseTable,
-    plan: WeavyParsePlan,
+    module: BorrowedSnarkModule<'static>,
     language_version: LanguageVersion,
     scanner: DibsExternalScanner,
 }
@@ -161,29 +157,8 @@ impl DibsParser {
     }
 
     fn try_new() -> Result<Self, String> {
-        let raw = RawGrammarJson::from_tree_sitter_json_str(GRAMMAR_JSON)
-            .map_err(|error| error.to_string())?;
-        let validated = ValidatedGrammar::from_raw(&raw).map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: grammar validated");
-        let lexical = LexicalFacts::from_grammar(&validated);
-        let parser = ParserGrammar::normalize_from_validated(&validated, &lexical)
-            .map_err(|error| error.to_string())?
-            .prepare_productions_for_items()
-            .map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: productions prepared");
-        let table = ParseTable::from_grammar(&parser).map_err(|error| error.to_string())?;
-        eprintln!(
-            "dibs parser: table built states={} conflicts={}",
-            table.states().len(),
-            table.conflicts().len()
-        );
-        let plan =
-            WeavyParsePlan::new(&validated, &parser, &table).map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: plan built");
         Ok(Self {
-            parser,
-            table,
-            plan,
+            module: SnarkModule::load_borrowed(PARSER_MODULE).map_err(|error| error.to_string())?,
             language_version: LanguageVersion::POSTGRES_18,
             scanner: DibsExternalScanner,
         })
@@ -198,8 +173,8 @@ impl DibsParser {
     #[must_use]
     pub fn parser_facts(&self) -> ParserFacts {
         ParserFacts {
-            states: self.table.states().len(),
-            conflicts: self.table.conflicts().len(),
+            states: self.module.runtime_state_count(),
+            conflicts: self.module.runtime_conflict_count(),
         }
     }
 
@@ -212,16 +187,12 @@ impl DibsParser {
         source_id: SourceId,
         source: &str,
     ) -> Result<ast::SourceFile, Vec<Diagnostic>> {
-        let report = snark::lower::weavy::parse_prepared_weavy_with_report_and_scanner(
-            &self.plan,
-            &self.parser,
-            &self.table,
-            source,
-            Some(&self.scanner),
-        )
-        .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
+        let report = self
+            .module
+            .parse(source, Some(&self.scanner))
+            .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
         let tree = report
-            .accepted_resolved_cst(&self.parser, source)
+            .accepted_resolved_cst(self.module.parser_grammar(), source)
             .ok_or_else(|| {
                 vec![Diagnostic::parse_failure(
                     source_id,
@@ -239,15 +210,15 @@ impl DibsParser {
         source: &str,
     ) -> Result<RecoveringParse, Vec<Diagnostic>> {
         let report = parse_prepared_weavy_recovering_with_report_and_scanner(
-            &self.plan,
-            &self.parser,
-            &self.table,
+            self.module.plan(),
+            self.module.parser_grammar(),
+            self.module.parse_table(),
             source,
             Some(&self.scanner),
         )
         .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
         let tree = report
-            .accepted_resolved_cst(&self.parser, source)
+            .accepted_resolved_cst(self.module.parser_grammar(), source)
             .ok_or_else(|| {
                 vec![Diagnostic::parse_failure(
                     source_id,
@@ -262,8 +233,12 @@ impl DibsParser {
     pub fn session(&self, source_id: SourceId) -> DibsDocumentSession<'_> {
         DibsDocumentSession {
             source_id,
-            session: WeavyParseSession::new(&self.plan, &self.parser, &self.table)
-                .with_external_scanner(&self.scanner),
+            session: WeavyParseSession::new(
+                self.module.plan(),
+                self.module.parser_grammar(),
+                self.module.parse_table(),
+            )
+            .with_external_scanner(&self.scanner),
         }
     }
 }

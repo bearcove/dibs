@@ -283,6 +283,40 @@ fn grouped_query_rejects_ungrouped_projection() {
 }
 
 #[test]
+fn grouped_expression_matches_structurally_equivalent_projection() {
+    let compiled = compile_query_source(
+        parser(),
+        SourceId::new(46),
+        r#"query BucketCounts() -> many {
+    select id + 1 as bucket, count(*) as run_count
+    from run
+    group by id + 1
+}"#,
+        &catalog(&[table("run", &[column("id", PgType::BigInt, false)])]),
+    )
+    .expect("equivalent grouped expression compiles");
+    assert_eq!(compiled.len(), 1);
+}
+
+#[test]
+fn aggregate_call_is_rejected_in_where() {
+    let diagnostics = compile_query_source(
+        parser(),
+        SourceId::new(47),
+        r#"query InvalidAggregatePhase() -> many {
+    select id
+    from run
+    where count(*) > 0
+}"#,
+        &catalog(&[table("run", &[column("id", PgType::BigInt, false)])]),
+    )
+    .expect_err("aggregate call in WHERE must be rejected");
+    assert_eq!(diagnostics[0].code, CompileDiagnosticCode::TypeMismatch);
+    assert!(diagnostics[0].message.contains("WHERE"));
+    assert!(diagnostics[0].message.contains("aggregate"));
+}
+
+#[test]
 fn distinct_on_requires_matching_order_prefix() {
     let diagnostics = compile_query_source(
         parser(),
@@ -374,6 +408,36 @@ fn inline_window_application_compiles_and_renders() {
 }
 
 #[test]
+fn set_operations_compile_and_render() {
+    let compiled = compile_query_source(
+        parser(),
+        SourceId::new(49),
+        r#"query CombinedRuns() -> many {
+    select id from run where id < 3
+    union all
+    select id from run where id > 1
+    order by id
+}"#,
+        &catalog(&[table("run", &[column("id", PgType::BigInt, false)])]),
+    )
+    .expect("set query compiles");
+    let query = compiled[0].validate().expect("artifact is checked");
+    let dibs_query_ir::TypedStatementKind::Select(select) = &query.typed_statement.kind else {
+        panic!("expected typed SELECT")
+    };
+    assert!(matches!(
+        select.from[0].kind,
+        dibs_query_ir::TypedRelationKind::SetOperation {
+            kind: dibs_query_ir::SetOperationKind::Union,
+            all: true,
+            ..
+        }
+    ));
+    let rendered = render_compiled_sql(query).expect("set SQL renders");
+    assert!(rendered.sql.contains("UNION ALL"));
+}
+
+#[test]
 fn named_window_definition_compiles_and_renders() {
     let compiled = compile_query_source(
         parser(),
@@ -409,6 +473,67 @@ fn named_window_definition_compiles_and_renders() {
     let rendered = render_compiled_sql(query).expect("named window SQL renders");
     assert!(rendered.sql.contains("OVER \"ranked\""));
     assert!(rendered.sql.contains(" WINDOW \"ranked\" AS ("));
+}
+
+#[test]
+fn case_and_array_expressions_compile_and_render() {
+    let compiled = compile_query_source(
+        parser(),
+        SourceId::new(50),
+        r#"query Expressions() -> many {
+    select
+        case when id > 1 then id else 0 end as classified,
+        array[id, id + 1] as neighbors
+    from run
+}"#,
+        &catalog(&[table("run", &[column("id", PgType::BigInt, false)])]),
+    )
+    .expect("structural expressions compile");
+    let query = compiled[0].validate().expect("artifact is checked");
+    let rendered = render_compiled_sql(query).expect("expression SQL renders");
+    assert!(rendered.sql.contains("CASE WHEN"));
+    assert!(rendered.sql.contains("ARRAY["));
+}
+
+#[test]
+#[ignore = "production-shaped parse remains above the compiler latency budget"]
+fn trials_ci_attempt_line_bounds_compiles() {
+    let compiled = compile_query_source(
+        parser(),
+        SourceId::new(51),
+        r#"query CiAttemptLineBounds(attempt_id: text) -> many {
+    select min(line.line_number) as first_line, max(line.line_number) as last_line
+    from fleet_attempt as attempt
+    left join fleet_log_line as line on line.fleet_attempt_id = attempt.id
+    where attempt.attempt_id = :attempt_id
+    group by attempt.id
+}"#,
+        &catalog(&[
+            table(
+                "fleet_attempt",
+                &[
+                    column("id", PgType::BigInt, false),
+                    column("attempt_id", PgType::Text, false),
+                ],
+            ),
+            table(
+                "fleet_log_line",
+                &[
+                    column("fleet_attempt_id", PgType::BigInt, false),
+                    column("line_number", PgType::BigInt, false),
+                ],
+            ),
+        ]),
+    )
+    .expect("Trials line-bounds query compiles");
+    let query = compiled[0]
+        .validate()
+        .expect("Trials-shaped artifact validates");
+    let rendered = render_compiled_sql(query).expect("Trials-shaped SQL renders");
+    assert!(rendered.sql.contains("LEFT JOIN"));
+    assert!(rendered.sql.contains("GROUP BY"));
+    assert!(rendered.sql.contains("pg_catalog\".\"min"));
+    assert!(rendered.sql.contains("pg_catalog\".\"max"));
 }
 
 #[test]

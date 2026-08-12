@@ -28,10 +28,10 @@ facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
 figue = { git = "https://github.com/bearcove/figue", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
 strid = { git = "https://github.com/bearcove/strid-next", rev = "98a76b12c2a65f1a909123ec5a03fcc12d89444b" }
-snark = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-snark-dsl = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-margin = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-margin-term = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
+snark = { git = "https://github.com/bearcove/snark", rev = "21ee409c50f15e669fdbbf45a563ee2ac15b9504" }
+snark-dsl = { git = "https://github.com/bearcove/snark", rev = "21ee409c50f15e669fdbbf45a563ee2ac15b9504" }
+margin = { git = "https://github.com/bearcove/snark", rev = "21ee409c50f15e669fdbbf45a563ee2ac15b9504" }
+margin-term = { git = "https://github.com/bearcove/snark", rev = "21ee409c50f15e669fdbbf45a563ee2ac15b9504" }
 
 facet-styx = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
 styx-embed = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
@@ -79,3 +79,30 @@ testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[patch.crates-io]
+copypatch = { path = "../weavy/copypatch" }
+taxon = { path = "../weavy/taxon" }
+weavy = { path = "../weavy/weavy" }
+weavy-phon = { path = "../weavy/weavy-phon" }
+
+[patch."https://github.com/bearcove/weavy"]
+copypatch = { path = "../weavy/copypatch" }
+taxon = { path = "../weavy/taxon" }
+weavy = { path = "../weavy/weavy" }
+weavy-phon = { path = "../weavy/weavy-phon" }
+
+[profile.dev.package.blake3]
+opt-level = 3
+
+[profile.dev.package.facet-postcard]
+opt-level = 3
+
+[profile.dev.package.facet-format]
+opt-level = 3
+
+[profile.dev.package.facet-reflect]
+opt-level = 3
+
+[profile.dev.package.snark]
+opt-level = 3

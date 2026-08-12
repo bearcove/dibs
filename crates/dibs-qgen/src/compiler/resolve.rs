@@ -2,11 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use dibs_pg_catalog::{CallableId, CatalogSnapshot, OperatorId};
 use dibs_query_ir::{
-    ExpressionId, FieldId, FrameBound, HirCall, HirExpression, HirExpressionKind, HirLiteral,
-    HirNamedWindow, HirOrderBy, HirParameter, HirProjection, HirQuery, HirRelation,
+    ExpressionId, FieldId, FrameBound, HirCall, HirCaseBranch, HirExpression, HirExpressionKind,
+    HirLiteral, HirNamedWindow, HirOrderBy, HirParameter, HirProjection, HirQuery, HirRelation,
     HirRelationKind, HirSelect, HirStatement, HirStatementKind, NullsOrder, ParameterId, QueryId,
-    RelationAlias, RelationId, SelectDistinct, SortDirection, SourceOrigin, StatementId,
-    WindowExclusion, WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
+    RelationAlias, RelationId, SelectDistinct, SetOperationKind, SortDirection, SourceOrigin,
+    StatementId, WindowExclusion, WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
 };
 use dibs_query_syntax::{
     SourceId, SourceSpan, Span, ast,
@@ -206,6 +206,9 @@ impl<'catalog> Resolver<'catalog> {
                 self.source_span(select.span),
                 "row locks and FETCH are outside the ordinary SELECT compiler path",
             )]);
+        }
+        if let ast::SelectSetNode::SetOperation(operation) = select.body.value.clone() {
+            return self.resolve_set_select(select, *operation, parent_scope);
         }
         let ast::SelectSetNode::SelectCore(core) = select.body.value else {
             return Err(vec![CompileDiagnostic::new(
@@ -423,6 +426,145 @@ impl<'catalog> Resolver<'catalog> {
             limit,
             offset,
             locks: Vec::new(),
+        })
+    }
+
+    fn resolve_set_select(
+        &mut self,
+        select: ast::SelectStatement,
+        operation: ast::SetOperation,
+        parent_scope: Option<&SelectScope>,
+    ) -> Result<HirSelect, DiagnosticSet> {
+        let left = self.resolve_set_node(operation.left.value, parent_scope)?;
+        let right = self.resolve_set_node(operation.right.value, parent_scope)?;
+        let left_projections = statement_projections(&left);
+        let relation_id = self.relation_id();
+        let relation_name = format!("__dibs_set_{}", relation_id.get());
+        let origin = self.origin(operation.span);
+        let columns = left_projections
+            .iter()
+            .map(|projection| RelationColumnBinding {
+                name: projection.alias.clone(),
+                field: RelationFieldBinding::Derived(projection.field_id),
+            })
+            .collect::<Vec<_>>();
+        let binding = RelationBinding {
+            id: relation_id,
+            columns,
+            origin: origin.clone(),
+            visible_name: relation_name.clone(),
+        };
+        let mut scope = parent_scope.map_or_else(SelectScope::default, SelectScope::with_parent);
+        scope
+            .insert_relation(binding)
+            .map_err(|diagnostic| vec![diagnostic])?;
+        let projections = left_projections
+            .iter()
+            .map(|projection| HirProjection {
+                field_id: self.field_id(),
+                alias: projection.alias.clone(),
+                alias_origin: projection.alias_origin.clone(),
+                expression: HirExpression {
+                    id: self.expression_id(),
+                    origin: projection.expression.origin.clone(),
+                    kind: HirExpressionKind::DerivedColumn {
+                        binding: relation_id,
+                        field_id: projection.field_id,
+                    },
+                },
+            })
+            .collect::<Vec<_>>();
+        let order_by = select
+            .order_by
+            .as_ref()
+            .map(|clause| {
+                clause
+                    .items
+                    .iter()
+                    .map(|item| self.resolve_order_item(item, &scope))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let limit = select
+            .limit
+            .as_ref()
+            .map(|clause| match &clause.value {
+                ast::LimitValue::Expression(expression) => {
+                    self.resolve_limit_expression(expression, &scope)
+                }
+                ast::LimitValue::AllLiteral(_) => Ok(None),
+            })
+            .transpose()?
+            .flatten();
+        let offset = select
+            .offset
+            .as_ref()
+            .map(|clause| self.resolve_limit_expression(&clause.value, &scope))
+            .transpose()?
+            .flatten();
+        let operator = match operation.operator {
+            ast::SetOperator::Intersect(_) => SetOperationKind::Intersect,
+            ast::SetOperator::UnionOrExcept(operator) => {
+                match operator.value.to_ascii_lowercase().as_str() {
+                    "union" => SetOperationKind::Union,
+                    "except" => SetOperationKind::Except,
+                    _ => unreachable!("grammar restricts set operators"),
+                }
+            }
+        };
+        Ok(HirSelect {
+            recursive: false,
+            ctes: Vec::new(),
+            distinct: SelectDistinct::AllRows,
+            projections,
+            from: vec![HirRelation {
+                id: relation_id,
+                origin,
+                alias: Some(RelationAlias {
+                    name: relation_name,
+                    column_names: Vec::new(),
+                }),
+                kind: HirRelationKind::SetOperation {
+                    kind: operator,
+                    all: operation
+                        .quantifier
+                        .as_ref()
+                        .is_some_and(|value| value.value.eq_ignore_ascii_case("all")),
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            }],
+            predicate: None,
+            group_by: Vec::new(),
+            having: None,
+            windows: Vec::new(),
+            order_by,
+            limit,
+            offset,
+            locks: Vec::new(),
+        })
+    }
+
+    fn resolve_set_node(
+        &mut self,
+        node: ast::SelectSetNode,
+        parent_scope: Option<&SelectScope>,
+    ) -> Result<HirStatement, DiagnosticSet> {
+        let span = select_set_node_span(&node);
+        let select = ast::SelectStatement {
+            span,
+            body: ast::SelectSetExpression { span, value: node },
+            order_by: None,
+            locks: Vec::new(),
+            limit: None,
+            offset: None,
+            fetch: None,
+        };
+        Ok(HirStatement {
+            id: self.statement_id(),
+            origin: self.origin(span),
+            kind: HirStatementKind::Select(Box::new(self.resolve_select(select, parent_scope)?)),
         })
     }
 
@@ -1259,6 +1401,64 @@ impl<'catalog> Resolver<'catalog> {
     ) -> Result<HirExpression, DiagnosticSet> {
         let (span, kind) = match atom {
             AtomExpression::Call(call) => return self.resolve_call(call, scope),
+            AtomExpression::SpecialFormExpression(ast::SpecialFormExpression::Case(case)) => {
+                let operand = case
+                    .operand
+                    .as_ref()
+                    .map(|value| self.resolve_expression(value, scope).map(Box::new))
+                    .transpose()?;
+                let branches = case
+                    .branchs
+                    .iter()
+                    .map(|branch| {
+                        Ok(HirCaseBranch {
+                            when: self.resolve_expression(&branch.when, scope)?,
+                            then: self.resolve_expression(&branch.then, scope)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, DiagnosticSet>>()?;
+                let else_expression = case
+                    .else_expression
+                    .as_ref()
+                    .map(|value| self.resolve_expression(value, scope).map(Box::new))
+                    .transpose()?;
+                return Ok(HirExpression {
+                    id: self.expression_id(),
+                    origin: self.origin(case.span),
+                    kind: HirExpressionKind::Case {
+                        operand,
+                        branches,
+                        else_expression,
+                    },
+                });
+            }
+            AtomExpression::SpecialFormExpression(ast::SpecialFormExpression::Array(array)) => {
+                if array.statement.is_some() {
+                    return self.unsupported_expression(array.span);
+                }
+                let elements = array
+                    .elements
+                    .iter()
+                    .map(|value| self.resolve_expression(value, scope))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(HirExpression {
+                    id: self.expression_id(),
+                    origin: self.origin(array.span),
+                    kind: HirExpressionKind::Array(elements),
+                });
+            }
+            AtomExpression::Row(row) => {
+                let elements = row
+                    .elements
+                    .iter()
+                    .map(|value| self.resolve_expression(value, scope))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(HirExpression {
+                    id: self.expression_id(),
+                    origin: self.origin(row.span),
+                    kind: HirExpressionKind::Row(elements),
+                });
+            }
             AtomExpression::NamedBind(bind) => {
                 let name = bind.value.strip_prefix(':').unwrap_or(&bind.value);
                 let Some(parameter) = self.parameters.get(name) else {
@@ -1487,6 +1687,16 @@ fn decode_standard_string(value: &str) -> String {
         .and_then(|value| value.strip_suffix('\''))
         .unwrap_or(value)
         .replace("''", "'")
+}
+
+fn select_set_node_span(node: &ast::SelectSetNode) -> Span {
+    match node {
+        ast::SelectSetNode::SelectCore(value) => value.span,
+        ast::SelectSetNode::Values(value) => value.span,
+        ast::SelectSetNode::TableQuery(value) => value.span,
+        ast::SelectSetNode::ParenthesizedQuery(value) => value.span,
+        ast::SelectSetNode::SetOperation(value) => value.span,
+    }
 }
 
 fn statement_span(statement: &Statement) -> Span {

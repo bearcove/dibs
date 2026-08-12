@@ -290,6 +290,15 @@ pub enum CheckError {
         /// Inferred subquery cardinality.
         cardinality: Cardinality,
     },
+    /// An aggregate call appears in a clause evaluated before grouping.
+    #[error("{clause} cannot contain aggregate calls")]
+    AggregateInPreGroupClause {
+        /// PostgreSQL clause name.
+        clause: &'static str,
+        /// Exact offending expression origin.
+        origin: SourceOrigin,
+    },
+
     /// Aggregate and nonaggregate projections are mixed without grouping proof.
     #[error("aggregate query contains an ungrouped nonaggregate projection")]
     UngroupedAggregateProjection {

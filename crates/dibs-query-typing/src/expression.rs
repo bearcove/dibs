@@ -1245,10 +1245,130 @@ pub(super) fn expression_same_value(left: &TypedExpression, right: &TypedExpress
                 column_id: right_column,
             },
         ) => left_binding == right_binding && left_column == right_column,
+        (
+            TypedExpressionKind::DerivedColumn {
+                binding: left_binding,
+                field_id: left_field,
+            },
+            TypedExpressionKind::DerivedColumn {
+                binding: right_binding,
+                field_id: right_field,
+            },
+        ) => left_binding == right_binding && left_field == right_field,
+        (
+            TypedExpressionKind::CteColumn {
+                cte_id: left_cte,
+                field_id: left_field,
+            },
+            TypedExpressionKind::CteColumn {
+                cte_id: right_cte,
+                field_id: right_field,
+            },
+        ) => left_cte == right_cte && left_field == right_field,
         (TypedExpressionKind::Parameter(left), TypedExpressionKind::Parameter(right)) => {
             left == right
         }
         (TypedExpressionKind::Literal(left), TypedExpressionKind::Literal(right)) => left == right,
+        (TypedExpressionKind::Call(left), TypedExpressionKind::Call(right)) => {
+            left.callable_id == right.callable_id
+                && left.distinct == right.distinct
+                && left.star == right.star
+                && arguments_same_value(&left.arguments, &right.arguments)
+                && orderings_same_value(&left.order_by, &right.order_by)
+                && optional_expression_same_value(left.filter.as_deref(), right.filter.as_deref())
+                && orderings_same_value(&left.within_group, &right.within_group)
+                && left.over == right.over
+        }
+        (
+            TypedExpressionKind::Operator {
+                operator_id: left_operator,
+                operands: left_operands,
+                ..
+            },
+            TypedExpressionKind::Operator {
+                operator_id: right_operator,
+                operands: right_operands,
+                ..
+            },
+        ) => left_operator == right_operator && arguments_same_value(left_operands, right_operands),
+        (
+            TypedExpressionKind::Cast {
+                cast_id: left_cast,
+                expression: left_expression,
+                coercion: left_coercion,
+            },
+            TypedExpressionKind::Cast {
+                cast_id: right_cast,
+                expression: right_expression,
+                coercion: right_coercion,
+            },
+        ) => {
+            left_cast == right_cast
+                && left_coercion == right_coercion
+                && expression_same_value(left_expression, right_expression)
+        }
+        (
+            TypedExpressionKind::Collate {
+                collation_id: left_collation,
+                expression: left_expression,
+            },
+            TypedExpressionKind::Collate {
+                collation_id: right_collation,
+                expression: right_expression,
+            },
+        ) => {
+            left_collation == right_collation
+                && expression_same_value(left_expression, right_expression)
+        }
+        (TypedExpressionKind::Row(left), TypedExpressionKind::Row(right)) => {
+            expressions_same_value(left, right)
+        }
+        (
+            TypedExpressionKind::Array {
+                elements: left,
+                coercion: left_coercion,
+            },
+            TypedExpressionKind::Array {
+                elements: right,
+                coercion: right_coercion,
+            },
+        ) => left_coercion == right_coercion && arguments_same_value(left, right),
+        _ => false,
+    }
+}
+
+fn expressions_same_value(left: &[TypedExpression], right: &[TypedExpression]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| expression_same_value(left, right))
+}
+
+fn arguments_same_value(left: &[TypedArgument], right: &[TypedArgument]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(left, right)| {
+            left.coercion == right.coercion
+                && expression_same_value(&left.expression, &right.expression)
+        })
+}
+
+fn orderings_same_value(left: &[TypedOrderBy], right: &[TypedOrderBy]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(left, right)| {
+            left.direction == right.direction
+                && left.nulls == right.nulls
+                && expression_same_value(&left.expression, &right.expression)
+        })
+}
+
+fn optional_expression_same_value(
+    left: Option<&TypedExpression>,
+    right: Option<&TypedExpression>,
+) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => expression_same_value(left, right),
+        (None, None) => true,
         _ => false,
     }
 }

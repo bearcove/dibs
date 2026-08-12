@@ -1248,6 +1248,18 @@ impl<'a> Renderer<'a> {
                 ))?
                 .insert(relation.id, fields);
         }
+        if let TypedRelationKind::SetOperation { left, .. } = &relation.kind {
+            let fields = typed_statement_projections(left)
+                .iter()
+                .map(|projection| (projection.field_id, projection.sql_label.clone()))
+                .collect();
+            self.derived_scopes
+                .last_mut()
+                .ok_or(SqlRenderError::InvalidArtifact(
+                    "missing derived relation scope",
+                ))?
+                .insert(relation.id, fields);
+        }
         if let TypedRelationKind::Join { left, right, .. } = &relation.kind {
             self.register_relation_tree(left)?;
             self.register_relation_tree(right)?;

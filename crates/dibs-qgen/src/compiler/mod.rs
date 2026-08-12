@@ -889,6 +889,95 @@ fn collect_expression_references(
             }
         }
         (
+            HirExpressionKind::Case {
+                operand,
+                branches,
+                else_expression,
+            },
+            TypedExpressionKind::Case {
+                operand: typed_operand,
+                branches: typed_branches,
+                else_expression: typed_else,
+                ..
+            },
+        ) if operand.is_some() == typed_operand.is_some()
+            && branches.len() == typed_branches.len()
+            && else_expression.is_some() == typed_else.is_some() =>
+        {
+            if let (Some(operand), Some(typed_operand)) = (operand, typed_operand) {
+                collect_expression_references(
+                    query,
+                    field,
+                    operand,
+                    typed_operand,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+            for (branch, typed_branch) in branches.iter().zip(typed_branches) {
+                collect_expression_references(
+                    query,
+                    field,
+                    &branch.when,
+                    &typed_branch.when,
+                    ReferenceRole::Predicate,
+                    next_id,
+                    references,
+                )?;
+                collect_expression_references(
+                    query,
+                    field,
+                    &branch.then,
+                    &typed_branch.then.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+            if let (Some(value), Some(typed_value)) = (else_expression, typed_else) {
+                collect_expression_references(
+                    query,
+                    field,
+                    value,
+                    &typed_value.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (HirExpressionKind::Row(values), TypedExpressionKind::Row(typed_values))
+            if values.len() == typed_values.len() =>
+        {
+            for (value, typed_value) in values.iter().zip(typed_values) {
+                collect_expression_references(
+                    query,
+                    field,
+                    value,
+                    typed_value,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (HirExpressionKind::Array(values), TypedExpressionKind::Array { elements, .. })
+            if values.len() == elements.len() =>
+        {
+            for (value, typed_value) in values.iter().zip(elements) {
+                collect_expression_references(
+                    query,
+                    field,
+                    value,
+                    &typed_value.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (
             HirExpressionKind::ScalarSubquery(statement),
             TypedExpressionKind::ScalarSubquery(typed_statement),
         ) => {
@@ -1176,6 +1265,7 @@ fn check_diagnostic(
         }
         CheckError::NonBooleanPredicate { origin, .. }
         | CheckError::UnboundedScalarSubquery { origin, .. }
+        | CheckError::AggregateInPreGroupClause { origin, .. }
         | CheckError::UngroupedAggregateProjection { origin }
         | CheckError::DistinctOnOrderMismatch { origin }
         | CheckError::NumericLiteralOutOfRange { origin, .. } => {

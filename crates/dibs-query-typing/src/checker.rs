@@ -238,6 +238,14 @@ impl SemanticChecker<'_> {
         context: &CheckContext<'_>,
     ) -> Result<TypedExpression, CheckError> {
         let typed = self.check_expression(expression, context, Some(&self.types.boolean))?;
+        if matches!(clause, "WHERE" | "JOIN ON")
+            && expression_has_scalar_aggregate(&typed, self.catalog)
+        {
+            return Err(CheckError::AggregateInPreGroupClause {
+                clause,
+                origin: expression.origin.clone(),
+            });
+        }
         if typed.type_id != self.types.boolean {
             return Err(CheckError::NonBooleanPredicate {
                 clause,
