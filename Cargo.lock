@@ -1092,6 +1092,7 @@ dependencies = [
  "facet-testhelpers",
  "indexmap 2.14.0",
  "insta",
+ "tempfile",
  "tokio",
  "tokio-postgres",
  "tracing",

@@ -124,6 +124,7 @@ fn render_checked_surfaces(query: &CompiledQuery) -> Result<RenderedSql, SqlRend
         parameter_positions,
         used_parameters: BTreeSet::new(),
         relation_scopes: Vec::new(),
+        derived_scopes: Vec::new(),
         cte_scopes: Vec::new(),
         target_scopes: Vec::new(),
         conflict_target_depth: 0,
@@ -154,6 +155,7 @@ struct Renderer<'a> {
     parameter_positions: BTreeMap<ParameterId, u32>,
     used_parameters: BTreeSet<ParameterId>,
     relation_scopes: Vec<BTreeMap<RelationId, String>>,
+    derived_scopes: Vec<BTreeMap<RelationId, BTreeMap<dibs_query_ir::FieldId, String>>>,
     cte_scopes: Vec<BTreeMap<CteId, CteRender<'a>>>,
     target_scopes: Vec<BTreeSet<RelationId>>,
     conflict_target_depth: usize,
@@ -248,6 +250,7 @@ impl<'a> Renderer<'a> {
             }
             Ok(())
         })();
+        self.derived_scopes.pop();
         self.relation_scopes.pop();
         self.cte_scopes.pop();
         result
@@ -284,6 +287,7 @@ impl<'a> Renderer<'a> {
                 }
                 self.render_returning(sql, &insert.returning)
             })();
+            self.derived_scopes.pop();
             self.relation_scopes.pop();
             self.target_scopes.pop();
             target_result
@@ -319,6 +323,7 @@ impl<'a> Renderer<'a> {
                 }
                 self.render_returning(sql, &update.returning)
             })();
+            self.derived_scopes.pop();
             self.target_scopes.pop();
             self.relation_scopes.pop();
             target_result
@@ -352,6 +357,7 @@ impl<'a> Renderer<'a> {
                 }
                 self.render_returning(sql, &delete.returning)
             })();
+            self.derived_scopes.pop();
             self.target_scopes.pop();
             self.relation_scopes.pop();
             target_result
@@ -612,6 +618,14 @@ impl<'a> Renderer<'a> {
                 }
                 sql.push('.');
                 self.render_column_name(sql, column_id)
+            }
+            TypedExpressionKind::DerivedColumn { binding, field_id } => {
+                let qualifier = self.relation_qualifier(*binding)?;
+                let output_name = self.derived_output_name(*binding, *field_id)?;
+                quote_identifier(sql, &qualifier);
+                sql.push('.');
+                quote_identifier(sql, &output_name);
+                Ok(())
             }
             TypedExpressionKind::Call(call) => self.render_call(sql, call),
             TypedExpressionKind::Operator {
@@ -1162,6 +1176,7 @@ impl<'a> Renderer<'a> {
 
     fn push_relations(&mut self, relations: &[TypedRelation]) -> Result<(), SqlRenderError> {
         self.relation_scopes.push(BTreeMap::new());
+        self.derived_scopes.push(BTreeMap::new());
         for relation in relations {
             self.register_relation_tree(relation)?;
         }
@@ -1176,6 +1191,7 @@ impl<'a> Renderer<'a> {
             targets.insert(binding);
         }
         self.relation_scopes.push(scope);
+        self.derived_scopes.push(BTreeMap::new());
         self.target_scopes.push(targets);
     }
 
@@ -1207,6 +1223,31 @@ impl<'a> Renderer<'a> {
                 .ok_or(SqlRenderError::InvalidArtifact("missing relation scope"))?
                 .insert(relation.id, qualifier);
         }
+        if let TypedRelationKind::Subquery(statement) = &relation.kind {
+            let projections = typed_statement_projections(statement);
+            let names = relation
+                .alias
+                .as_ref()
+                .filter(|alias| !alias.column_names.is_empty())
+                .map(|alias| alias.column_names.clone())
+                .unwrap_or_else(|| {
+                    projections
+                        .iter()
+                        .map(|projection| projection.sql_label.clone())
+                        .collect()
+                });
+            let fields = projections
+                .iter()
+                .zip(names)
+                .map(|(projection, name)| (projection.field_id, name))
+                .collect();
+            self.derived_scopes
+                .last_mut()
+                .ok_or(SqlRenderError::InvalidArtifact(
+                    "missing derived relation scope",
+                ))?
+                .insert(relation.id, fields);
+        }
         if let TypedRelationKind::Join { left, right, .. } = &relation.kind {
             self.register_relation_tree(left)?;
             self.register_relation_tree(right)?;
@@ -1220,6 +1261,21 @@ impl<'a> Renderer<'a> {
             .rev()
             .find_map(|scope| scope.get(&id).cloned())
             .ok_or(SqlRenderError::UnknownRelation(id))
+    }
+    fn derived_output_name(
+        &self,
+        binding: RelationId,
+        field_id: dibs_query_ir::FieldId,
+    ) -> Result<String, SqlRenderError> {
+        self.derived_scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(&binding))
+            .and_then(|fields| fields.get(&field_id))
+            .cloned()
+            .ok_or(SqlRenderError::InvalidArtifact(
+                "unknown derived relation output",
+            ))
     }
 
     fn is_target_binding(&self, id: RelationId) -> bool {
@@ -1394,6 +1450,15 @@ fn valid_numeric(value: &str) -> bool {
         }
     }
     digits > 0 && (!exponent || exponent_digits > 0)
+}
+
+fn typed_statement_projections(statement: &TypedStatement) -> &[TypedProjection] {
+    match &statement.kind {
+        TypedStatementKind::Select(select) => &select.projections,
+        TypedStatementKind::Insert(insert) => &insert.returning,
+        TypedStatementKind::Update(update) => &update.returning,
+        TypedStatementKind::Delete(delete) => &delete.returning,
+    }
 }
 
 fn valid_typmod(value: &str) -> bool {

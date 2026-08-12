@@ -1,0 +1,14 @@
+query RegisteredFunction(job_id: bigint, state: text) -> many {
+    select retry.intent_id, retry.coalesced
+    from pg_catalog.checks_retry_fleet_job(
+        :job_id,
+        :state,
+        3::bigint,
+        4::bigint,
+        nullif(:state, '')::text::jsonb,
+        6,
+        7
+    ) as retry(intent_id, from_generation, to_generation, epoch, coalesced)
+    order by retry.intent_id
+    for update of retry skip locked
+}

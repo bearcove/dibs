@@ -670,12 +670,12 @@ fn invalid_artifact_facts_fail_closed() {
             qualified_name: vec!["app".into(), "Widget".into()],
         }])
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         render_compiled_sql(&missing_name_query),
         Err(SqlRenderError::InvalidCompiledQuery(
-            dibs_query_ir::CompiledQueryError::MissingCatalogRenderName,
+            dibs_query_ir::CompiledQueryError::MissingCatalogRenderName { .. }
         ))
-    );
+    ));
 
     let duplicate = select_statement(3, vec![projection(1, "x", parameter(3, 1))], vec![]);
     let query = query(duplicate, &[ParameterId::new(1), ParameterId::new(1)]);
@@ -1079,6 +1079,12 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
                 binding: *binding,
                 column_id: column_id.clone(),
             },
+            TypedExpressionKind::DerivedColumn { binding, field_id } => {
+                HirExpressionKind::DerivedColumn {
+                    binding: *binding,
+                    field_id: *field_id,
+                }
+            }
             TypedExpressionKind::Call(call) => {
                 HirExpressionKind::Call(Box::new(dibs_query_ir::HirCall {
                     callable_id: call.callable_id.clone(),

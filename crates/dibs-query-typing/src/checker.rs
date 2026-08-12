@@ -1,4 +1,7 @@
-use crate::expression::{expression_has_scalar_aggregate, expression_is_aggregate_legal};
+use crate::expression::{
+    catalog_volatility, expression_has_scalar_aggregate, expression_is_group_legal,
+    expression_same_value, max_volatility,
+};
 
 use super::*;
 
@@ -48,6 +51,26 @@ impl SemanticChecker<'_> {
             .iter()
             .map(|order| self.check_order_by(order, context))
             .collect::<Result<Vec<_>, _>>()?;
+        if let SelectDistinct::On(expressions) = &distinct {
+            let mut unmatched = expressions.iter().collect::<Vec<_>>();
+            for order in &order_by {
+                let Some(index) = unmatched
+                    .iter()
+                    .position(|distinct| expression_same_value(distinct, &order.expression))
+                else {
+                    break;
+                };
+                unmatched.remove(index);
+                if unmatched.is_empty() {
+                    break;
+                }
+            }
+            if !unmatched.is_empty() {
+                return Err(CheckError::DistinctOnOrderMismatch {
+                    origin: unmatched[0].origin.clone(),
+                });
+            }
+        }
         let (limit, constant_limit) = select
             .limit
             .as_ref()
@@ -67,14 +90,27 @@ impl SemanticChecker<'_> {
                 expression_has_scalar_aggregate(&projection.expression, self.catalog)
             })
             .collect::<Vec<_>>();
-        let scalar_aggregate = if group_by.is_empty() && !aggregate_projections.is_empty() {
+        let aggregate_query = !aggregate_projections.is_empty()
+            || having.as_ref().is_some_and(|expression| {
+                expression_has_scalar_aggregate(expression, self.catalog)
+            });
+        if aggregate_query || !group_by.is_empty() {
             if let Some(projection) = projections.iter().find(|projection| {
-                !expression_is_aggregate_legal(&projection.expression, self.catalog)
+                !expression_is_group_legal(&projection.expression, &group_by, self.catalog)
             }) {
                 return Err(CheckError::UngroupedAggregateProjection {
                     origin: projection.expression.origin.clone(),
                 });
             }
+            if let Some(having) = having.as_ref()
+                && !expression_is_group_legal(having, &group_by, self.catalog)
+            {
+                return Err(CheckError::UngroupedAggregateProjection {
+                    origin: having.origin.clone(),
+                });
+            }
+        }
+        let scalar_aggregate = if group_by.is_empty() && !aggregate_projections.is_empty() {
             Some(aggregate_projections[0])
         } else {
             None
@@ -277,7 +313,8 @@ impl SemanticChecker<'_> {
                 )
             }
             HirRelationKind::Subquery(statement) => {
-                let statement = self.check_statement(statement, context)?;
+                let mut nested = context.clone();
+                let statement = self.check_statement(statement, &mut nested)?;
                 (
                     statement.cardinality.clone(),
                     TypedRelationKind::Subquery(Box::new(statement)),
@@ -425,11 +462,12 @@ impl SemanticChecker<'_> {
                         .iter()
                         .map(|(field_id, expression)| {
                             (
-                                synthetic_field_column(relation.id, *field_id),
+                                RelationField::Derived(*field_id),
                                 BoundColumn {
                                     type_id: expression.type_id.clone(),
                                     typmod: expression.typmod.clone(),
                                     nullable: expression.nullability.is_nullable(),
+                                    volatility: expression.volatility,
                                 },
                             )
                         })
@@ -449,14 +487,15 @@ impl SemanticChecker<'_> {
                         .enumerate()
                         .map(|(index, column)| {
                             (
-                                ColumnId::new(format!(
+                                RelationField::Catalog(ColumnId::new(format!(
                                     "pg18:column:function:{}:{index}",
                                     callable.id
-                                )),
+                                ))),
                                 BoundColumn {
                                     type_id: column.type_id.clone(),
                                     typmod: None,
                                     nullable: column.nullability == CatalogNullability::Nullable,
+                                    volatility: catalog_volatility(callable.volatility),
                                 },
                             )
                         })
@@ -490,14 +529,19 @@ impl SemanticChecker<'_> {
                         .enumerate()
                         .map(|(index, column)| {
                             (
-                                ColumnId::new(format!(
+                                RelationField::Catalog(ColumnId::new(format!(
                                     "pg18:column:values:{}:{index}",
                                     relation.id
-                                )),
+                                ))),
                                 BoundColumn {
                                     type_id: column.type_id.clone(),
                                     typmod: column.typmod.clone(),
                                     nullable: column.nullability.is_nullable(),
+                                    volatility: max_volatility(
+                                        rows.rows()
+                                            .iter()
+                                            .map(|row| row[index].expression.volatility),
+                                    ),
                                 },
                             )
                         })

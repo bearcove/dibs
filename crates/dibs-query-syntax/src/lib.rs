@@ -18,9 +18,7 @@ mod generated_ast {
 
 /// Typed source AST for strict Dibs query compilation.
 pub mod ast {
-    pub use crate::generated_ast::{
-        Expression, PgTypeName, Relation, Statement, TypedAstLowerError,
-    };
+    pub use crate::generated_ast::*;
 
     /// Raw generated source file before public contract normalization.
     pub(crate) type GeneratedSourceFile = crate::generated_ast::SourceFile;

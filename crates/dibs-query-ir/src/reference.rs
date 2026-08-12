@@ -322,7 +322,7 @@ impl LineageGraph {
             let mut adjacency: BTreeMap<LineageNodeId, Vec<LineageNodeId>> = BTreeMap::new();
             for edge in &self.edges {
                 if edge.kind == LineageEdgeKind::DerivedFrom {
-                    adjacency.entry(edge.from).or_default().push(edge.to);
+                    adjacency.entry(edge.to).or_default().push(edge.from);
                 }
             }
             adjacency

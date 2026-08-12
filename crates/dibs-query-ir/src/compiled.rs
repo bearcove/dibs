@@ -222,7 +222,10 @@ pub enum CompiledQueryError {
     /// Typed statement output fields differ from the ordered output contract.
     OutputContractMismatch,
     /// Catalog rendering vocabulary is missing an identity used by typed IR.
-    MissingCatalogRenderName,
+    MissingCatalogRenderName {
+        /// Stable catalog or compiler-owned identity that could not be rendered.
+        id: String,
+    },
     /// Resolved HIR and typed IR do not describe the same statement topology.
     HirTypedMismatch,
     /// Result mode, proof, runtime assertions, and output shape disagree.
@@ -468,17 +471,16 @@ fn validate_catalog_render_names(query: &CompiledQuery) -> Result<(), CompiledQu
     for reference in &query.resolved_references.references {
         collect_reference_target_catalog_identity(&reference.target, &mut required);
     }
-    required
-        .iter()
-        .all(|id| {
-            query
-                .catalog_render_names
-                .entries()
-                .iter()
-                .any(|entry| render_name_has_id(entry, id))
-        })
-        .then_some(())
-        .ok_or(CompiledQueryError::MissingCatalogRenderName)
+    if let Some(id) = required.iter().find(|id| {
+        !query
+            .catalog_render_names
+            .entries()
+            .iter()
+            .any(|entry| render_name_has_id(entry, id))
+    }) {
+        return Err(CompiledQueryError::MissingCatalogRenderName { id: id.clone() });
+    }
+    Ok(())
 }
 
 fn collect_reference_target_catalog_identity(
@@ -492,7 +494,10 @@ fn collect_reference_target_catalog_identity(
         crate::ReferenceTarget::Index(id) => Some(id.as_str()),
         crate::ReferenceTarget::Type(id) => Some(id.as_str()),
         crate::ReferenceTarget::Callable(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Operator(id) => Some(id.as_str()),
+        crate::ReferenceTarget::Operator(id) if !is_structural_syntax_operator(id) => {
+            Some(id.as_str())
+        }
+        crate::ReferenceTarget::Operator(_) => None,
         crate::ReferenceTarget::Collation(id) => Some(id.as_str()),
         crate::ReferenceTarget::Parameter(_)
         | crate::ReferenceTarget::Cast(_)
@@ -726,7 +731,8 @@ fn collect_expression_catalog_identities(
             }
             collect_coercion_evidence_catalog_identities(coercion, output);
         }
-        crate::TypedExpressionKind::CteColumn { .. } => {}
+        crate::TypedExpressionKind::DerivedColumn { .. }
+        | crate::TypedExpressionKind::CteColumn { .. } => {}
     }
 }
 

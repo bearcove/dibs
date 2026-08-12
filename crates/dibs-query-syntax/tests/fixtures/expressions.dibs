@@ -1,0 +1,21 @@
+query ExpressionForms(
+    needle: bytea,
+    value: text?,
+    seconds: integer,
+) -> one {
+    select
+        case when :value is null then coalesce(nullif(:value, ''), 'fallback') else greatest(:value, least('z', :value)) end as result,
+        cast(:value as text)::jsonb as payload,
+        extract(epoch from now() - interval '5 minutes') as age_seconds,
+        position(:needle in E'abc') as byte_position,
+        substring(:value from 2 for 3) as slice,
+        overlay(:value placing 'x' from 2 for 1) as overlaid,
+        make_interval(secs => :seconds) as delay,
+        array[1, 2, 3]::integer[] as numbers,
+        row(1, :value) as pair,
+        exists(select 1 from account where account.name ilike '%x%') as present
+    where :value is distinct from null
+      and 2 = any(array[1, 2, 3])
+      and :value not between 'a' and 'b'
+      and :value in ('x', 'y')
+}

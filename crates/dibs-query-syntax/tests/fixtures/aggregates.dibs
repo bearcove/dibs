@@ -1,0 +1,12 @@
+query AggregateForms() -> one {
+    select
+        count(distinct job.id) filter (where job.finished_at is not null)::bigint as finished_jobs,
+        percentile_cont(0.50) within group (
+            order by extract(epoch from (coalesce(attempt.created_at, now()) - job.ready_at)) * 1000
+        )::bigint as queue_wait_p50_millis,
+        bool_and(job.job_state in ('succeeded', 'failed')) as terminal
+    from fleet_job as job
+    left join fleet_attempt as attempt on attempt.job_id = job.id
+    group by job.run_binding_id
+    having count(*) filter (where job.finished_at is not null) = count(*)
+}

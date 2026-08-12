@@ -1,0 +1,19 @@
+query DistinctTargets() -> many {
+    select distinct job.id, job.name from job
+}
+
+query DistinctWildcard() -> many {
+    select distinct * from job
+}
+
+query DistinctOnTargets() -> many {
+    select distinct on (job.id) job.id, job.name from job
+}
+
+query AllTargets() -> many {
+    select all job.id from job
+}
+
+query QualifiedWildcard() -> many {
+    select job.* from job
+}

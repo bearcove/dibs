@@ -1,0 +1,34 @@
+query InsertForms(id: bigint, name: text, payload: text?) -> optional {
+    insert into account as account(id, name, payload)
+    values (:id, :name, nullif(:payload, '')::text::jsonb),
+           (:id + 1, :name || '-copy', default)
+    on conflict (id) where id > 0 do update
+    set name = excluded.name,
+        payload = greatest(account.payload, excluded.payload)
+    where account.name is distinct from excluded.name
+    returning account.id, account.name as saved_name, account.payload
+}
+
+query InsertSelect(owner: text) -> many {
+    insert into archived_job(id, owner)
+    select job.id, :owner
+    from fleet_job as job
+    where job.owner = :owner
+    on conflict on constraint archived_job_pkey do nothing
+    returning *
+}
+
+query UpdateForms(owner: text) -> many {
+    update fleet_job as job
+    set state = 'processing', attempts = attempts + 1
+    from account as account
+    where account.id = job.account_id and account.owner = :owner
+    returning job.*, account.name as account_name
+}
+
+query DeleteForms(owner: text) -> many {
+    delete from fleet_job as job
+    using account as account
+    where account.id = job.account_id and account.owner = :owner
+    returning job.id, job.state
+}

@@ -447,6 +447,13 @@ pub struct TypedRelation {
 }
 
 impl TypedRelation {
+    /// Returns whether this typed relation preserves the exact resolved HIR topology.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn corresponds_to_hir(&self, hir: &HirRelation) -> bool {
+        typed_relation_corresponds(self, hir)
+    }
+
     fn validate(&self) -> Result<(), TypedShapeError> {
         self.cardinality
             .validate()
@@ -603,6 +610,7 @@ impl TypedExpression {
             TypedExpressionKind::Literal(_)
             | TypedExpressionKind::Parameter(_)
             | TypedExpressionKind::Column { .. }
+            | TypedExpressionKind::DerivedColumn { .. }
             | TypedExpressionKind::CteColumn { .. } => Ok(()),
             TypedExpressionKind::Call(call) => call.validate(),
             TypedExpressionKind::Operator { operands, .. } => validate_arguments(operands),
@@ -701,6 +709,13 @@ pub enum TypedExpressionKind {
         binding: RelationId,
         /// Stable column identity.
         column_id: ColumnId,
+    },
+    /// Typed output field projected by a derived relation.
+    DerivedColumn {
+        /// Derived relation binding.
+        binding: RelationId,
+        /// Projected field identity.
+        field_id: FieldId,
     },
     /// Typed function call with aggregate and window modifiers.
     Call(Box<TypedCall>),
@@ -1645,6 +1660,16 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
                     column_id: hir_column,
                 },
             ) => typed_binding == hir_binding && typed_column == hir_column,
+            (
+                TypedExpressionKind::DerivedColumn {
+                    binding: typed_binding,
+                    field_id: typed_field,
+                },
+                HirExpressionKind::DerivedColumn {
+                    binding: hir_binding,
+                    field_id: hir_field,
+                },
+            ) => typed_binding == hir_binding && typed_field == hir_field,
             (TypedExpressionKind::Call(typed), HirExpressionKind::Call(hir)) => {
                 typed_call_corresponds(typed, hir)
             }

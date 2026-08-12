@@ -1052,8 +1052,13 @@ impl CatalogSnapshot {
         for (left, right, result) in NUMERIC_PLUS {
             self.add_operator("+", left, right, result)?;
         }
-        self.add_operator("=", "bigint", "bigint", "boolean")?;
+        for (left, right, _) in NUMERIC_PLUS {
+            for operator in ["=", "<>", "<", ">", "<=", ">="] {
+                self.add_operator(operator, left, right, "boolean")?;
+            }
+        }
         self.add_operator("=", "text", "text", "boolean")?;
+        self.add_operator("=", "boolean", "boolean", "boolean")?;
         self.add_operator("||", "text", "text", "text")?;
         self.add_operator("@>", "jsonb", "jsonb", "boolean")?;
         Ok(())
