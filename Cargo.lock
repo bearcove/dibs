@@ -4290,7 +4290,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 [[package]]
 name = "strid"
 version = "11.0.0-rc.5"
-source = "git+https://github.com/bearcove/strid-next?rev=98a76b12c2a65f1a909123ec5a03fcc12d89444b#98a76b12c2a65f1a909123ec5a03fcc12d89444b"
+source = "git+https://github.com/bearcove/strid?rev=c48464a22b6511b0119be92ea2c86c1f61e06153#c48464a22b6511b0119be92ea2c86c1f61e06153"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "strid-macros",
@@ -4299,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "strid-macros"
 version = "11.0.0-rc.4"
-source = "git+https://github.com/bearcove/strid-next?rev=98a76b12c2a65f1a909123ec5a03fcc12d89444b#98a76b12c2a65f1a909123ec5a03fcc12d89444b"
+source = "git+https://github.com/bearcove/strid?rev=c48464a22b6511b0119be92ea2c86c1f61e06153#c48464a22b6511b0119be92ea2c86c1f61e06153"
 dependencies = [
  "proc-macro2",
  "quote",
