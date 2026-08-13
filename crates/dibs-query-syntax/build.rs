@@ -19,16 +19,31 @@ fn main() -> ExitCode {
         language_name: "Dibs query",
     };
 
-    match generate_typed_ast(&config) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("dibs-query-syntax AST generation failed: {error}");
-            let mut source = std::error::Error::source(&error);
-            while let Some(cause) = source {
-                eprintln!("caused by: {cause}");
-                source = cause.source();
-            }
-            ExitCode::FAILURE
+    if let Err(error) = generate_typed_ast(&config) {
+        eprintln!("dibs-query-syntax AST generation failed: {error}");
+        let mut source = std::error::Error::source(&error);
+        while let Some(cause) = source {
+            eprintln!("caused by: {cause}");
+            source = cause.source();
         }
+        return ExitCode::FAILURE;
     }
+
+    let grammar_json = std::fs::read_to_string(out_dir.join("dibs_query_grammar.json"))
+        .unwrap_or_else(|error| panic!("read generated Dibs grammar: {error}"));
+    let bytes = match snark::module::SnarkModule::compile_grammar_json(&grammar_json)
+        .and_then(|module| module.save())
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("dibs-query-syntax parser module generation failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = std::fs::write(out_dir.join("dibs_query_parser.weavy"), bytes) {
+        eprintln!("dibs-query-syntax parser module write failed: {error}");
+        return ExitCode::FAILURE;
+    }
+
+    ExitCode::SUCCESS
 }

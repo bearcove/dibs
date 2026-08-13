@@ -10,7 +10,10 @@ impl ExternalScannerHost for DibsExternalScanner {
         &self,
         request: ExternalScanRequest<'_>,
     ) -> Result<Option<ExternalScanResult>, ParserExecutionError> {
-        if request.external_symbol().name() != Some("_dollar_quoted_literal") {
+        if request
+            .external_name()
+            .is_some_and(|name| name != "_dollar_quoted_literal")
+        {
             return Ok(None);
         }
         Ok(

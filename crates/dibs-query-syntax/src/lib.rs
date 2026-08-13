@@ -68,16 +68,7 @@ pub mod ast {
 }
 
 use scanner::DibsExternalScanner;
-use snark::{
-    grammar::RawGrammarJson,
-    lexical::LexicalFacts,
-    lower::weavy::{
-        RecoveringDocument, WeavyParsePlan, WeavyParseSession,
-        parse_prepared_weavy_recovering_with_report_and_scanner,
-    },
-    parser::{ParseTable, ParserGrammar, ResolvedCstTree},
-    validated::ValidatedGrammar,
-};
+use snark::parser::{ParserGrammar, ResolvedCstTree};
 
 pub use ast::{Expression, ParameterDecl, PgTypeName, QueryDecl, Relation, SourceFile, Statement};
 pub use diagnostic::{
@@ -115,8 +106,6 @@ impl ResultMode {
     }
 }
 
-const GRAMMAR_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/dibs_query_grammar.json"));
-
 /// Version of the Dibs source language and PostgreSQL lexical contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanguageVersion {
@@ -145,48 +134,23 @@ pub struct ParserFacts {
 
 /// Prepared Dibs query parser artifacts reusable across documents and edits.
 pub struct DibsParser {
-    parser: ParserGrammar,
-    table: ParseTable,
-    plan: WeavyParsePlan,
+    module: snark::module::BorrowedSnarkModule<'static>,
     language_version: LanguageVersion,
     scanner: DibsExternalScanner,
 }
 
 impl DibsParser {
-    /// Builds and prepares the embedded Dibs query grammar.
+    /// Loads the embedded precompiled Dibs parser module.
     #[must_use]
     pub fn new() -> Self {
-        Self::try_new()
-            .unwrap_or_else(|error| panic!("invalid embedded Dibs query grammar: {error}"))
-    }
-
-    fn try_new() -> Result<Self, String> {
-        let raw = RawGrammarJson::from_tree_sitter_json_str(GRAMMAR_JSON)
-            .map_err(|error| error.to_string())?;
-        let validated = ValidatedGrammar::from_raw(&raw).map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: grammar validated");
-        let lexical = LexicalFacts::from_grammar(&validated);
-        let parser = ParserGrammar::normalize_from_validated(&validated, &lexical)
-            .map_err(|error| error.to_string())?
-            .prepare_productions_for_items()
-            .map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: productions prepared");
-        let table = ParseTable::from_grammar(&parser).map_err(|error| error.to_string())?;
-        eprintln!(
-            "dibs parser: table built states={} conflicts={}",
-            table.states().len(),
-            table.conflicts().len()
-        );
-        let plan =
-            WeavyParsePlan::new(&validated, &parser, &table).map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: plan built");
-        Ok(Self {
-            parser,
-            table,
-            plan,
+        const MODULE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/dibs_query_parser.weavy"));
+        let module = snark::module::SnarkModule::load_borrowed(MODULE)
+            .unwrap_or_else(|error| panic!("invalid embedded Dibs parser module: {error}"));
+        Self {
+            module,
             language_version: LanguageVersion::POSTGRES_18,
             scanner: DibsExternalScanner,
-        })
+        }
     }
 
     /// Returns the language and PostgreSQL lexical version prepared by this parser.
@@ -198,30 +162,23 @@ impl DibsParser {
     #[must_use]
     pub fn parser_facts(&self) -> ParserFacts {
         ParserFacts {
-            states: self.table.states().len(),
-            conflicts: self.table.conflicts().len(),
+            states: self.module.runtime_state_count(),
+            conflicts: self.module.runtime_conflict_count(),
         }
     }
 
     /// Strictly parses and lowers one source document.
-    ///
-    /// Recovery/error/missing facts are rejected before the fallible generated
-    /// AST lowering API is called.
     pub fn parse_strict(
         &self,
         source_id: SourceId,
         source: &str,
     ) -> Result<ast::SourceFile, Vec<Diagnostic>> {
-        let report = snark::lower::weavy::parse_prepared_weavy_with_report_and_scanner(
-            &self.plan,
-            &self.parser,
-            &self.table,
-            source,
-            Some(&self.scanner),
-        )
-        .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
+        let report = self
+            .module
+            .parse(source, Some(&self.scanner))
+            .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
         let tree = report
-            .accepted_resolved_cst(&self.parser, source)
+            .accepted_resolved_cst(self.module.parser_grammar(), source)
             .ok_or_else(|| {
                 vec![Diagnostic::parse_failure(
                     source_id,
@@ -229,7 +186,7 @@ impl DibsParser {
                     "accepted parse did not produce a resolved CST".to_owned(),
                 )]
             })?;
-        strict_lower(source_id, &tree)
+        strict_lower(source_id, source, &tree)
     }
 
     /// Parses one source document with skip-invalid recovery.
@@ -238,16 +195,12 @@ impl DibsParser {
         source_id: SourceId,
         source: &str,
     ) -> Result<RecoveringParse, Vec<Diagnostic>> {
-        let report = parse_prepared_weavy_recovering_with_report_and_scanner(
-            &self.plan,
-            &self.parser,
-            &self.table,
-            source,
-            Some(&self.scanner),
-        )
-        .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
+        let report = self
+            .module
+            .parse_recovering(source, Some(&self.scanner))
+            .map_err(|error| vec![Diagnostic::parse_error(source_id, source.len(), &error)])?;
         let tree = report
-            .accepted_resolved_cst(&self.parser, source)
+            .accepted_resolved_cst(self.module.parser_grammar(), source)
             .ok_or_else(|| {
                 vec![Diagnostic::parse_failure(
                     source_id,
@@ -262,8 +215,9 @@ impl DibsParser {
     pub fn session(&self, source_id: SourceId) -> DibsDocumentSession<'_> {
         DibsDocumentSession {
             source_id,
-            session: WeavyParseSession::new(&self.plan, &self.parser, &self.table)
-                .with_external_scanner(&self.scanner),
+            parser: self.module.parser_grammar(),
+            session: self.module.session().with_external_scanner(&self.scanner),
+            last_input_len: 0,
         }
     }
 }
@@ -276,6 +230,7 @@ impl Default for DibsParser {
 
 fn strict_lower(
     source_id: SourceId,
+    source: &str,
     tree: &ResolvedCstTree,
 ) -> Result<ast::SourceFile, Vec<Diagnostic>> {
     if tree.contains_error() {
@@ -294,23 +249,22 @@ fn strict_lower(
     };
     let generated = generated_ast::try_lower_source_file(&root)
         .map_err(|error| vec![Diagnostic::lowering(source_id, error)])?;
-    lower_public_ast(source_id, tree, generated)
+    lower_public_ast(source_id, source, tree, generated)
 }
 
 fn lower_public_ast(
     source_id: SourceId,
-    tree: &ResolvedCstTree,
+    source: &str,
+    _tree: &ResolvedCstTree,
     generated: ast::GeneratedSourceFile,
 ) -> Result<ast::SourceFile, Vec<Diagnostic>> {
-    let binds_by_query = tree
-        .root()
-        .map(|root| {
-            root.children()
-                .filter(|child| child.kind() == "query_decl")
-                .map(collect_query_binds)
-                .collect::<Vec<_>>()
+    let binds_by_query = generated
+        .queries
+        .iter()
+        .map(|query| {
+            collect_query_binds(source, query.span.start as usize, query.span.end as usize)
         })
-        .unwrap_or_default();
+        .collect::<Vec<_>>();
     generated
         .queries
         .into_iter()
@@ -378,7 +332,9 @@ impl RecoveringParse {
 /// Persistent recovering parser session for an edited Dibs query document.
 pub struct DibsDocumentSession<'a> {
     source_id: SourceId,
-    session: WeavyParseSession<'a>,
+    parser: &'a ParserGrammar,
+    session: snark::module::BorrowedSnarkSession<'a>,
+    last_input_len: usize,
 }
 
 impl DibsDocumentSession<'_> {
@@ -387,17 +343,19 @@ impl DibsDocumentSession<'_> {
         &mut self,
         source: impl Into<String>,
     ) -> Result<RecoveringParse, Vec<Diagnostic>> {
-        let document = self
+        let source = source.into();
+        self.last_input_len = source.len();
+        let report = self
             .session
-            .parse_recovering_document(source)
+            .parse_recovering(source.clone())
             .map_err(|error| {
                 vec![Diagnostic::parse_error(
                     self.source_id,
-                    self.session.last_input().map_or(0, str::len),
+                    self.last_input_len,
                     &error,
                 )]
             })?;
-        Ok(self.recovering_parse(document))
+        recovering_parse(self.source_id, self.parser, report, &source)
     }
 
     /// Reparses a localized edit against the installed source baseline.
@@ -406,22 +364,38 @@ impl DibsDocumentSession<'_> {
         edit: ParserInputEdit,
         source: impl Into<String>,
     ) -> Result<RecoveringParse, Vec<Diagnostic>> {
-        let document = self
+        let source = source.into();
+        self.last_input_len = source.len();
+        let report = self
             .session
-            .reparse_recovering_document(edit, source)
+            .reparse_recovering(edit, source.clone())
             .map_err(|error| {
                 vec![Diagnostic::parse_error(
                     self.source_id,
-                    self.session.last_input().map_or(0, str::len),
+                    self.last_input_len,
                     &error,
                 )]
             })?;
-        Ok(self.recovering_parse(document))
+        recovering_parse(self.source_id, self.parser, report, &source)
     }
+}
 
-    fn recovering_parse(&self, document: RecoveringDocument) -> RecoveringParse {
-        RecoveringParse::new(self.source_id, document.tree)
-    }
+fn recovering_parse(
+    source_id: SourceId,
+    parser: &ParserGrammar,
+    report: &snark::lower::weavy::WeavyParseReport,
+    source: &str,
+) -> Result<RecoveringParse, Vec<Diagnostic>> {
+    report
+        .accepted_resolved_cst(parser, source)
+        .map(|tree| RecoveringParse::new(source_id, tree))
+        .ok_or_else(|| {
+            vec![Diagnostic::parse_failure(
+                source_id,
+                source.len(),
+                "recovering parse did not produce a resolved CST".to_owned(),
+            )]
+        })
 }
 
 impl ast::QueryDecl {
@@ -431,27 +405,169 @@ impl ast::QueryDecl {
     }
 }
 
-fn collect_query_binds(node: snark::parser::ResolvedCstTreeNode<'_>) -> Vec<Spanned<String>> {
+fn is_postgresql_identifier_continue(character: char) -> bool {
+    matches!(character, '\u{200C}' | '\u{200D}')
+}
+fn collect_query_binds(source: &str, start: usize, end: usize) -> Vec<Spanned<String>> {
+    let body_start = source[start..end]
+        .find("->")
+        .map(|offset| start + offset + 2)
+        .and_then(|offset| {
+            source[offset..end]
+                .find('{')
+                .map(|brace| offset + brace + 1)
+        })
+        .unwrap_or(start);
+    collect_named_binds(source, body_start, end)
+}
+
+fn collect_named_binds(source: &str, start: usize, end: usize) -> Vec<Spanned<String>> {
+    let bytes = source.as_bytes();
     let mut binds = Vec::new();
-    collect_bind_descendants(node, &mut binds);
-    binds.sort_by_key(|bind| bind.span.start);
+    let mut index = start;
+    let mut dollar_delimiter: Option<Vec<u8>> = None;
+    while index < end {
+        if let Some(delimiter) = dollar_delimiter.as_deref() {
+            if bytes[index..end].starts_with(delimiter) {
+                index += delimiter.len();
+                dollar_delimiter = None;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        match bytes[index] {
+            b'-' if index + 1 < end && bytes[index + 1] == b'-' => {
+                index += 2;
+                while index < end && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if index + 1 < end && bytes[index + 1] == b'*' => {
+                index += 2;
+                let mut depth = 1usize;
+                while index < end && depth > 0 {
+                    if index + 1 < end && bytes[index] == b'/' && bytes[index + 1] == b'*' {
+                        depth += 1;
+                        index += 2;
+                    } else if index + 1 < end && bytes[index] == b'*' && bytes[index + 1] == b'/' {
+                        depth -= 1;
+                        index += 2;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'\'' => {
+                index += 1;
+                while index < end {
+                    if bytes[index] == b'\'' {
+                        if index + 1 < end && bytes[index + 1] == b'\'' {
+                            index += 2;
+                        } else {
+                            index += 1;
+                            break;
+                        }
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'"' => {
+                index += 1;
+                while index < end {
+                    if bytes[index] == b'"' {
+                        if index + 1 < end && bytes[index + 1] == b'"' {
+                            index += 2;
+                        } else {
+                            index += 1;
+                            break;
+                        }
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'$' => {
+                let mut delimiter_end = index + 1;
+                while delimiter_end < end
+                    && (bytes[delimiter_end].is_ascii_alphanumeric()
+                        || bytes[delimiter_end] == b'_')
+                {
+                    delimiter_end += 1;
+                }
+                if delimiter_end < end && bytes[delimiter_end] == b'$' {
+                    delimiter_end += 1;
+                    dollar_delimiter = Some(bytes[index..delimiter_end].to_vec());
+                    index = delimiter_end;
+                } else {
+                    index += 1;
+                }
+            }
+            b':' if index + 1 < end
+                && bytes[index + 1] != b':'
+                && (index == start || bytes[index - 1] != b':') =>
+            {
+                let bind_start = index;
+                index += 1;
+                if index < end
+                    && source[index..end]
+                        .chars()
+                        .next()
+                        .is_some_and(|character| character == '_' || character.is_alphabetic())
+                {
+                    index += source[index..end]
+                        .chars()
+                        .next()
+                        .expect("character")
+                        .len_utf8();
+                    while index < end {
+                        let Some(character) = source[index..end].chars().next() else {
+                            break;
+                        };
+                        if character == '_'
+                            || character == '$'
+                            || character.is_alphanumeric()
+                            || is_postgresql_identifier_continue(character)
+                        {
+                            index += character.len_utf8();
+                        } else {
+                            break;
+                        }
+                    }
+                    binds.push(Spanned {
+                        span: Span::new(bind_start as u32, index as u32),
+                        value: source[bind_start..index].to_owned(),
+                    });
+                }
+            }
+            _ => index += 1,
+        }
+    }
     binds
 }
 
-fn collect_bind_descendants(
-    node: snark::parser::ResolvedCstTreeNode<'_>,
-    output: &mut Vec<Spanned<String>>,
-) {
-    if node.kind() == "named_bind"
-        && let Some(value) = node.text()
-    {
-        let bytes = node.bytes();
-        output.push(Spanned {
-            value: value.to_owned(),
-            span: Span::new(bytes.start().get(), bytes.end().get()),
-        });
+#[cfg(test)]
+mod tests {
+    use super::collect_named_binds;
+
+    #[test]
+    fn named_bind_scan_skips_quotes_dollar_quotes_and_casts() {
+        let source = "select ':x', $$:x$$, :x::text, /* :block /* :nested */ */ 1 -- :line\n";
+        assert_eq!(
+            collect_named_binds(source, 0, source.len())
+                .into_iter()
+                .map(|bind| bind.value)
+                .collect::<Vec<_>>(),
+            [":x"]
+        );
     }
-    for child in node.children() {
-        collect_bind_descendants(child, output);
+
+    #[test]
+    fn named_bind_scan_accepts_postgresql_unicode_identifiers() {
+        let source = "select :étiquette";
+        let binds = collect_named_binds(source, 0, source.len());
+        assert_eq!(binds.len(), 1);
+        assert_eq!(binds[0].value, ":étiquette");
     }
 }

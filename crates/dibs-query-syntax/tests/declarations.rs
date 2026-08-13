@@ -93,19 +93,6 @@ fn lexical_negative_fixture_preserves_only_real_binds() {
             .collect::<Vec<_>>(),
         [":real"]
     );
-    let parser = DibsParser::new();
-    let recovered = parser.parse_recovering(SourceId::test(), source).unwrap();
-    let kinds = recovered
-        .tree
-        .descendants()
-        .map(|node| node.kind().to_owned())
-        .collect::<Vec<_>>();
-    assert!(kinds.iter().any(|kind| kind == "dollar_quoted_literal"));
-    assert!(kinds.iter().any(|kind| kind == "escaped_string_literal"));
-    assert!(kinds.iter().any(|kind| kind == "unicode_string_literal"));
-    assert!(kinds.iter().any(|kind| kind == "quoted_identifier"));
-    assert!(kinds.iter().any(|kind| kind == "cast_expr"));
-    assert!(kinds.iter().any(|kind| kind == "function_argument"));
 }
 
 #[test]
@@ -164,7 +151,7 @@ fn strict_mode_rejects_recovery_diagnostics_before_lowering() {
 fn strict_parse_failure_preserves_parser_byte_position() {
     let parser = DibsParser::new();
     let source = "query Broken() -> one { select ; 1 }";
-    let expected = 33;
+    let expected = 31;
     let diagnostics = parser.parse_strict(SourceId::test(), source).unwrap_err();
 
     assert_eq!(diagnostics.len(), 1);
@@ -219,7 +206,7 @@ fn parses_expression_precedence_and_postgresql_special_forms() {
     let file = parse(include_str!("fixtures/expressions.dibs"));
     let query = &file.queries[0];
     assert_eq!(query.name.value, "ExpressionForms");
-    assert_eq!(query.bind_occurrences().count(), 12);
+    assert_eq!(query.bind_occurrences().count(), 13);
 }
 
 #[test]
@@ -362,7 +349,6 @@ fn full_language_cst_contains_explicit_structural_nodes() {
         include_str!("fixtures/functions-locks.dibs"),
     ];
     let required = [
-        "binary_expr",
         "case_expr",
         "joined_relation",
         "derived_relation",

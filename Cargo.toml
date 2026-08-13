@@ -28,10 +28,10 @@ facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
 figue = { git = "https://github.com/bearcove/figue", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
 strid = { git = "https://github.com/bearcove/strid", rev = "c48464a22b6511b0119be92ea2c86c1f61e06153" }
-snark = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-snark-dsl = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-margin = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-margin-term = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
+snark = { git = "https://github.com/bearcove/snark", rev = "a2619b5" }
+snark-dsl = { git = "https://github.com/bearcove/snark", rev = "a2619b5" }
+margin = { git = "https://github.com/bearcove/snark", rev = "a2619b5" }
+margin-term = { git = "https://github.com/bearcove/snark", rev = "a2619b5" }
 
 facet-styx = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
 styx-embed = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
@@ -79,3 +79,51 @@ testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[patch.crates-io]
+copypatch = { path = "../weavy/copypatch" }
+taxon = { path = "../weavy/taxon" }
+weavy = { path = "../weavy/weavy" }
+weavy-phon = { path = "../weavy/weavy-phon" }
+
+[patch."https://github.com/bearcove/weavy"]
+copypatch = { path = "../weavy/copypatch" }
+taxon = { path = "../weavy/taxon" }
+weavy = { path = "../weavy/weavy" }
+weavy-phon = { path = "../weavy/weavy-phon" }
+
+[profile.test]
+opt-level = 3
+
+[profile.dev.package.snark]
+opt-level = 3
+
+[profile.dev.package.weavy]
+opt-level = 3
+
+[profile.dev.package.weavy-phon]
+opt-level = 3
+
+[profile.dev.package.taxon]
+opt-level = 3
+
+[profile.dev.package.phon]
+opt-level = 3
+
+[profile.dev.package.phon-engine]
+opt-level = 3
+
+[profile.dev.package.phon-ir]
+opt-level = 3
+
+[profile.dev.package.phon-jit]
+opt-level = 3
+
+[profile.dev.package.phon-schema]
+opt-level = 3
+
+[profile.dev.package.phon-storage]
+opt-level = 3
+
+[profile.dev.package.copypatch]
+opt-level = 3

@@ -18,3 +18,4 @@ margin-term.workspace = true
 
 [build-dependencies]
 snark-dsl = { workspace = true, features = ["typed-ast"] }
+snark.workspace = true
