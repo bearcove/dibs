@@ -9,12 +9,9 @@
 //!
 //! Note: Requires Docker to be running.
 
-use std::process::{Child, Command, Stdio};
-
 use dibs_pg_catalog::CatalogSnapshot;
 use dibs_qgen::{compile_query_source, render_compiled_sql};
 use dibs_query_syntax::{DibsParser, SourceId};
-use tempfile::TempDir;
 
 use camino::Utf8Path;
 use dibs_db_schema::{Column, ForeignKey, PgType, Schema, SourceLocation, Table};
@@ -151,155 +148,145 @@ async fn setup_postgres() -> (Container, Client) {
     (container, client)
 }
 
-struct LocalPostgres18 {
-    _data: TempDir,
-    socket: TempDir,
-    child: Child,
-}
-
-impl LocalPostgres18 {
-    fn start() -> Option<Self> {
-        let initdb = Command::new("initdb").arg("--version").output().ok()?;
-        if !String::from_utf8_lossy(&initdb.stdout).contains("18.") {
-            return None;
-        }
-        let data = tempfile::tempdir().expect("temporary PostgreSQL data directory");
-        let socket = tempfile::tempdir().expect("temporary PostgreSQL socket directory");
-        let status = Command::new("initdb")
-            .args([
-                "-D",
-                data.path().to_str().unwrap(),
-                "-A",
-                "trust",
-                "-U",
-                "postgres",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .expect("initdb starts");
-        assert!(status.success(), "PostgreSQL 18 initdb succeeds");
-        let child = Command::new("postgres")
-            .args([
-                "-D",
-                data.path().to_str().unwrap(),
-                "-k",
-                socket.path().to_str().unwrap(),
-                "-h",
-                "",
-                "-F",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("PostgreSQL 18 starts");
-        let server = Self {
-            _data: data,
-            socket,
-            child,
-        };
-        for _ in 0..100 {
-            if server.psql("select 1").is_ok() {
-                return Some(server);
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        panic!("PostgreSQL 18 did not become ready");
-    }
-
-    fn psql(&self, sql: &str) -> Result<String, String> {
-        let output = Command::new("psql")
-            .args([
-                "-h",
-                self.socket.path().to_str().unwrap(),
-                "-U",
-                "postgres",
-                "-d",
-                "postgres",
-                "-Atqc",
-                sql,
-            ])
-            .output()
-            .map_err(|error| error.to_string())?;
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-        } else {
-            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-        }
-    }
-}
-
-impl Drop for LocalPostgres18 {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-#[test]
-fn postgres_18_accepts_compiled_correlation_and_lateral_sql() {
-    let Some(postgres) = LocalPostgres18::start() else {
-        return;
-    };
-    postgres
-        .psql("create table run (id bigint primary key); insert into run values (1), (2)")
+#[tokio::test]
+async fn postgres_18_accepts_compiled_full_language_sql() {
+    let (_container, client) = setup_postgres().await;
+    client
+        .batch_execute(
+            "create table run (id bigint primary key); insert into run values (1), (2), (3)",
+        )
+        .await
         .expect("oracle fixture installs");
+
     let parser = DibsParser::new();
     let schema = Schema {
         tables: IndexMap::from_iter([(String::from("run"), oracle_run_table())]),
     };
     let catalog = CatalogSnapshot::from_schema_postgres_18(&schema).expect("oracle catalog");
     let cases = [
-        r#"query Correlated() -> many {
+        (
+            "correlated subquery",
+            r#"query Correlated() -> many {
     select (select source.id as value limit 1) as copied_id
     from run as source
+    order by source.id
 }"#,
-        r#"query Lateral() -> many {
+            "1\n2\n3",
+        ),
+        (
+            "cross join lateral",
+            r#"query Lateral() -> many {
     select recent.run_id
     from run as source cross join lateral (
         select source.id as run_id
     ) as recent
+    order by source.id
 }"#,
-        r#"query OptionalLateral() -> many {
+            "1\n2\n3",
+        ),
+        (
+            "left join lateral",
+            r#"query OptionalLateral() -> many {
     select recent.run_id
     from run as source left join lateral (
         select source.id as run_id
     ) as recent on true
+    order by source.id
 }"#,
+            "1\n2\n3",
+        ),
+        (
+            "grouping",
+            r#"query Grouped() -> many {
+    select id + 1 as bucket, count(*) as run_count
+    from run
+    group by id + 1
+    having count(*) > 0
+    order by id + 1
+}"#,
+            "2|1\n3|1\n4|1",
+        ),
+        (
+            "window",
+            r#"query Ranked() -> many {
+    select id, row_number() over ranked as rank
+    from run
+    window ranked as (
+        order by id
+        rows between unbounded preceding and current row
+    )
+    order by id
+}"#,
+            "1|1\n2|2\n3|3",
+        ),
+        (
+            "set",
+            r#"query Combined() -> many {
+    select id from run where id < 3
+    union all
+    select id from run where id > 1
+    order by id
+}"#,
+            "1\n2\n2\n3",
+        ),
+        (
+            "expressions",
+            r#"query Expressions() -> many {
+    select
+        case when id > 1 then id else 0 end as classified,
+        array[id, id + 1] as neighbors
+    from run
+    where id < 3
+    order by id
+}"#,
+            "0|{1,2}\n2|{2,3}",
+        ),
     ];
-    for (index, source) in cases.into_iter().enumerate() {
+
+    for (index, (name, source, expected)) in cases.into_iter().enumerate() {
         let compiled =
-            compile_query_source(&parser, SourceId::new(100 + index as u32), source, &catalog)
-                .expect("oracle query compiles");
-        let query = compiled[0].validate().expect("oracle artifact validates");
-        let rendered = render_compiled_sql(query).expect("oracle SQL renders");
-        assert_eq!(
-            postgres.psql(&rendered.sql).expect("oracle SQL executes"),
-            "1\n2"
-        );
-        let prepare = format!(
-            "prepare dibs_oracle_{index} as {}; deallocate dibs_oracle_{index}",
-            rendered.sql
-        );
-        postgres.psql(&prepare).expect("oracle SQL prepares");
+            compile_query_source(&parser, SourceId::new(140 + index as u32), source, &catalog)
+                .unwrap_or_else(|error| panic!("{name} oracle query compiles: {error:?}"));
+        let query = compiled[0]
+            .validate()
+            .unwrap_or_else(|error| panic!("{name} oracle artifact validates: {error}"));
+        let rendered = render_compiled_sql(query)
+            .unwrap_or_else(|error| panic!("{name} oracle SQL renders: {error}"));
+        let rows = client
+            .query(&rendered.sql, &[])
+            .await
+            .unwrap_or_else(|error| panic!("{name} oracle SQL executes: {error}"));
+        let actual = rows
+            .iter()
+            .map(|row| {
+                (0..row.len())
+                    .map(|column| postgres_cell_text(row, column))
+                    .collect::<Vec<_>>()
+                    .join("|")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(actual, expected, "{name} oracle result");
     }
 }
 
-#[test]
-fn postgres_18_rejects_non_lateral_sibling_correlation() {
-    let Some(postgres) = LocalPostgres18::start() else {
-        return;
-    };
-    postgres
-        .psql("create table run (id bigint primary key)")
-        .expect("oracle fixture installs");
-    let error = postgres
-        .psql("select recent.run_id from run as source, (select source.id as run_id) as recent")
-        .expect_err("PostgreSQL rejects non-LATERAL sibling correlation");
-    assert!(
-        error.contains("invalid reference") || error.contains("cannot be referenced"),
-        "unexpected PostgreSQL diagnostic: {error}"
-    );
+fn postgres_cell_text(row: &Row, column: usize) -> String {
+    let ty = row.columns()[column].type_();
+    if *ty == tokio_postgres::types::Type::INT8 {
+        row.get::<_, i64>(column).to_string()
+    } else if *ty == tokio_postgres::types::Type::INT8_ARRAY {
+        let values = row.get::<_, Vec<i64>>(column);
+        format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    } else {
+        panic!("unsupported oracle result type {ty}")
+    }
 }
 
 fn oracle_run_table() -> Table {
