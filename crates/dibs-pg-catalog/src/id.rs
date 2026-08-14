@@ -52,6 +52,10 @@ string_id!(TypeId, "Stable logical PostgreSQL type identity.");
 string_id!(CallableId, "Stable logical function identity.");
 string_id!(OperatorId, "Stable logical operator identity.");
 string_id!(CastId, "Stable logical cast identity.");
+string_id!(
+    IoCoercionId,
+    "Stable logical PostgreSQL explicit input/output coercion identity."
+);
 string_id!(CollationId, "Stable logical collation identity.");
 string_id!(PgCodecId, "PostgreSQL storage codec identity.");
 string_id!(WireCodecId, "Client wire codec identity.");

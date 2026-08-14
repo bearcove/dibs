@@ -41,10 +41,7 @@ module.exports = grammar({
   externals: ($) => [$._dollar_quoted_literal],
   word: ($) => $.identifier,
 
-  conflicts: ($) => [
-    [$._expr, $.qualified_name],
-    [$.relation_primary, $.joined_relation],
-  ],
+  conflicts: () => [],
 
   rules: {
     source_file: ($) => repeat(field("query", $.query_decl)),
@@ -73,7 +70,7 @@ module.exports = grammar({
 
     pg_type_name: ($) => seq(
       optional(seq(field("schema", $.declaration_identifier), ".")),
-      field("name", $.declaration_identifier),
+      field("name", $.type_name_atom),
       optional(field("typmod", $.type_modifier)),
       repeat(field("array", $.array_suffix)),
     ),
@@ -371,8 +368,21 @@ module.exports = grammar({
     sort_direction: () => choice(kw("asc"), kw("desc")),
     fetch_policy: () => choice(kw("only"), seq(kw("with"), kw("ties"))),
     is_test: ($) => choice(
-      kw("null"), kw("true"), kw("false"), kw("unknown"), kw("document"),
-      seq(kw("normalized"), optional(field("form", $.normal_form))),
+      $.is_null_test,
+      $.is_true_test,
+      $.is_false_test,
+      $.is_unknown_test,
+      $.is_document_test,
+      $.is_normalized_test,
+    ),
+    is_null_test: () => kw("null"),
+    is_true_test: () => kw("true"),
+    is_false_test: () => kw("false"),
+    is_unknown_test: () => kw("unknown"),
+    is_document_test: () => kw("document"),
+    is_normalized_test: ($) => seq(
+      kw("normalized"),
+      optional(field("form", $.normal_form)),
     ),
     pattern_operator: () => choice(kw("like"), kw("ilike"), kw("similar")),
     comparison_quantifier: () => choice(kw("any"), kw("some"), kw("all")),
@@ -641,13 +651,10 @@ module.exports = grammar({
     collate_suffix: ($) => field("collation", $.collate_clause),
     collate_clause: ($) => seq(kw("collate"), field("name", $.qualified_name)),
     window_suffix: ($) => seq(kw("over"), field("window", choice($.declaration_identifier, $.window_specification))),
-    indirection: ($) => choice(
-      seq("[", choice(
-        seq(field("lower", $._expr), optional(seq(":", optional(field("upper", $._expr))))),
-        seq(":", optional(field("upper", $._expr))),
-      ), "]"),
-      prec.dynamic(-1, seq(".", field("name", $.declaration_identifier))),
-    ),
+    indirection: ($) => seq("[", choice(
+      seq(field("lower", $._expr), optional(seq(":", optional(field("upper", $._expr))))),
+      seq(":", optional(field("upper", $._expr))),
+    ), "]"),
 
 
     cast_expr: ($) => prec(PREC.atom + 1, seq(
@@ -699,7 +706,7 @@ module.exports = grammar({
       kw("century"), kw("day"), kw("decade"), kw("dow"), kw("doy"), kw("epoch"), kw("hour"), kw("isodow"), kw("isoyear"), kw("julian"), kw("microseconds"), kw("millennium"), kw("milliseconds"), kw("minute"), kw("month"), kw("quarter"), kw("second"), kw("timezone"), kw("timezone_hour"), kw("timezone_minute"), kw("week"), kw("year"),
     ),
 
-    position_expr: ($) => seq(kw("position"), "(", field("substring", $._b_expr), kw("in"), field("string", $._b_expr), ")"),
+    position_expr: ($) => seq($.position_keyword, "(", field("substring", $._b_expr), kw("in"), field("string", $._b_expr), ")"),
     substring_expr: ($) => seq(
       kw("substring"), "(", field("string", $._expr),
       choice(
@@ -766,7 +773,24 @@ module.exports = grammar({
     string_literal: () => token(seq("'", repeat(choice("''", /[^']+/)), "'")),
     dollar_quoted_literal: ($) => $._dollar_quoted_literal,
 
-    declaration_identifier: ($) => choice($.identifier, $.quoted_identifier),
+    declaration_identifier: ($) => choice(
+      $.identifier,
+      $.quoted_identifier,
+      alias($.position_keyword, $.identifier),
+    ),
+    position_keyword: () => token(prec(1, /[pP][oO][sS][iI][tT][iI][oO][nN]\b/)),
+    type_name_atom: ($) => choice(
+      $.declaration_identifier,
+      $.multiword_type_name,
+    ),
+
+    multiword_type_name: () => token(prec(1, choice(
+      /[dD][oO][uU][bB][lL][eE]\s+[pP][rR][eE][cC][iI][sS][iI][oO][nN]\b/,
+      /[tT][iI][mM][eE]\s+[wW][iI][tT][hH][oO][uU][tT]\s+[tT][iI][mM][eE]\s+[zZ][oO][nN][eE]\b/,
+      /[tT][iI][mM][eE][sS][tT][aA][mM][pP]\s+[wW][iI][tT][hH][oO][uU][tT]\s+[tT][iI][mM][eE]\s+[zZ][oO][nN][eE]\b/,
+      /[tT][iI][mM][eE][sS][tT][aA][mM][pP]\s+[wW][iI][tT][hH]\s+[tT][iI][mM][eE]\s+[zZ][oO][nN][eE]\b/,
+    ))),
+
     identifier: () => /[A-Za-z_\u0080-\u{10FFFF}][A-Za-z0-9_$\u0080-\u{10FFFF}]*/u,
     quoted_identifier: () => token(seq('"', repeat(choice('""', /[^"\u0000]+/)), '"')),
 

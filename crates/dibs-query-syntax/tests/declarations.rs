@@ -275,6 +275,104 @@ fn window_fixture_cst_contains_all_frame_exclusion_kinds() {
 }
 
 #[test]
+fn position_keyword_is_a_column_name_or_special_form_by_context() {
+    let file = parse(
+        "query PositionForms() -> many { select position, position('x' in value) from sample }",
+    );
+    assert_eq!(file.queries.len(), 1);
+}
+
+#[test]
+fn parses_multi_join_queue_query_under_branch_limit() {
+    let file = parse(
+        r#"query ListQueued(limit: bigint) -> many {
+    select job.id, job.job_spec::text as job_spec, binding.binding::text as binding
+    from fleet_job as job
+    join run_binding as binding on binding.id = job.run_binding_id
+    join fleet_run_graph as graph
+      on graph.run_binding_id = job.run_binding_id
+     and graph.dependency_generation = job.state_generation
+    join aggregate_publication as publication
+      on publication.run_binding_id = job.run_binding_id
+     and publication.dependency_generation = graph.dependency_generation
+    where job.job_state = 'queued'
+      and job.next_submission_at <= now()
+    order by job.next_submission_at, job.created_at, job.id
+    limit :limit
+}"#,
+    );
+    assert_eq!(file.queries.len(), 1);
+}
+
+#[test]
+fn isolates_queue_query_branch_growth() {
+    let bodies = [
+        ("base", "select job.id from fleet_job as job"),
+        (
+            "one_join",
+            "select job.id from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id",
+        ),
+        (
+            "two_joins",
+            "select job.id from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id join fleet_run_graph as graph on graph.run_binding_id = job.run_binding_id",
+        ),
+        (
+            "compound_join",
+            "select job.id from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id join fleet_run_graph as graph on graph.run_binding_id = job.run_binding_id and graph.dependency_generation = job.state_generation",
+        ),
+        (
+            "three_joins",
+            "select job.id from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id join fleet_run_graph as graph on graph.run_binding_id = job.run_binding_id and graph.dependency_generation = job.state_generation join aggregate_publication as publication on publication.run_binding_id = job.run_binding_id and publication.dependency_generation = graph.dependency_generation",
+        ),
+        (
+            "predicate",
+            "select job.id from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id join fleet_run_graph as graph on graph.run_binding_id = job.run_binding_id and graph.dependency_generation = job.state_generation join aggregate_publication as publication on publication.run_binding_id = job.run_binding_id and publication.dependency_generation = graph.dependency_generation where job.job_state = 'queued' and job.next_submission_at <= now()",
+        ),
+        (
+            "ordering",
+            "select job.id from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id join fleet_run_graph as graph on graph.run_binding_id = job.run_binding_id and graph.dependency_generation = job.state_generation join aggregate_publication as publication on publication.run_binding_id = job.run_binding_id and publication.dependency_generation = graph.dependency_generation where job.job_state = 'queued' and job.next_submission_at <= now() order by job.next_submission_at, job.created_at, job.id",
+        ),
+        (
+            "limit",
+            "select job.id from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id join fleet_run_graph as graph on graph.run_binding_id = job.run_binding_id and graph.dependency_generation = job.state_generation join aggregate_publication as publication on publication.run_binding_id = job.run_binding_id and publication.dependency_generation = graph.dependency_generation where job.job_state = 'queued' and job.next_submission_at <= now() order by job.next_submission_at, job.created_at, job.id limit :limit",
+        ),
+    ];
+    for (name, body) in bodies {
+        let source = format!("query ListQueued(limit: bigint) -> many {{ {body} }}");
+        parser()
+            .parse_strict(SourceId::test(), &source)
+            .unwrap_or_else(|diagnostics| panic!("{name}: {diagnostics:#?}"));
+    }
+}
+
+#[test]
+fn isolates_queue_projection_branch_growth() {
+    let from = "from fleet_job as job join run_binding as binding on binding.id = job.run_binding_id join fleet_run_graph as graph on graph.run_binding_id = job.run_binding_id and graph.dependency_generation = job.state_generation join aggregate_publication as publication on publication.run_binding_id = job.run_binding_id and publication.dependency_generation = graph.dependency_generation where job.job_state = 'queued' and job.next_submission_at <= now() order by job.next_submission_at, job.created_at, job.id limit :limit";
+    let projections = [
+        "job.id",
+        "job.id, job.job_spec::text",
+        "job.id, job.job_spec::text as job_spec",
+        "job.id, job.job_spec::text as job_spec, binding.binding::text",
+        "job.id, job.job_spec::text as job_spec, binding.binding::text as binding",
+        "job.id, job.run_binding_id, job.job_id, job.job_spec::text as job_spec, binding.binding::text as binding, job.current_attempt_epoch, job.state_generation, job.submission_attempts",
+    ];
+    for (index, projection) in projections.into_iter().enumerate() {
+        let source =
+            format!("query ListQueued(limit: bigint) -> many {{ select {projection} {from} }}");
+        parser()
+            .parse_strict(SourceId::test(), &source)
+            .unwrap_or_else(|diagnostics| panic!("projection case {index}: {diagnostics:#?}"));
+    }
+}
+#[test]
+fn parses_chained_cast_to_multiword_builtin_type() {
+    let file =
+        parse("query Delay(seconds: bigint) -> one { select :seconds::bigint::double precision }");
+    let ast = format!("{:#?}", file.queries[0].statement);
+    assert!(ast.contains("double precision"), "{ast}");
+}
+
+#[test]
 fn parses_set_operations_attached_order_limit_offset_and_values() {
     let file = parse(include_str!("fixtures/sets-values.dibs"));
     assert_eq!(file.queries[0].name.value, "SetAndValues");

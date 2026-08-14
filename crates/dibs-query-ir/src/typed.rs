@@ -3,13 +3,13 @@ use dibs_pg_catalog::{
 };
 
 use crate::{
-    AssignmentId, Cardinality, CteId, CteMaterialization, ExpressionId, FieldId, FrameBound,
-    HirAssignment, HirCall, HirCaseBranch, HirConflictAction, HirConflictClause, HirConflictTarget,
-    HirCte, HirDelete, HirExpression, HirExpressionKind, HirInsert, HirInsertSource, HirLiteral,
-    HirLockClause, HirNamedWindow, HirOrderBy, HirProjection, HirRelation, HirRelationKind,
-    HirSelect, HirStatement, HirStatementKind, HirUpdate, Nullability, NullabilityEvidence,
-    OrderBy, ParameterId, RelationAlias, RelationId, SelectDistinct, SourceOrigin, StatementId,
-    WindowFrame, WindowReference, WindowSpec,
+    AssignmentId, Cardinality, ComparisonQuantifier, CteId, CteMaterialization, ExpressionId,
+    ExtractField, FieldId, FrameBound, HirAssignment, HirCall, HirCaseBranch, HirConflictAction,
+    HirConflictClause, HirConflictTarget, HirCte, HirDelete, HirExpression, HirExpressionKind,
+    HirInsert, HirInsertSource, HirLiteral, HirLockClause, HirNamedWindow, HirOrderBy,
+    HirProjection, HirRelation, HirRelationKind, HirSelect, HirStatement, HirStatementKind,
+    HirUpdate, Nullability, NullabilityEvidence, OrderBy, ParameterId, RelationAlias, RelationId,
+    SelectDistinct, SourceOrigin, StatementId, WindowFrame, WindowReference, WindowSpec,
 };
 
 /// PostgreSQL typmod retained as canonical semantic spelling.
@@ -77,6 +77,17 @@ pub enum CoercionEvidence {
     UnknownLiteral {
         /// Final resolved type.
         resolved: TypeId,
+    },
+    /// Explicit conversion through PostgreSQL target type input/output functions.
+    ExplicitIo {
+        /// PostgreSQL major version owning this conversion contract.
+        postgres_major: u16,
+        /// Stable registered I/O coercion identity.
+        coercion_id: dibs_pg_catalog::IoCoercionId,
+        /// Exact source type.
+        source: TypeId,
+        /// Exact target type.
+        target: TypeId,
     },
     /// PostgreSQL common-type selection for CASE/VALUES/set/array forms.
     CommonType {
@@ -150,6 +161,18 @@ impl TypedCoercion {
                 Ok(())
             }
             CoercionEvidence::UnknownLiteral { resolved } if resolved == &self.target_type => {
+                Ok(())
+            }
+            CoercionEvidence::ExplicitIo {
+                coercion_id,
+                postgres_major,
+                source,
+                target,
+            } if source == &self.source_type
+                && target == &self.target_type
+                && coercion_id
+                    == &dibs_pg_catalog::io_coercion_id(*postgres_major, source, target) =>
+            {
                 Ok(())
             }
             CoercionEvidence::Polymorphic { bound_types, .. }
@@ -310,6 +333,8 @@ impl TypedSelect {
 pub struct TypedCte {
     /// Revision-local CTE identity.
     pub id: CteId,
+    /// Whether this CTE is self-recursive within a `WITH RECURSIVE` list.
+    pub recursive: bool,
     /// Authored CTE render name.
     name: String,
     /// Materialization policy.
@@ -326,6 +351,7 @@ impl TypedCte {
     /// Creates a CTE after checking output field identity and arity.
     pub fn try_new(
         id: CteId,
+        recursive: bool,
         name: String,
         materialization: CteMaterialization,
         statement: Box<TypedStatement>,
@@ -334,6 +360,7 @@ impl TypedCte {
     ) -> Result<Self, TypedShapeError> {
         let value = Self {
             id,
+            recursive,
             name,
             materialization,
             statement,
@@ -612,8 +639,64 @@ impl TypedExpression {
             | TypedExpressionKind::Column { .. }
             | TypedExpressionKind::DerivedColumn { .. }
             | TypedExpressionKind::CteColumn { .. } => Ok(()),
+            TypedExpressionKind::Extract { source, .. } => source.validate(),
+            TypedExpressionKind::Position {
+                substring,
+                string,
+                input_type,
+            } => {
+                // Compiled Dibs IR is pinned to PostgreSQL 18 catalog identities.
+                if self.type_id.as_str() != "pg18:type:base:pg_catalog.integer"
+                    || self.typmod.is_some()
+                    || !matches!(
+                        input_type.as_str(),
+                        "pg18:type:base:pg_catalog.text" | "pg18:type:base:pg_catalog.bytea"
+                    )
+                {
+                    return Err(TypedShapeError::Expression);
+                }
+                validate_argument(substring, Some(input_type))?;
+                validate_argument(string, Some(input_type))
+            }
+            TypedExpressionKind::NullIf {
+                authored_operator_id,
+                operator_id,
+                left,
+                right,
+            } => {
+                validate_argument(left, None)?;
+                validate_argument(right, None)?;
+                if authored_operator_id.as_str() != "unresolved:operator:pg_catalog.="
+                    || !operator_id
+                        .as_str()
+                        .starts_with("pg18:operator:pg_catalog.=(")
+                    || self.type_id != *argument_output_type(left)
+                    || self.typmod.as_ref() != argument_output_typmod(left)
+                    || !self.nullability.is_nullable()
+                {
+                    return Err(TypedShapeError::Expression);
+                }
+                Ok(())
+            }
             TypedExpressionKind::Call(call) => call.validate(),
             TypedExpressionKind::Operator { operands, .. } => validate_arguments(operands),
+            TypedExpressionKind::QuantifiedComparison { left, right, .. } => {
+                validate_argument(left, None)?;
+                validate_argument(right, None)
+            }
+            TypedExpressionKind::InList {
+                expression,
+                values,
+                coercion,
+                ..
+            } => {
+                let target_type = common_type_target(coercion)?;
+                validate_argument(expression, Some(target_type))?;
+                for value in values {
+                    validate_argument(value, Some(target_type))?;
+                }
+                Ok(())
+            }
             TypedExpressionKind::Cast {
                 expression,
                 coercion,
@@ -622,7 +705,15 @@ impl TypedExpression {
                 expression.validate()?;
                 validate_use_site_coercion(expression, Some(coercion), Some(&self.type_id))
             }
+            TypedExpressionKind::ExplicitCast {
+                expression,
+                coercion,
+            } => {
+                expression.validate()?;
+                validate_use_site_coercion(expression, coercion.as_ref(), Some(&self.type_id))
+            }
             TypedExpressionKind::Collate { expression, .. } => expression.validate(),
+            TypedExpressionKind::Exists(statement) => statement.validate(),
             TypedExpressionKind::Case {
                 operand,
                 branches,
@@ -669,6 +760,32 @@ impl TypedExpression {
                         ),
                 )
             }
+            TypedExpressionKind::Coalesce {
+                arguments,
+                coercion,
+            } => {
+                if arguments.is_empty() {
+                    return Err(TypedShapeError::Coercion);
+                }
+                for argument in arguments {
+                    validate_argument(argument, Some(&self.type_id))?;
+                }
+                validate_common_type_evidence(
+                    coercion,
+                    &self.type_id,
+                    arguments
+                        .iter()
+                        .map(|argument| &argument.expression.type_id),
+                )
+            }
+            TypedExpressionKind::Greatest {
+                arguments,
+                coercion,
+            }
+            | TypedExpressionKind::Least {
+                arguments,
+                coercion,
+            } => validate_common_type_arguments(arguments, coercion, &self.type_id),
             TypedExpressionKind::ScalarSubquery(statement) => statement.validate(),
             TypedExpressionKind::Row(values) => {
                 for value in values {
@@ -728,6 +845,30 @@ pub enum TypedExpressionKind {
         /// Paired typed operands and their optional coercions.
         operands: Vec<TypedArgument>,
     },
+    /// Typed scalar comparison quantified over an array expression.
+    QuantifiedComparison {
+        /// Authored operator identity retained for HIR correspondence.
+        authored_operator_id: OperatorId,
+        /// Stable selected catalog operator identity.
+        operator_id: OperatorId,
+        /// Scalar left operand and its use-site coercion.
+        left: Box<TypedArgument>,
+        /// Array-valued right operand and its use-site coercion.
+        right: Box<TypedArgument>,
+        /// PostgreSQL comparison quantifier.
+        quantifier: ComparisonQuantifier,
+    },
+    /// Typed `[NOT] IN` value-list predicate.
+    InList {
+        /// Scalar expression and its common-type coercion.
+        expression: Box<TypedArgument>,
+        /// Values in authored order with common-type coercions.
+        values: Vec<TypedArgument>,
+        /// Whether the predicate was authored as `NOT IN`.
+        negated: bool,
+        /// Common comparison-type selection proof.
+        coercion: CoercionEvidence,
+    },
     /// Explicit typed cast.
     Cast {
         /// Stable cast identity.
@@ -737,6 +878,13 @@ pub enum TypedExpressionKind {
         /// Cast proof.
         coercion: TypedCoercion,
     },
+    /// Authored explicit cast resolved after typing its source expression.
+    ExplicitCast {
+        /// Typed source expression.
+        expression: Box<TypedExpression>,
+        /// Complete catalog proof, absent exactly for an identity cast.
+        coercion: Option<TypedCoercion>,
+    },
     /// Explicit collation.
     Collate {
         /// Stable collation identity.
@@ -744,6 +892,8 @@ pub enum TypedExpressionKind {
         /// Typed source expression.
         expression: Box<TypedExpression>,
     },
+    /// Boolean existence test over a nested statement.
+    Exists(Box<TypedStatement>),
     /// Typed `CASE`.
     Case {
         /// Optional simple-case operand.
@@ -757,6 +907,54 @@ pub enum TypedExpressionKind {
         /// Common result-type selection proof.
         result_coercion: CoercionEvidence,
     },
+    /// Typed `COALESCE`, preserving ordered single-evaluation semantics.
+    Coalesce {
+        /// Arguments in authored evaluation order with use-site coercions.
+        arguments: Vec<TypedArgument>,
+        /// Common result-type selection proof.
+        coercion: CoercionEvidence,
+    },
+    /// Typed PostgreSQL `NULLIF`, preserving single evaluation and equality resolution.
+    NullIf {
+        /// Authored equality operator identity retained for HIR correspondence.
+        authored_operator_id: OperatorId,
+        /// Stable selected PostgreSQL equality operator.
+        operator_id: OperatorId,
+        /// Left operand coerced to the selected operator input and result type.
+        left: Box<TypedArgument>,
+        /// Right operand coerced to the selected operator input.
+        right: Box<TypedArgument>,
+    },
+    /// Typed `GREATEST` with common-type proof.
+    Greatest {
+        /// Arguments in authored order with use-site coercions.
+        arguments: Vec<TypedArgument>,
+        /// Common result-type selection proof.
+        coercion: CoercionEvidence,
+    },
+    /// Typed `LEAST` with common-type proof.
+    Least {
+        /// Arguments in authored order with use-site coercions.
+        arguments: Vec<TypedArgument>,
+        /// Common result-type selection proof.
+        coercion: CoercionEvidence,
+    },
+    /// Typed PostgreSQL `EXTRACT(field FROM source)` special form.
+    Extract {
+        /// Validated extraction field.
+        field: ExtractField,
+        /// Typed temporal source expression.
+        source: Box<TypedExpression>,
+    },
+    /// Typed PostgreSQL `POSITION(substring IN string)` special form.
+    Position {
+        /// Substring with its common-input coercion.
+        substring: Box<TypedArgument>,
+        /// Searched value with its common-input coercion.
+        string: Box<TypedArgument>,
+        /// Resolved common input type, either `text` or `bytea`.
+        input_type: TypeId,
+    },
     /// Scalar subquery.
     ScalarSubquery(Box<TypedStatement>),
     /// Row constructor.
@@ -768,10 +966,12 @@ pub enum TypedExpressionKind {
         /// Common element-type selection proof.
         coercion: CoercionEvidence,
     },
-    /// Typed CTE field.
+    /// Typed CTE field through one exact relation use.
     CteColumn {
         /// CTE identity.
         cte_id: CteId,
+        /// Exact CTE relation binding.
+        binding: RelationId,
         /// Output field identity.
         field_id: FieldId,
     },
@@ -798,6 +998,9 @@ pub struct TypedCaseBranch {
 /// One typed ordering term.
 pub type TypedOrderBy = OrderBy<TypedExpression>;
 
+/// One ordered-set aggregate ordering term with a use-site coercion.
+pub type TypedWithinGroupOrderBy = OrderBy<TypedArgument>;
+
 /// One typed function call with PostgreSQL aggregate and window modifiers.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct TypedCall {
@@ -807,6 +1010,8 @@ pub struct TypedCall {
     pub callable_id: CallableId,
     /// Paired typed arguments and their optional coercions.
     pub arguments: Vec<TypedArgument>,
+    /// Authored argument names parallel to `arguments`.
+    pub argument_names: Vec<Option<String>>,
     /// Whether the argument tuple is duplicate-eliminated.
     pub distinct: bool,
     /// Whether the call uses the `*` argument form.
@@ -816,13 +1021,38 @@ pub struct TypedCall {
     /// Optional aggregate FILTER predicate.
     pub filter: Option<Box<TypedExpression>>,
     /// Ordered-set aggregate WITHIN GROUP ordering.
-    pub within_group: Vec<TypedOrderBy>,
+    pub within_group: Vec<TypedWithinGroupOrderBy>,
     /// Optional window application.
     pub over: Option<WindowReference<TypedExpression>>,
 }
 
 impl TypedCall {
     fn validate(&self) -> Result<(), TypedShapeError> {
+        if self.argument_names.len() != self.arguments.len() {
+            return Err(TypedShapeError::Call);
+        }
+        if self
+            .argument_names
+            .iter()
+            .flatten()
+            .any(|name| !valid_unquoted_identifier(name))
+        {
+            return Err(TypedShapeError::Call);
+        }
+        let mut saw_named = false;
+        let mut names = std::collections::BTreeSet::new();
+        for name in &self.argument_names {
+            match name {
+                Some(name) => {
+                    saw_named = true;
+                    if !names.insert(name) {
+                        return Err(TypedShapeError::Call);
+                    }
+                }
+                None if saw_named => return Err(TypedShapeError::Call),
+                None => {}
+            }
+        }
         if self.star && (!self.arguments.is_empty() || self.distinct || !self.order_by.is_empty()) {
             return Err(TypedShapeError::Call);
         }
@@ -834,7 +1064,7 @@ impl TypedCall {
         validate_arguments(&self.arguments)?;
         validate_ordering(&self.order_by)?;
         validate_expression_option(self.filter.as_deref())?;
-        validate_ordering(&self.within_group)?;
+        validate_within_group_ordering(&self.within_group)?;
         if let Some(over) = &self.over {
             validate_window_reference(over)?;
         }
@@ -1020,6 +1250,8 @@ pub enum TypedInsertSource {
 pub struct TypedConflictClause {
     /// Mutually exclusive PostgreSQL conflict target.
     pub target: ConflictTarget,
+    /// Synthetic `EXCLUDED` relation binding available to conflict actions.
+    pub excluded_binding: RelationId,
     /// Action.
     pub action: TypedConflictAction,
 }
@@ -1191,6 +1423,8 @@ pub enum TypedShapeError {
     Nullability,
     /// Missing, redundant, discontinuous, or mismatched use-site coercion proof.
     Coercion,
+    /// Invalid special-form expression shape.
+    Expression,
     /// Invalid PostgreSQL conflict target/action combination.
     Conflict,
     /// Invalid function-call modifier combination.
@@ -1217,6 +1451,7 @@ impl std::fmt::Display for TypedShapeError {
                 formatter.write_str("typed expression has invalid nullability proof")
             }
             Self::Coercion => formatter.write_str("invalid typed use-site coercion proof"),
+            Self::Expression => formatter.write_str("invalid PostgreSQL expression shape"),
             Self::Conflict => {
                 formatter.write_str("invalid PostgreSQL conflict target/action shape")
             }
@@ -1354,6 +1589,15 @@ fn validate_ordering(ordering: &[TypedOrderBy]) -> Result<(), TypedShapeError> {
     Ok(())
 }
 
+fn validate_within_group_ordering(
+    ordering: &[TypedWithinGroupOrderBy],
+) -> Result<(), TypedShapeError> {
+    for order in ordering {
+        validate_argument(&order.expression, None)?;
+    }
+    Ok(())
+}
+
 fn validate_window_reference(
     window: &WindowReference<TypedExpression>,
 ) -> Result<(), TypedShapeError> {
@@ -1427,6 +1671,38 @@ fn frame_bound_rank(bound: &FrameBound<TypedExpression>) -> u8 {
 
 fn valid_render_identifier(name: &str) -> bool {
     !name.is_empty() && !name.contains('\0')
+}
+fn validate_common_type_arguments(
+    arguments: &[TypedArgument],
+    coercion: &CoercionEvidence,
+    result_type: &TypeId,
+) -> Result<(), TypedShapeError> {
+    if arguments.is_empty() {
+        return Err(TypedShapeError::Coercion);
+    }
+    for argument in arguments {
+        validate_argument(argument, Some(result_type))?;
+    }
+    validate_common_type_evidence(
+        coercion,
+        result_type,
+        arguments
+            .iter()
+            .map(|argument| &argument.expression.type_id),
+    )
+}
+
+fn valid_unquoted_identifier(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_ascii_lowercase())
+        && characters.all(|character| {
+            character == '_'
+                || character == '$'
+                || character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+        })
 }
 
 fn validate_ctes(ctes: &[TypedCte]) -> Result<(), TypedShapeError> {
@@ -1542,6 +1818,7 @@ fn typed_ctes_correspond(typed: &[TypedCte], hir: &[HirCte]) -> bool {
     typed.len() == hir.len()
         && typed.iter().zip(hir).all(|(typed, hir)| {
             typed.id == hir.id
+                && typed.recursive == hir.recursive
                 && typed.name == hir.name
                 && typed.materialization == hir.materialization
                 && typed.statement.corresponds_to_hir(&hir.statement)
@@ -1673,7 +1950,31 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
             (TypedExpressionKind::Call(typed), HirExpressionKind::Call(hir)) => {
                 typed_call_corresponds(typed, hir)
             }
+            (
+                TypedExpressionKind::Position {
+                    substring: typed_substring,
+                    string: typed_string,
+                    ..
+                },
+                HirExpressionKind::Position {
+                    substring: hir_substring,
+                    string: hir_string,
+                },
+            ) => {
+                typed_expression_corresponds(&typed_substring.expression, hir_substring)
+                    && typed_expression_corresponds(&typed_string.expression, hir_string)
+            }
 
+            (
+                TypedExpressionKind::Extract {
+                    field: typed_field,
+                    source: typed_source,
+                },
+                HirExpressionKind::Extract {
+                    field: hir_field,
+                    source: hir_source,
+                },
+            ) => typed_field == hir_field && typed_expression_corresponds(typed_source, hir_source),
             (
                 TypedExpressionKind::Operator {
                     authored_operator_id: typed_authored_operator,
@@ -1693,6 +1994,43 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
                         .all(|(typed, hir)| typed_expression_corresponds(&typed.expression, hir))
             }
             (
+                TypedExpressionKind::QuantifiedComparison {
+                    authored_operator_id: typed_operator,
+                    left: typed_left,
+                    right: typed_right,
+                    quantifier: typed_quantifier,
+                    ..
+                },
+                HirExpressionKind::QuantifiedComparison {
+                    operator_id: hir_operator,
+                    left: hir_left,
+                    right: hir_right,
+                    quantifier: hir_quantifier,
+                },
+            ) => {
+                typed_operator == hir_operator
+                    && typed_quantifier == hir_quantifier
+                    && typed_expression_corresponds(&typed_left.expression, hir_left)
+                    && typed_expression_corresponds(&typed_right.expression, hir_right)
+            }
+            (
+                TypedExpressionKind::InList {
+                    expression: typed_expression,
+                    values: typed_values,
+                    negated: typed_negated,
+                    ..
+                },
+                HirExpressionKind::InList {
+                    expression: hir_expression,
+                    values: hir_values,
+                    negated: hir_negated,
+                },
+            ) => {
+                typed_negated == hir_negated
+                    && typed_expression_corresponds(&typed_expression.expression, hir_expression)
+                    && typed_arguments_correspond(typed_values, hir_values)
+            }
+            (
                 TypedExpressionKind::Cast {
                     cast_id: typed_cast,
                     expression: typed_expression,
@@ -1704,6 +2042,21 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
                 },
             ) => {
                 typed_cast == hir_cast
+                    && typed_expression_corresponds(typed_expression, hir_expression)
+            }
+            (
+                TypedExpressionKind::ExplicitCast {
+                    expression: typed_expression,
+                    ..
+                },
+                HirExpressionKind::ExplicitCast {
+                    target_type,
+                    target_typmod,
+                    expression: hir_expression,
+                },
+            ) => {
+                &typed.type_id == target_type
+                    && &typed.typmod == target_typmod
                     && typed_expression_corresponds(typed_expression, hir_expression)
             }
             (
@@ -1739,6 +2092,43 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
                     && typed_argument_option_corresponds(typed_else.as_deref(), hir_else.as_deref())
             }
             (
+                TypedExpressionKind::NullIf {
+                    authored_operator_id,
+                    left: typed_left,
+                    right: typed_right,
+                    ..
+                },
+                HirExpressionKind::NullIf {
+                    left: hir_left,
+                    right: hir_right,
+                },
+            ) => {
+                authored_operator_id.as_str() == "unresolved:operator:pg_catalog.="
+                    && typed_expression_corresponds(&typed_left.expression, hir_left)
+                    && typed_expression_corresponds(&typed_right.expression, hir_right)
+            }
+            (
+                TypedExpressionKind::Coalesce {
+                    arguments: typed, ..
+                },
+                HirExpressionKind::Coalesce(hir),
+            ) => typed_arguments_correspond(typed, hir),
+            (
+                TypedExpressionKind::Greatest {
+                    arguments: typed, ..
+                },
+                HirExpressionKind::Greatest(hir),
+            )
+            | (
+                TypedExpressionKind::Least {
+                    arguments: typed, ..
+                },
+                HirExpressionKind::Least(hir),
+            ) => typed_arguments_correspond(typed, hir),
+            (TypedExpressionKind::Exists(typed), HirExpressionKind::Exists(hir)) => {
+                typed.corresponds_to_hir(hir)
+            }
+            (
                 TypedExpressionKind::ScalarSubquery(typed),
                 HirExpressionKind::ScalarSubquery(hir),
             ) => typed.corresponds_to_hir(hir),
@@ -1754,13 +2144,15 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
             (
                 TypedExpressionKind::CteColumn {
                     cte_id: typed_cte,
+                    binding: typed_binding,
                     field_id: typed_field,
                 },
                 HirExpressionKind::CteColumn {
                     cte_id: hir_cte,
+                    binding: hir_binding,
                     field_id: hir_field,
                 },
-            ) => typed_cte == hir_cte && typed_field == hir_field,
+            ) => typed_cte == hir_cte && typed_binding == hir_binding && typed_field == hir_field,
             _ => false,
         }
 }
@@ -1769,6 +2161,7 @@ fn typed_call_corresponds(typed: &TypedCall, hir: &HirCall) -> bool {
         && typed.distinct == hir.distinct
         && typed.star == hir.star
         && typed.arguments.len() == hir.arguments.len()
+        && typed.argument_names == hir.argument_names
         && typed
             .arguments
             .iter()
@@ -1776,7 +2169,7 @@ fn typed_call_corresponds(typed: &TypedCall, hir: &HirCall) -> bool {
             .all(|(typed, hir)| typed_expression_corresponds(&typed.expression, hir))
         && typed_ordering_corresponds(&typed.order_by, &hir.order_by)
         && typed_boxed_expression_option_corresponds(typed.filter.as_deref(), hir.filter.as_deref())
-        && typed_ordering_corresponds(&typed.within_group, &hir.within_group)
+        && typed_within_group_ordering_corresponds(&typed.within_group, &hir.within_group)
         && typed_window_reference_option_corresponds(typed.over.as_ref(), hir.over.as_ref())
 }
 
@@ -1909,6 +2302,18 @@ fn typed_ordering_corresponds(typed: &[TypedOrderBy], hir: &[HirOrderBy]) -> boo
         })
 }
 
+fn typed_within_group_ordering_corresponds(
+    typed: &[TypedWithinGroupOrderBy],
+    hir: &[HirOrderBy],
+) -> bool {
+    typed.len() == hir.len()
+        && typed.iter().zip(hir).all(|(typed, hir)| {
+            typed.direction == hir.direction
+                && typed.nulls == hir.nulls
+                && typed_expression_corresponds(&typed.expression.expression, &hir.expression)
+        })
+}
+
 fn typed_limit_corresponds(typed: Option<&TypedLimit>, hir: Option<&HirExpression>) -> bool {
     match (typed, hir) {
         (None, None) => true,
@@ -1968,7 +2373,8 @@ fn typed_conflict_option_corresponds(
 }
 
 fn typed_conflict_corresponds(typed: &TypedConflictClause, hir: &HirConflictClause) -> bool {
-    typed_conflict_target_corresponds(&typed.target, &hir.target)
+    typed.excluded_binding == hir.excluded_binding
+        && typed_conflict_target_corresponds(&typed.target, &hir.target)
         && typed_conflict_action_corresponds(&typed.action, &hir.action)
 }
 

@@ -947,8 +947,10 @@ dependencies = [
  "dibs-db-schema",
  "dibs-jsonb",
  "dibs-macros",
+ "dibs-pg-catalog",
  "dibs-proto",
  "dibs-qgen",
+ "dibs-query-syntax",
  "dockside",
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "indexmap 2.14.0",
@@ -3201,7 +3203,7 @@ dependencies = [
  "phon-engine 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
  "phon-ir 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
  "phon-jit 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
 ]
 
 [[package]]
@@ -3234,7 +3236,7 @@ source = "git+https://github.com/bearcove/phon?rev=3c19df3#3c19df38aed9e81f0172a
 dependencies = [
  "facet-value",
  "phon-ir 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
  "phon-storage",
  "weavy",
 ]
@@ -3255,7 +3257,7 @@ name = "phon-ir"
 version = "0.2.0-rc.5"
 source = "git+https://github.com/bearcove/phon?rev=3c19df3#3c19df38aed9e81f0172ad0cf41e781f18b3ffb2"
 dependencies = [
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
  "weavy",
 ]
 
@@ -3275,7 +3277,7 @@ source = "git+https://github.com/bearcove/phon?rev=3c19df3#3c19df38aed9e81f0172a
 dependencies = [
  "copypatch",
  "phon-ir 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
  "weavy",
 ]
 
@@ -3293,7 +3295,6 @@ dependencies = [
 [[package]]
 name = "phon-schema"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon?rev=3c19df3#3c19df38aed9e81f0172ad0cf41e781f18b3ffb2"
 dependencies = [
  "blake3",
  "facet-value",
@@ -3313,11 +3314,10 @@ dependencies = [
 [[package]]
 name = "phon-storage"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon?rev=3c19df3#3c19df38aed9e81f0172ad0cf41e781f18b3ffb2"
 dependencies = [
  "blake3",
  "facet-value",
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
 ]
 
 [[package]]
@@ -4311,7 +4311,6 @@ checksum = "ef784004ca8777809dcdad6ac37629f0a97caee4c685fcea805278d81dd8b857"
 [[package]]
 name = "snark"
 version = "0.0.1"
-source = "git+https://github.com/bearcove/snark?rev=a2619b5#a2619b5790ebcf5eccb06910a4d662ac413ceee1"
 dependencies = [
  "aho-corasick",
  "blake3",
@@ -4321,7 +4320,7 @@ dependencies = [
  "facet-value",
  "indexmap 2.14.0",
  "phon 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
  "phon-storage",
  "regex",
  "regex-automata",
@@ -4333,7 +4332,6 @@ dependencies = [
 [[package]]
 name = "snark-dsl"
 version = "0.1.0"
-source = "git+https://github.com/bearcove/snark?rev=a2619b5#a2619b5790ebcf5eccb06910a4d662ac413ceee1"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-json",
@@ -4673,7 +4671,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -5814,7 +5812,7 @@ version = "0.2.2"
 dependencies = [
  "blake3",
  "copypatch",
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
 ]
 
 [[package]]
@@ -5823,7 +5821,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "facet-value",
- "phon-schema 0.2.0-rc.5 (git+https://github.com/bearcove/phon?rev=3c19df3)",
+ "phon-schema 0.2.0-rc.5",
  "phon-storage",
  "weavy",
 ]

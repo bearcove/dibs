@@ -7,13 +7,14 @@ use dibs_pg_catalog::{
     CallableId, CollationId, ColumnId, ConstraintId, OperatorId, TableId, TypeId,
 };
 use dibs_query_ir::{
-    CompiledQuery, CompiledQueryError, ConflictTarget, CteId, CteMaterialization, FrameBound,
-    HirLiteral, HirLockClause, JoinKind, LockStrength, LockWaitPolicy, NullsOrder, OrderedBind,
-    ParameterId, RelationAlias, RelationId, SelectDistinct, SetOperationKind, SortDirection,
-    TypedArgument, TypedAssignment, TypedCall, TypedCoercion, TypedConflictAction,
-    TypedConflictClause, TypedCte, TypedDelete, TypedExpression, TypedExpressionKind, TypedInsert,
-    TypedInsertSource, TypedLimit, TypedOrderBy, TypedProjection, TypedRelation, TypedRelationKind,
-    TypedSelect, TypedStatement, TypedStatementKind, TypedUpdate, TypedValues, WindowExclusion,
+    ComparisonQuantifier, CompiledQuery, CompiledQueryError, ConflictTarget, CteId,
+    CteMaterialization, FrameBound, HirLiteral, HirLockClause, JoinKind, LockStrength,
+    LockWaitPolicy, NullsOrder, OrderedBind, ParameterId, RelationAlias, RelationId,
+    SelectDistinct, SetOperationKind, SortDirection, TypedArgument, TypedAssignment, TypedCall,
+    TypedCoercion, TypedConflictAction, TypedConflictClause, TypedCte, TypedDelete,
+    TypedExpression, TypedExpressionKind, TypedInsert, TypedInsertSource, TypedLimit, TypedOrderBy,
+    TypedProjection, TypedRelation, TypedRelationKind, TypedSelect, TypedStatement,
+    TypedStatementKind, TypedUpdate, TypedValues, TypedWithinGroupOrderBy, WindowExclusion,
     WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
 };
 
@@ -125,6 +126,7 @@ fn render_checked_surfaces(query: &CompiledQuery) -> Result<RenderedSql, SqlRend
         used_parameters: BTreeSet::new(),
         relation_scopes: Vec::new(),
         derived_scopes: Vec::new(),
+        function_column_scopes: Vec::new(),
         cte_scopes: Vec::new(),
         target_scopes: Vec::new(),
         conflict_target_depth: 0,
@@ -156,6 +158,7 @@ struct Renderer<'a> {
     used_parameters: BTreeSet<ParameterId>,
     relation_scopes: Vec<BTreeMap<RelationId, String>>,
     derived_scopes: Vec<BTreeMap<RelationId, BTreeMap<dibs_query_ir::FieldId, String>>>,
+    function_column_scopes: Vec<BTreeMap<RelationId, BTreeMap<ColumnId, String>>>,
     cte_scopes: Vec<BTreeMap<CteId, CteRender<'a>>>,
     target_scopes: Vec<BTreeSet<RelationId>>,
     conflict_target_depth: usize,
@@ -251,6 +254,7 @@ impl<'a> Renderer<'a> {
             Ok(())
         })();
         self.derived_scopes.pop();
+        self.function_column_scopes.pop();
         self.relation_scopes.pop();
         self.cte_scopes.pop();
         result
@@ -288,6 +292,7 @@ impl<'a> Renderer<'a> {
                 self.render_returning(sql, &insert.returning)
             })();
             self.derived_scopes.pop();
+            self.function_column_scopes.pop();
             self.relation_scopes.pop();
             self.target_scopes.pop();
             target_result
@@ -324,6 +329,7 @@ impl<'a> Renderer<'a> {
                 self.render_returning(sql, &update.returning)
             })();
             self.derived_scopes.pop();
+            self.function_column_scopes.pop();
             self.target_scopes.pop();
             self.relation_scopes.pop();
             target_result
@@ -358,6 +364,7 @@ impl<'a> Renderer<'a> {
                 self.render_returning(sql, &delete.returning)
             })();
             self.derived_scopes.pop();
+            self.function_column_scopes.pop();
             self.target_scopes.pop();
             self.relation_scopes.pop();
             target_result
@@ -617,7 +624,12 @@ impl<'a> Renderer<'a> {
                     quote_identifier(sql, &qualifier);
                 }
                 sql.push('.');
-                self.render_column_name(sql, column_id)
+                if let Some(name) = self.function_column_name(*binding, column_id) {
+                    quote_identifier(sql, name);
+                    Ok(())
+                } else {
+                    self.render_column_name(sql, column_id)
+                }
             }
             TypedExpressionKind::DerivedColumn { binding, field_id } => {
                 let qualifier = self.relation_qualifier(*binding)?;
@@ -633,6 +645,56 @@ impl<'a> Renderer<'a> {
                 operands,
                 ..
             } => self.render_operator(sql, operator_id, operands),
+            TypedExpressionKind::NullIf { left, right, .. } => {
+                sql.push_str("NULLIF(");
+                self.render_argument(sql, left)?;
+                sql.push_str(", ");
+                self.render_argument(sql, right)?;
+                sql.push(')');
+                Ok(())
+            }
+            TypedExpressionKind::QuantifiedComparison {
+                operator_id,
+                left,
+                right,
+                quantifier,
+                ..
+            } => {
+                let components = self
+                    .query
+                    .catalog_render_names
+                    .operator(operator_id)
+                    .ok_or_else(|| {
+                        SqlRenderError::MissingCatalogName(operator_id.as_str().to_string())
+                    })?;
+                let (schema, token) = split_operator(components)?;
+                self.render_argument(sql, left)?;
+                sql.push(' ');
+                self.render_operator_token(sql, schema, token)?;
+                sql.push(' ');
+                sql.push_str(match quantifier {
+                    ComparisonQuantifier::Any => "ANY(",
+                    ComparisonQuantifier::All => "ALL(",
+                });
+                self.render_argument(sql, right)?;
+                sql.push(')');
+                Ok(())
+            }
+            TypedExpressionKind::InList {
+                expression,
+                values,
+                negated,
+                ..
+            } => {
+                self.render_argument(sql, expression)?;
+                if *negated {
+                    sql.push_str(" NOT");
+                }
+                sql.push_str(" IN (");
+                self.render_arguments(sql, values)?;
+                sql.push(')');
+                Ok(())
+            }
             TypedExpressionKind::Cast {
                 expression,
                 coercion,
@@ -641,6 +703,10 @@ impl<'a> Renderer<'a> {
                 self.render_expression(sql, expression)?;
                 self.render_coercion(sql, coercion)
             }
+            TypedExpressionKind::ExplicitCast {
+                expression: source,
+                coercion,
+            } => self.render_explicit_cast(sql, expression, source, coercion.as_ref()),
             TypedExpressionKind::Collate {
                 collation_id,
                 expression,
@@ -648,6 +714,12 @@ impl<'a> Renderer<'a> {
                 self.render_expression(sql, expression)?;
                 sql.push_str(" COLLATE ");
                 self.render_collation_name(sql, collation_id)
+            }
+            TypedExpressionKind::Exists(statement) => {
+                sql.push_str("EXISTS (");
+                self.render_statement(sql, statement)?;
+                sql.push(')');
+                Ok(())
             }
             TypedExpressionKind::Case {
                 operand,
@@ -673,6 +745,42 @@ impl<'a> Renderer<'a> {
                 sql.push_str(" END");
                 Ok(())
             }
+            TypedExpressionKind::Coalesce { arguments, .. } => {
+                sql.push_str("COALESCE(");
+                self.render_arguments(sql, arguments)?;
+                sql.push(')');
+                Ok(())
+            }
+            TypedExpressionKind::Greatest { arguments, .. } => {
+                sql.push_str("GREATEST(");
+                self.render_arguments(sql, arguments)?;
+                sql.push(')');
+                Ok(())
+            }
+            TypedExpressionKind::Least { arguments, .. } => {
+                sql.push_str("LEAST(");
+                self.render_arguments(sql, arguments)?;
+                sql.push(')');
+                Ok(())
+            }
+            TypedExpressionKind::Extract { field, source } => {
+                sql.push_str("EXTRACT(");
+                sql.push_str(field.sql());
+                sql.push_str(" FROM ");
+                self.render_expression(sql, source)?;
+                sql.push(')');
+                Ok(())
+            }
+            TypedExpressionKind::Position {
+                substring, string, ..
+            } => {
+                sql.push_str("POSITION(");
+                self.render_argument(sql, substring)?;
+                sql.push_str(" IN ");
+                self.render_argument(sql, string)?;
+                sql.push(')');
+                Ok(())
+            }
             TypedExpressionKind::ScalarSubquery(statement) => {
                 sql.push('(');
                 self.render_statement(sql, statement)?;
@@ -691,7 +799,11 @@ impl<'a> Renderer<'a> {
                 sql.push(']');
                 Ok(())
             }
-            TypedExpressionKind::CteColumn { cte_id, field_id } => {
+            TypedExpressionKind::CteColumn {
+                cte_id,
+                binding,
+                field_id,
+            } => {
                 let cte = self.cte(cte_id)?;
                 let Some(index) = cte
                     .fields
@@ -706,7 +818,8 @@ impl<'a> Renderer<'a> {
                 let Some(output_name) = cte.output_names.get(index) else {
                     return Err(SqlRenderError::InvalidArtifact("CTE output name arity"));
                 };
-                quote_identifier(sql, cte.name);
+                let qualifier = self.relation_qualifier(*binding)?;
+                quote_identifier(sql, &qualifier);
                 sql.push('.');
                 quote_identifier(sql, output_name);
                 Ok(())
@@ -739,6 +852,28 @@ impl<'a> Renderer<'a> {
                 }
                 sql.push_str("'::bytea");
             }
+            HirLiteral::Interval {
+                value,
+                field,
+                to_field,
+                precision,
+            } => {
+                sql.push_str("INTERVAL ");
+                quote_string(sql, value);
+                if let Some(field) = field {
+                    sql.push(' ');
+                    sql.push_str(field);
+                }
+                if let Some(to_field) = to_field {
+                    sql.push_str(" TO ");
+                    sql.push_str(to_field);
+                }
+                if let Some(precision) = precision {
+                    sql.push('(');
+                    sql.push_str(precision);
+                    sql.push(')');
+                }
+            }
         }
         Ok(())
     }
@@ -767,7 +902,7 @@ impl<'a> Renderer<'a> {
             if call.distinct {
                 sql.push_str("DISTINCT ");
             }
-            self.render_arguments(sql, &call.arguments)?;
+            self.render_named_arguments(sql, &call.arguments, &call.argument_names)?;
             if !call.order_by.is_empty() {
                 if !call.arguments.is_empty() {
                     sql.push(' ');
@@ -779,7 +914,7 @@ impl<'a> Renderer<'a> {
         sql.push(')');
         if !call.within_group.is_empty() {
             sql.push_str(" WITHIN GROUP (ORDER BY ");
-            self.render_ordering(sql, &call.within_group)?;
+            self.render_within_group_ordering(sql, &call.within_group)?;
             sql.push(')');
         }
         if let Some(filter) = &call.filter {
@@ -815,6 +950,22 @@ impl<'a> Renderer<'a> {
         }
         Ok(())
     }
+    fn render_named_arguments(
+        &mut self,
+        sql: &mut String,
+        arguments: &'a [TypedArgument],
+        names: &[Option<String>],
+    ) -> Result<(), SqlRenderError> {
+        for (index, (argument, name)) in arguments.iter().zip(names).enumerate() {
+            comma(sql, index);
+            if let Some(name) = name {
+                sql.push_str(name);
+                sql.push_str(" => ");
+            }
+            self.render_argument(sql, argument)?;
+        }
+        Ok(())
+    }
 
     fn render_operator(
         &mut self,
@@ -831,6 +982,20 @@ impl<'a> Renderer<'a> {
                     Ok(())
                 }
                 ("AND" | "OR", [left, right]) => {
+                    self.render_argument(sql, left)?;
+                    sql.push(' ');
+                    sql.push_str(token);
+                    sql.push(' ');
+                    self.render_argument(sql, right)?;
+                    Ok(())
+                }
+                ("IS NULL" | "IS NOT NULL", [operand]) => {
+                    self.render_argument(sql, operand)?;
+                    sql.push(' ');
+                    sql.push_str(token);
+                    Ok(())
+                }
+                ("IS DISTINCT FROM" | "IS NOT DISTINCT FROM", [left, right]) => {
                     self.render_argument(sql, left)?;
                     sql.push(' ');
                     sql.push_str(token);
@@ -917,21 +1082,68 @@ impl<'a> Renderer<'a> {
         Ok(())
     }
 
+    fn render_explicit_cast(
+        &mut self,
+        sql: &mut String,
+        cast: &'a TypedExpression,
+        source: &'a TypedExpression,
+        coercion: Option<&'a TypedCoercion>,
+    ) -> Result<(), SqlRenderError> {
+        let needs_cast = coercion.is_some() || cast.typmod.is_some();
+        if needs_cast && matches!(source.kind, TypedExpressionKind::Operator { .. }) {
+            sql.push('(');
+            self.render_expression(sql, source)?;
+            sql.push(')');
+        } else {
+            self.render_expression(sql, source)?;
+        }
+        let Some(coercion) = coercion else {
+            if cast.typmod.is_some() {
+                self.render_cast_target(sql, &cast.type_id, cast.typmod.as_ref())?;
+            }
+            return Ok(());
+        };
+        if let dibs_query_ir::CoercionEvidence::CatalogCastPath { steps } = &coercion.evidence
+            && !steps.is_empty()
+        {
+            for (index, step) in steps.iter().enumerate() {
+                let typmod = (index + 1 == steps.len())
+                    .then_some(cast.typmod.as_ref())
+                    .flatten();
+                self.render_cast_target(sql, &step.target_type, typmod)?;
+            }
+        } else {
+            self.render_cast_target(sql, &cast.type_id, cast.typmod.as_ref())?;
+        }
+        Ok(())
+    }
+
+    fn render_cast_target(
+        &self,
+        sql: &mut String,
+        target: &TypeId,
+        typmod: Option<&dibs_query_ir::Typmod>,
+    ) -> Result<(), SqlRenderError> {
+        sql.push_str("::");
+        self.render_type_name(sql, target)?;
+        if let Some(typmod) = typmod {
+            let value = typmod.as_str();
+            if !valid_typmod(value) {
+                return Err(SqlRenderError::InvalidTypmod);
+            }
+            sql.push('(');
+            sql.push_str(value);
+            sql.push(')');
+        }
+        Ok(())
+    }
+
     fn render_coercion(
         &self,
         sql: &mut String,
         coercion: &TypedCoercion,
     ) -> Result<(), SqlRenderError> {
-        sql.push_str("::");
-        self.render_type_name(sql, &coercion.target_type)?;
-        if let Some(typmod) = &coercion.target_typmod {
-            let value = typmod.as_str();
-            if !valid_typmod(value) {
-                return Err(SqlRenderError::InvalidTypmod);
-            }
-            sql.push_str(value);
-        }
-        Ok(())
+        self.render_cast_target(sql, &coercion.target_type, coercion.target_typmod.as_ref())
     }
 
     fn render_window_spec(
@@ -1045,6 +1257,27 @@ impl<'a> Renderer<'a> {
         Ok(())
     }
 
+    fn render_within_group_ordering(
+        &mut self,
+        sql: &mut String,
+        ordering: &'a [TypedWithinGroupOrderBy],
+    ) -> Result<(), SqlRenderError> {
+        for (index, term) in ordering.iter().enumerate() {
+            comma(sql, index);
+            self.render_argument(sql, &term.expression)?;
+            sql.push_str(match term.direction {
+                SortDirection::Ascending => " ASC",
+                SortDirection::Descending => " DESC",
+            });
+            match term.nulls {
+                NullsOrder::Default => {}
+                NullsOrder::First => sql.push_str(" NULLS FIRST"),
+                NullsOrder::Last => sql.push_str(" NULLS LAST"),
+            }
+        }
+        Ok(())
+    }
+
     fn render_limit(&mut self, sql: &mut String, limit: &TypedLimit) -> Result<(), SqlRenderError> {
         match limit {
             TypedLimit::Constant(value) => write!(sql, "{value}").unwrap(),
@@ -1120,12 +1353,24 @@ impl<'a> Renderer<'a> {
                 assignments,
                 predicate,
             } => {
-                sql.push_str(" DO UPDATE SET ");
-                self.render_assignments(sql, assignments)?;
-                if let Some(predicate) = predicate {
-                    sql.push_str(" WHERE ");
-                    self.render_expression(sql, predicate)?;
-                }
+                self.relation_scopes
+                    .last_mut()
+                    .ok_or(SqlRenderError::InvalidArtifact("missing relation scope"))?
+                    .insert(conflict.excluded_binding, "excluded".to_string());
+                let render_result = (|| {
+                    sql.push_str(" DO UPDATE SET ");
+                    self.render_assignments(sql, assignments)?;
+                    if let Some(predicate) = predicate {
+                        sql.push_str(" WHERE ");
+                        self.render_expression(sql, predicate)?;
+                    }
+                    Ok(())
+                })();
+                self.relation_scopes
+                    .last_mut()
+                    .ok_or(SqlRenderError::InvalidArtifact("missing relation scope"))?
+                    .remove(&conflict.excluded_binding);
+                render_result?;
             }
         }
         Ok(())
@@ -1177,6 +1422,7 @@ impl<'a> Renderer<'a> {
     fn push_relations(&mut self, relations: &[TypedRelation]) -> Result<(), SqlRenderError> {
         self.relation_scopes.push(BTreeMap::new());
         self.derived_scopes.push(BTreeMap::new());
+        self.function_column_scopes.push(BTreeMap::new());
         for relation in relations {
             self.register_relation_tree(relation)?;
         }
@@ -1192,6 +1438,7 @@ impl<'a> Renderer<'a> {
         }
         self.relation_scopes.push(scope);
         self.derived_scopes.push(BTreeMap::new());
+        self.function_column_scopes.push(BTreeMap::new());
         self.target_scopes.push(targets);
     }
 
@@ -1223,7 +1470,12 @@ impl<'a> Renderer<'a> {
                 .ok_or(SqlRenderError::InvalidArtifact("missing relation scope"))?
                 .insert(relation.id, qualifier);
         }
-        if let TypedRelationKind::Subquery(statement) = &relation.kind {
+        let derived_statement = match &relation.kind {
+            TypedRelationKind::Subquery(statement) => Some(statement.as_ref()),
+            TypedRelationKind::SetOperation { left, .. } => Some(left.as_ref()),
+            _ => None,
+        };
+        if let Some(statement) = derived_statement {
             let projections = typed_statement_projections(statement);
             let names = relation
                 .alias
@@ -1248,11 +1500,51 @@ impl<'a> Renderer<'a> {
                 ))?
                 .insert(relation.id, fields);
         }
+        if let TypedRelationKind::Function { callable_id, .. } = &relation.kind {
+            let callable = self
+                .query
+                .catalog_render_names
+                .callable(callable_id)
+                .ok_or_else(|| SqlRenderError::MissingCatalogName(callable_id.to_string()))?;
+            let _ = callable;
+            let names = relation
+                .alias
+                .as_ref()
+                .filter(|alias| !alias.column_names.is_empty())
+                .map(|alias| alias.column_names.clone());
+            if let Some(names) = names {
+                let columns = names
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, name)| {
+                        (
+                            ColumnId::new(format!("pg18:column:function:{}:{index}", callable_id)),
+                            name,
+                        )
+                    })
+                    .collect();
+                self.function_column_scopes
+                    .last_mut()
+                    .ok_or(SqlRenderError::InvalidArtifact(
+                        "missing function column scope",
+                    ))?
+                    .insert(relation.id, columns);
+            }
+        }
         if let TypedRelationKind::Join { left, right, .. } = &relation.kind {
             self.register_relation_tree(left)?;
             self.register_relation_tree(right)?;
         }
         Ok(())
+    }
+
+    fn function_column_name(&self, binding: RelationId, column: &ColumnId) -> Option<&str> {
+        self.function_column_scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(&binding))
+            .and_then(|columns| columns.get(column))
+            .map(String::as_str)
     }
 
     fn relation_qualifier(&self, id: RelationId) -> Result<String, SqlRenderError> {
@@ -1462,28 +1754,25 @@ fn typed_statement_projections(statement: &TypedStatement) -> &[TypedProjection]
 }
 
 fn valid_typmod(value: &str) -> bool {
-    if value.is_empty() || value.contains('\0') || value.contains(';') || value.contains("--") {
+    if value.is_empty() {
         return false;
     }
-    let Some(open) = value.find('(') else {
-        return value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b' ');
-    };
-    value.ends_with(')')
-        && value[..open]
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b' ')
-        && value[open + 1..value.len() - 1]
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b',' || byte == b' ' || byte == b'-')
+    value.split(',').all(|argument| {
+        let argument = argument.trim();
+        let digits = argument.strip_prefix('-').unwrap_or(argument);
+        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 fn syntax_operator_token(id: &OperatorId) -> Option<&'static str> {
     match id.as_str() {
-        "pg18:operator:syntax:AND" => Some("AND"),
-        "pg18:operator:syntax:OR" => Some("OR"),
-        "pg18:operator:syntax:NOT" => Some("NOT"),
+        dibs_query_typing::SYNTAX_AND_OPERATOR_ID => Some("AND"),
+        dibs_query_typing::SYNTAX_OR_OPERATOR_ID => Some("OR"),
+        dibs_query_typing::SYNTAX_NOT_OPERATOR_ID => Some("NOT"),
+        dibs_query_typing::SYNTAX_IS_NULL_OPERATOR_ID => Some("IS NULL"),
+        dibs_query_typing::SYNTAX_IS_NOT_NULL_OPERATOR_ID => Some("IS NOT NULL"),
+        dibs_query_typing::SYNTAX_IS_DISTINCT_FROM_OPERATOR_ID => Some("IS DISTINCT FROM"),
+        dibs_query_typing::SYNTAX_IS_NOT_DISTINCT_FROM_OPERATOR_ID => Some("IS NOT DISTINCT FROM"),
         _ => None,
     }
 }

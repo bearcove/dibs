@@ -48,6 +48,11 @@ pub enum CardinalityEvidence {
         /// Aggregate expression carrying the proof.
         expression: ExpressionId,
     },
+    /// Grouping by a predicate-bounded unique relation key produces at most one group.
+    PredicateBoundedGroup {
+        /// Relation binding carrying the grouped key.
+        binding: RelationId,
+    },
     /// Scalar subquery semantics constrain the result to zero or one row.
     ScalarSubquery {
         /// Relation evaluated as a scalar subquery.
@@ -76,6 +81,15 @@ pub enum CardinalityEvidence {
     /// CTE output bound was propagated to a use site.
     CtePropagation {
         /// CTE carrying the proven bound.
+        cte: CteId,
+    },
+    /// A mutation target is constrained by a unique-key equality to a bounded CTE input.
+    MutationUniqueCteJoin {
+        /// Stable catalog constraint proving at most one target row per input row.
+        constraint_id: ConstraintId,
+        /// Stable target columns covered by the unique constraint.
+        columns: Vec<ColumnId>,
+        /// CTE whose propagated upper bound limits the input side.
         cte: CteId,
     },
     /// Mutation `RETURNING` inherits the mutation's affected-row bound.

@@ -144,7 +144,11 @@ impl DibsParser {
     #[must_use]
     pub fn new() -> Self {
         const MODULE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/dibs_query_parser.weavy"));
-        let module = snark::module::SnarkModule::load_borrowed(MODULE)
+        const PARSER_DECODE_CEILING: usize = 320 * 1024 * 1024;
+        let limits = snark::module::SnarkModuleLoadLimits::default()
+            .with_max_decoded_bytes(PARSER_DECODE_CEILING)
+            .with_max_retained_bytes(PARSER_DECODE_CEILING);
+        let module = snark::module::SnarkModule::load_borrowed_with_limits(MODULE, limits)
             .unwrap_or_else(|error| panic!("invalid embedded Dibs parser module: {error}"));
         Self {
             module,
@@ -408,6 +412,176 @@ impl ast::QueryDecl {
 fn is_postgresql_identifier_continue(character: char) -> bool {
     matches!(character, '\u{200C}' | '\u{200D}')
 }
+
+/// Failure while splitting a source file into complete top-level declarations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclarationSplitError {
+    /// A `query` declaration opened a body but did not close it.
+    UnclosedDeclaration,
+}
+
+/// Returns complete top-level query declarations without parsing them together.
+///
+/// Query-like text inside comments and quoted PostgreSQL regions is ignored.
+pub fn declaration_sources(source: &str) -> Result<Vec<&str>, DeclarationSplitError> {
+    let bytes = source.as_bytes();
+    let mut declarations = Vec::new();
+    let mut index = 0usize;
+    while let Some(start) = next_query_keyword(bytes, index) {
+        let end = declaration_end(bytes, start)?;
+        declarations.push(source[start..end].trim_end());
+        index = end;
+    }
+    Ok(declarations)
+}
+
+fn next_query_keyword(bytes: &[u8], mut index: usize) -> Option<usize> {
+    while index < bytes.len() {
+        match bytes[index] {
+            b'-' if bytes.get(index + 1) == Some(&b'-') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index = skip_block_comment(bytes, index)?;
+            }
+            b'\'' | b'"' => index = skip_quoted(bytes, index, bytes[index])?,
+            b'$' => {
+                if let Some(end) = skip_dollar_quoted(bytes, index) {
+                    index = end;
+                } else {
+                    index += 1;
+                }
+            }
+            b'q' if bytes[index..].starts_with(b"query")
+                && !bytes
+                    .get(index.wrapping_sub(1))
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+                && !bytes
+                    .get(index + 5)
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_') =>
+            {
+                return Some(index);
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn declaration_end(bytes: &[u8], start: usize) -> Result<usize, DeclarationSplitError> {
+    let mut index = start + "query".len();
+    let mut depth = 0usize;
+    let mut opened = false;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'-' if bytes.get(index + 1) == Some(&b'-') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index = skip_block_comment(bytes, index)
+                    .ok_or(DeclarationSplitError::UnclosedDeclaration)?;
+            }
+            b'\'' | b'"' => {
+                index = skip_quoted(bytes, index, bytes[index])
+                    .ok_or(DeclarationSplitError::UnclosedDeclaration)?;
+            }
+            b'$' => {
+                if let Some(end) = skip_dollar_quoted(bytes, index) {
+                    index = end;
+                } else {
+                    index += 1;
+                }
+            }
+            b'{' => {
+                opened = true;
+                depth += 1;
+                index += 1;
+            }
+            b'}' if opened => {
+                depth -= 1;
+                index += 1;
+                if depth == 0 {
+                    return Ok(index);
+                }
+            }
+            _ => index += 1,
+        }
+    }
+    Err(DeclarationSplitError::UnclosedDeclaration)
+}
+
+fn skip_quoted(bytes: &[u8], mut index: usize, quote: u8) -> Option<usize> {
+    index += 1;
+    while index < bytes.len() {
+        if bytes[index] == quote {
+            if bytes.get(index + 1) == Some(&quote) {
+                index += 2;
+            } else {
+                return Some(index + 1);
+            }
+        } else {
+            index += 1;
+        }
+    }
+    None
+}
+
+fn skip_block_comment(bytes: &[u8], mut index: usize) -> Option<usize> {
+    index += 2;
+    let mut depth = 1usize;
+    while index < bytes.len() {
+        if bytes[index..].starts_with(b"/*") {
+            depth += 1;
+            index += 2;
+        } else if bytes[index..].starts_with(b"*/") {
+            depth -= 1;
+            index += 2;
+            if depth == 0 {
+                return Some(index);
+            }
+        } else {
+            index += 1;
+        }
+    }
+    None
+}
+
+fn skip_dollar_quoted(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut delimiter_end = start + 1;
+    while delimiter_end < bytes.len()
+        && (bytes[delimiter_end].is_ascii_alphanumeric() || bytes[delimiter_end] == b'_')
+    {
+        delimiter_end += 1;
+    }
+    if bytes.get(delimiter_end) != Some(&b'$') {
+        return None;
+    }
+    delimiter_end += 1;
+    let delimiter = &bytes[start..delimiter_end];
+    bytes[delimiter_end..]
+        .windows(delimiter.len())
+        .position(|window| window == delimiter)
+        .map(|offset| delimiter_end + offset + delimiter.len())
+}
+
 fn collect_query_binds(source: &str, start: usize, end: usize) -> Vec<Spanned<String>> {
     let body_start = source[start..end]
         .find("->")
@@ -569,5 +743,19 @@ mod tests {
         let binds = collect_named_binds(source, 0, source.len());
         assert_eq!(binds.len(), 1);
         assert_eq!(binds[0].value, ":étiquette");
+    }
+
+    #[test]
+    fn declaration_sources_ignore_query_text_inside_quoted_regions_and_comments() {
+        let source = r#"
+/// query Documentation() -> one { select 0 }
+query Alpha() -> one { select 'query NotADeclaration()' }
+/* query BlockComment() -> one { select 0 } */
+query Beta(value: text) -> one { select $$query DollarQuoted()$$, :value }
+"#;
+        let declarations = super::declaration_sources(source).expect("split declarations");
+        assert_eq!(declarations.len(), 2);
+        assert!(declarations[0].starts_with("query Alpha"));
+        assert!(declarations[1].starts_with("query Beta"));
     }
 }

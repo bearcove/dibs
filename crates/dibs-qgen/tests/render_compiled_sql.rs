@@ -14,8 +14,8 @@ use dibs_query_ir::{
     TypedConflictAction, TypedConflictClause, TypedCte, TypedDelete, TypedExpression,
     TypedExpressionKind, TypedInsert, TypedInsertSource, TypedLimit, TypedNamedWindow,
     TypedOrderBy, TypedProjection, TypedRelation, TypedRelationKind, TypedSelect, TypedStatement,
-    TypedStatementKind, TypedUpdate, TypedValues, TypedValuesColumn, Volatility, WindowExclusion,
-    WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
+    TypedStatementKind, TypedUpdate, TypedValues, TypedValuesColumn, TypedWithinGroupOrderBy,
+    Volatility, WindowExclusion, WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
 };
 use dibs_query_syntax::SourceId;
 use sql_backend::{RenderedSql, SqlRenderError, render_compiled_sql};
@@ -136,6 +136,7 @@ fn renders_select_windows_relations_expressions_and_locks() {
                 expression: column(101, RelationId::new(1), ID),
                 coercion: None,
             }],
+            argument_names: vec![None],
             distinct: true,
             star: false,
             order_by: vec![order(
@@ -254,6 +255,7 @@ fn renders_select_windows_relations_expressions_and_locks() {
                         BIGINT,
                         TypedExpressionKind::CteColumn {
                             cte_id: CteId::new(1),
+                            binding: RelationId::new(5),
                             field_id: FieldId::new(20),
                         },
                     ),
@@ -307,7 +309,7 @@ fn renders_select_windows_relations_expressions_and_locks() {
     let rendered = render(&select, &[ParameterId::new(2), ParameterId::new(1)]);
     assert_eq!(
         rendered.sql,
-        "WITH RECURSIVE \"seed values\" (\"seed id\") AS MATERIALIZED (SELECT 1 AS \"seed id\") SELECT DISTINCT ON (\"w\".\"id\") \"pg_catalog\".\"count\"(DISTINCT \"w\".\"id\" ORDER BY \"w\".\"display name\" DESC NULLS LAST) FILTER (WHERE NOT (\"w\".\"display name\" IS NULL)) OVER (\"base window\" PARTITION BY \"w\".\"id\" ORDER BY $2 ASC NULLS FIRST GROUPS BETWEEN UNBOUNDED PRECEDING AND $1 FOLLOWING EXCLUDE TIES) AS \"aggregate total\", CASE \"w\".\"id\" WHEN 1 THEN 'one' COLLATE \"pg_catalog\".\"C\" ELSE $2::\"pg_catalog\".\"text\" END AS \"case result\", ROW($2, (SELECT 3 AS \"scalar\")) AS \"row value\", ARRAY[1, 2] AS \"array value\", \"seed values\".\"seed id\" AS \"cte field\", '\\x000aff'::bytea AS \"bytes\", NULL AS \"null\", TRUE AS \"bool\", 12.50 AS \"numeric\" FROM \"app\".\"Widget\" AS \"w\" LEFT JOIN LATERAL \"pg_catalog\".\"generate_series\"(1, $1) AS \"series\" (\"n\") ON \"w\".\"id\" = $2, (VALUES (1, 'a'), (2, 'b')) AS \"v\" (\"x\", \"label\"), \"seed values\" AS \"seed\", (SELECT 7 AS \"value\") AS \"derived\" (\"value\"), ((SELECT 8 AS \"value\") UNION ALL (SELECT 9 AS \"value\")) AS \"set rows\" (\"value\") WHERE $2 = $1 GROUP BY \"w\".\"id\" HAVING TRUE WINDOW \"base window\" AS (PARTITION BY \"w\".\"id\" ORDER BY \"w\".\"display name\" ASC ROWS BETWEEN 2 PRECEDING AND CURRENT ROW EXCLUDE CURRENT ROW) ORDER BY \"w\".\"display name\" DESC NULLS LAST LIMIT $1 OFFSET 4 FOR NO KEY UPDATE OF \"w\" SKIP LOCKED"
+        "WITH RECURSIVE \"seed values\" (\"seed id\") AS MATERIALIZED (SELECT 1 AS \"seed id\") SELECT DISTINCT ON (\"w\".\"id\") \"pg_catalog\".\"count\"(DISTINCT \"w\".\"id\" ORDER BY \"w\".\"display name\" DESC NULLS LAST) FILTER (WHERE NOT (\"w\".\"display name\" IS NULL)) OVER (\"base window\" PARTITION BY \"w\".\"id\" ORDER BY $2 ASC NULLS FIRST GROUPS BETWEEN UNBOUNDED PRECEDING AND $1 FOLLOWING EXCLUDE TIES) AS \"aggregate total\", CASE \"w\".\"id\" WHEN 1 THEN 'one' COLLATE \"pg_catalog\".\"C\" ELSE $2::\"pg_catalog\".\"text\" END AS \"case result\", ROW($2, (SELECT 3 AS \"scalar\")) AS \"row value\", ARRAY[1, 2] AS \"array value\", \"seed\".\"seed id\" AS \"cte field\", '\\x000aff'::bytea AS \"bytes\", NULL AS \"null\", TRUE AS \"bool\", 12.50 AS \"numeric\" FROM \"app\".\"Widget\" AS \"w\" LEFT JOIN LATERAL \"pg_catalog\".\"generate_series\"(1, $1) AS \"series\" (\"n\") ON \"w\".\"id\" = $2, (VALUES (1, 'a'), (2, 'b')) AS \"v\" (\"x\", \"label\"), \"seed values\" AS \"seed\", (SELECT 7 AS \"value\") AS \"derived\" (\"value\"), ((SELECT 8 AS \"value\") UNION ALL (SELECT 9 AS \"value\")) AS \"set rows\" (\"value\") WHERE $2 = $1 GROUP BY \"w\".\"id\" HAVING TRUE WINDOW \"base window\" AS (PARTITION BY \"w\".\"id\" ORDER BY \"w\".\"display name\" ASC ROWS BETWEEN 2 PRECEDING AND CURRENT ROW EXCLUDE CURRENT ROW) ORDER BY \"w\".\"display name\" DESC NULLS LAST LIMIT $1 OFFSET 4 FOR NO KEY UPDATE OF \"w\" SKIP LOCKED"
     );
     assert_eq!(
         rendered.ordered_binds,
@@ -360,12 +362,14 @@ fn renders_within_group_named_over_and_every_frame_and_lock_spelling() {
                     expression: integer(210, "1"),
                     coercion: None,
                 }],
+                argument_names: vec![None],
                 distinct: false,
                 star: false,
                 order_by: vec![],
                 filter: None,
-                within_group: vec![order(
+                within_group: vec![within_group_order(
                     integer(211, "1"),
+                    None,
                     SortDirection::Ascending,
                     NullsOrder::Default,
                 )],
@@ -456,6 +460,7 @@ fn renders_insert_conflicts_and_returning() {
                 string(2, "O'Reilly"),
             ]])),
             conflict: Some(TypedConflictClause {
+                excluded_binding: RelationId::new(2),
                 target: ConflictTarget::Inference {
                     expressions: vec![column(3, RelationId::new(1), NAME)],
                     predicate: Some(Box::new(boolean(4, true))),
@@ -485,6 +490,7 @@ fn renders_insert_conflicts_and_returning() {
             columns: vec![ColumnId::new(NAME)],
             source: TypedInsertSource::DefaultValues,
             conflict: Some(TypedConflictClause {
+                excluded_binding: RelationId::new(2),
                 target: ConflictTarget::Constraint(ConstraintId::new(UNIQUE_NAME)),
                 action: TypedConflictAction::Nothing,
             }),
@@ -511,6 +517,7 @@ fn renders_insert_conflicts_and_returning() {
                 vec![],
             ))),
             conflict: Some(TypedConflictClause {
+                excluded_binding: RelationId::new(2),
                 target: ConflictTarget::Unspecified,
                 action: TypedConflictAction::Nothing,
             }),
@@ -987,6 +994,7 @@ fn hir_select(select: &TypedSelect) -> dibs_query_ir::HirSelect {
 fn hir_cte(cte: &TypedCte) -> dibs_query_ir::HirCte {
     dibs_query_ir::HirCte {
         id: cte.id,
+        recursive: cte.recursive,
         name: cte.name().to_string(),
         origin: origin(),
         materialization: cte.materialization,
@@ -1093,14 +1101,45 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
                         .iter()
                         .map(|argument| hir_expression(&argument.expression))
                         .collect(),
+                    argument_names: call.argument_names.clone(),
                     distinct: call.distinct,
                     star: call.star,
                     order_by: call.order_by.iter().map(hir_order).collect(),
                     filter: call.filter.as_deref().map(hir_expression).map(Box::new),
-                    within_group: call.within_group.iter().map(hir_order).collect(),
+                    within_group: call
+                        .within_group
+                        .iter()
+                        .map(|order| dibs_query_ir::HirOrderBy {
+                            expression: hir_expression(&order.expression.expression),
+                            direction: order.direction,
+                            nulls: order.nulls,
+                        })
+                        .collect(),
                     over: call.over.as_ref().map(hir_window_reference),
                 }))
             }
+            TypedExpressionKind::Extract { field, source } => HirExpressionKind::Extract {
+                field: *field,
+                source: Box::new(hir_expression(source)),
+            },
+            TypedExpressionKind::Position {
+                substring, string, ..
+            } => HirExpressionKind::Position {
+                substring: Box::new(hir_expression(&substring.expression)),
+                string: Box::new(hir_expression(&string.expression)),
+            },
+            TypedExpressionKind::Greatest { arguments, .. } => HirExpressionKind::Greatest(
+                arguments
+                    .iter()
+                    .map(|argument| hir_expression(&argument.expression))
+                    .collect(),
+            ),
+            TypedExpressionKind::Least { arguments, .. } => HirExpressionKind::Least(
+                arguments
+                    .iter()
+                    .map(|argument| hir_expression(&argument.expression))
+                    .collect(),
+            ),
             TypedExpressionKind::Operator {
                 authored_operator_id,
                 operands,
@@ -1112,12 +1151,57 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
                     .map(|argument| hir_expression(&argument.expression))
                     .collect(),
             },
+            TypedExpressionKind::NullIf { left, right, .. } => HirExpressionKind::NullIf {
+                left: Box::new(hir_expression(&left.expression)),
+                right: Box::new(hir_expression(&right.expression)),
+            },
+            TypedExpressionKind::QuantifiedComparison {
+                authored_operator_id,
+                left,
+                right,
+                quantifier,
+                ..
+            } => HirExpressionKind::QuantifiedComparison {
+                operator_id: authored_operator_id.clone(),
+                left: Box::new(hir_expression(&left.expression)),
+                right: Box::new(hir_expression(&right.expression)),
+                quantifier: *quantifier,
+            },
+            TypedExpressionKind::InList {
+                expression,
+                values,
+                negated,
+                ..
+            } => HirExpressionKind::InList {
+                expression: Box::new(hir_expression(&expression.expression)),
+                values: values
+                    .iter()
+                    .map(|value| hir_expression(&value.expression))
+                    .collect(),
+                negated: *negated,
+            },
             TypedExpressionKind::Cast {
                 cast_id,
                 expression,
                 ..
             } => HirExpressionKind::Cast {
                 cast_id: cast_id.clone(),
+                expression: Box::new(hir_expression(expression)),
+            },
+            TypedExpressionKind::Exists(statement) => {
+                HirExpressionKind::Exists(Box::new(hir_statement(statement)))
+            }
+            TypedExpressionKind::ExplicitCast {
+                expression,
+                coercion,
+            } => HirExpressionKind::ExplicitCast {
+                target_type: coercion.as_ref().map_or_else(
+                    || expression.type_id.clone(),
+                    |value| value.target_type.clone(),
+                ),
+                target_typmod: coercion
+                    .as_ref()
+                    .and_then(|value| value.target_typmod.clone()),
                 expression: Box::new(hir_expression(expression)),
             },
             TypedExpressionKind::Collate {
@@ -1146,6 +1230,12 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
                     .map(|argument| hir_expression(&argument.expression))
                     .map(Box::new),
             },
+            TypedExpressionKind::Coalesce { arguments, .. } => HirExpressionKind::Coalesce(
+                arguments
+                    .iter()
+                    .map(|argument| hir_expression(&argument.expression))
+                    .collect(),
+            ),
             TypedExpressionKind::ScalarSubquery(statement) => {
                 HirExpressionKind::ScalarSubquery(Box::new(hir_statement(statement)))
             }
@@ -1158,8 +1248,13 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
                     .map(|argument| hir_expression(&argument.expression))
                     .collect(),
             ),
-            TypedExpressionKind::CteColumn { cte_id, field_id } => HirExpressionKind::CteColumn {
+            TypedExpressionKind::CteColumn {
+                cte_id,
+                binding,
+                field_id,
+            } => HirExpressionKind::CteColumn {
                 cte_id: *cte_id,
+                binding: *binding,
                 field_id: *field_id,
             },
         },
@@ -1267,6 +1362,7 @@ fn hir_insert(insert: &TypedInsert) -> dibs_query_ir::HirInsert {
             TypedInsertSource::DefaultValues => HirInsertSource::DefaultValues,
         },
         conflict: insert.conflict.as_ref().map(|conflict| HirConflictClause {
+            excluded_binding: conflict.excluded_binding,
             target: match &conflict.target {
                 ConflictTarget::Constraint(constraint) => {
                     HirConflictTarget::Constraint(constraint.clone())
@@ -1466,6 +1562,7 @@ fn typed_cte(
     };
     TypedCte::try_new(
         CteId::new(id),
+        false,
         name.to_string(),
         materialization,
         Box::new(statement),
@@ -1686,6 +1783,22 @@ fn assignment(
 fn order(expression: TypedExpression, direction: SortDirection, nulls: NullsOrder) -> TypedOrderBy {
     TypedOrderBy {
         expression,
+        direction,
+        nulls,
+    }
+}
+
+fn within_group_order(
+    expression: TypedExpression,
+    coercion: Option<TypedCoercion>,
+    direction: SortDirection,
+    nulls: NullsOrder,
+) -> TypedWithinGroupOrderBy {
+    TypedWithinGroupOrderBy {
+        expression: TypedArgument {
+            expression,
+            coercion,
+        },
         direction,
         nulls,
     }

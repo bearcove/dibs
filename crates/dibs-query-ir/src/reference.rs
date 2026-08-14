@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dibs_pg_catalog::{
-    CallableId, CastId, CollationId, ColumnId, ConstraintId, IndexId, OperatorId, TableId, TypeId,
+    CallableId, CastId, CollationId, ColumnId, ConstraintId, IndexId, IoCoercionId, OperatorId,
+    TableId, TypeId,
 };
 
 use crate::{
@@ -83,6 +84,8 @@ pub enum ReferenceTarget {
     Operator(OperatorId),
     /// Stable cast.
     Cast(CastId),
+    /// Stable explicit input/output coercion.
+    IoCoercion(IoCoercionId),
     /// Stable collation.
     Collation(CollationId),
     /// Local relation binding.

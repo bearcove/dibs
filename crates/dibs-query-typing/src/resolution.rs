@@ -208,21 +208,36 @@ impl SemanticChecker<'_> {
                 base: target.clone(),
             }
         } else {
-            let path = self
-                .find_cast_path(&source.type_id, target, context)
-                .ok_or_else(|| TypeResolutionError::IncompatibleCommonType {
+            if let Some(path) = self.find_cast_path(&source.type_id, target, context) {
+                CoercionEvidence::CatalogCastPath {
+                    steps: path
+                        .into_iter()
+                        .map(|cast| TypedCastStep {
+                            cast_id: cast.id.clone(),
+                            source_type: cast.source.clone(),
+                            target_type: cast.target.clone(),
+                            context: catalog_cast_context(cast.context),
+                        })
+                        .collect(),
+                }
+            } else if context == CoercionContext::Explicit {
+                let coercion = self
+                    .catalog
+                    .io_coercion(&source.type_id, target)
+                    .ok_or_else(|| TypeResolutionError::IncompatibleCommonType {
+                        types: vec![Some(source.type_id.clone()), Some(target.clone())],
+                    })?;
+                CoercionEvidence::ExplicitIo {
+                    postgres_major: self.catalog.postgres_major,
+                    coercion_id: coercion.id.clone(),
+                    source: coercion.source.clone(),
+                    target: coercion.target.clone(),
+                }
+            } else {
+                return Err(TypeResolutionError::IncompatibleCommonType {
                     types: vec![Some(source.type_id.clone()), Some(target.clone())],
-                })?;
-            CoercionEvidence::CatalogCastPath {
-                steps: path
-                    .into_iter()
-                    .map(|cast| TypedCastStep {
-                        cast_id: cast.id.clone(),
-                        source_type: cast.source.clone(),
-                        target_type: cast.target.clone(),
-                        context: catalog_cast_context(cast.context),
-                    })
-                    .collect(),
+                }
+                .into());
             }
         };
         Ok(Some(dibs_query_ir::TypedCoercion {
@@ -637,6 +652,19 @@ impl SemanticChecker<'_> {
         }
         Ok(())
     }
+
+    pub(super) fn apply_assignment_projection_coercions(
+        &self,
+        statement: &mut TypedStatement,
+        targets: &[TypeId],
+    ) -> Result<(), CheckError> {
+        for (projection, target) in statement_projections_mut(statement).iter_mut().zip(targets) {
+            ensure_uncoerced_assignment_projection(projection)?;
+            projection.coercion =
+                self.coercion(&projection.expression, target, CoercionContext::Assignment)?;
+        }
+        Ok(())
+    }
 }
 
 fn keep_max_by<T>(values: &mut Vec<T>, score: impl Fn(&T) -> usize) {
@@ -678,4 +706,61 @@ fn argument_output_nullability(argument: &TypedArgument) -> &Nullability {
         .map_or(&argument.expression.nullability, |coercion| {
             &coercion.result_nullability
         })
+}
+
+fn ensure_uncoerced_assignment_projection(projection: &TypedProjection) -> Result<(), CheckError> {
+    if projection.coercion.is_some() {
+        return Err(CheckError::InvalidTypedShape(
+            dibs_query_ir::TypedShapeError::Coercion,
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn assignment_projection_guard_rejects_existing_coercion() {
+        let integer = TypeId::new("pg18:type:base:pg_catalog.integer");
+        let bigint = TypeId::new("pg18:type:base:pg_catalog.bigint");
+        let projection = TypedProjection {
+            field_id: FieldId::new(1),
+            sql_label: "value".to_string(),
+            expression: TypedExpression {
+                id: ExpressionId::new(1),
+                origin: SourceOrigin::generated(
+                    dibs_query_ir::GeneratedOrigin::Structural,
+                    Vec::new(),
+                ),
+                type_id: integer.clone(),
+                typmod: None,
+                nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+                volatility: Volatility::Immutable,
+                kind: TypedExpressionKind::Parameter(ParameterId::new(1)),
+            },
+            coercion: Some(dibs_query_ir::TypedCoercion {
+                source_type: integer.clone(),
+                target_type: bigint.clone(),
+                target_typmod: None,
+                result_nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+                evidence: CoercionEvidence::CatalogCastPath {
+                    steps: vec![TypedCastStep {
+                        cast_id: dibs_pg_catalog::CastId::new("pg18:cast:integer->bigint"),
+                        source_type: integer,
+                        target_type: bigint,
+                        context: CoercionContext::Implicit,
+                    }],
+                },
+            }),
+        };
+
+        assert_eq!(
+            ensure_uncoerced_assignment_projection(&projection),
+            Err(CheckError::InvalidTypedShape(
+                dibs_query_ir::TypedShapeError::Coercion
+            ))
+        );
+    }
 }

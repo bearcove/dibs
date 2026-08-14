@@ -57,9 +57,9 @@ pub enum RustGenerationError {
         /// Completed adapter contract from the artifact.
         adapter: ParameterBindAdapter,
     },
-    /// The runtime has no helper that enforces a dynamic LIMIT parameter assertion.
+    /// A dynamic LIMIT assertion targets a non-scalar Rust parameter contract.
     UnsupportedLimitParameterAssertion {
-        /// Parameter whose runtime value requires validation.
+        /// Parameter whose API passing mode cannot yield an `i64` value.
         parameter_id: ParameterId,
     },
     /// No Rust API type is present for an output field.
@@ -142,7 +142,7 @@ pub fn generate_compiled_rust(query: &CompiledQuery) -> Result<GeneratedRust, Ru
         .map(RustOutput::from_contract)
         .collect::<Result<Vec<_>, _>>()?;
     validate_unique_output_names(&outputs)?;
-    validate_result_contract(query, &outputs)?;
+    validate_result_contract(query, &outputs, &parameters)?;
     let bind_arguments = bind_arguments(&query.ordered_bind_map, &parameters)?;
     let result_name = match query.declared_result_mode {
         ResultMode::Exec => None,
@@ -180,6 +180,7 @@ struct RustParameter<'a> {
     name: &'a str,
     argument_type: String,
     bind_expression: String,
+    validation_expression: Option<String>,
 }
 
 impl<'a> RustParameter<'a> {
@@ -195,11 +196,17 @@ impl<'a> RustParameter<'a> {
             })?;
         let argument_type = parameter_argument_type(parameter, contract)?;
         let bind_expression = parameter_bind(parameter, contract)?;
+        let validation_expression = match contract.passing {
+            ParameterPassing::Owned => Some(contract.name.clone()),
+            ParameterPassing::SharedReference => Some(format!("*{}", contract.name)),
+            ParameterPassing::StringSlice | ParameterPassing::ByteSlice => None,
+        };
         Ok(Self {
             id: parameter.id,
             name: &contract.name,
             argument_type,
             bind_expression,
+            validation_expression,
         })
     }
 }
@@ -393,6 +400,7 @@ fn validate_unique_output_names(outputs: &[RustOutput<'_>]) -> Result<(), RustGe
 fn validate_result_contract(
     query: &CompiledQuery,
     outputs: &[RustOutput<'_>],
+    parameters: &[RustParameter<'_>],
 ) -> Result<(), RustGenerationError> {
     let shape_valid = match query.declared_result_mode {
         ResultMode::Many | ResultMode::Optional | ResultMode::One => !outputs.is_empty(),
@@ -418,9 +426,20 @@ fn validate_result_contract(
             },
             RuntimeAssertion::Rowless => query.declared_result_mode == ResultMode::Exec,
             RuntimeAssertion::ValidLimitParameter { parameter_id } => {
-                return Err(RustGenerationError::UnsupportedLimitParameterAssertion {
-                    parameter_id: *parameter_id,
-                });
+                let Some(parameter) = parameters
+                    .iter()
+                    .find(|parameter| parameter.id == *parameter_id)
+                else {
+                    return Err(RustGenerationError::RuntimeAssertionMismatch {
+                        mode: query.declared_result_mode,
+                    });
+                };
+                if parameter.validation_expression.is_none() {
+                    return Err(RustGenerationError::UnsupportedLimitParameterAssertion {
+                        parameter_id: *parameter_id,
+                    });
+                }
+                true
             }
         };
         if !valid {
@@ -508,6 +527,24 @@ fn render_query_function(
     .unwrap();
     writeln!(source, "    let started = std::time::Instant::now();").unwrap();
     writeln!(source, "    let result = async {{").unwrap();
+    for assertion in &query.runtime_assertions {
+        if let RuntimeAssertion::ValidLimitParameter { parameter_id } = assertion {
+            let parameter = parameters
+                .iter()
+                .find(|parameter| parameter.id == *parameter_id)
+                .expect("limit assertion parameter was validated");
+            let validation = parameter
+                .validation_expression
+                .as_deref()
+                .expect("limit assertion validation expression was validated");
+            writeln!(
+                source,
+                "        valid_limit(&CONTEXT, {}, {validation})?;",
+                rust_string_literal(parameter.name),
+            )
+            .unwrap();
+        }
+    }
 
     match query.declared_result_mode {
         ResultMode::Many | ResultMode::Optional | ResultMode::One => {

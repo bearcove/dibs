@@ -501,6 +501,7 @@ fn collect_reference_target_catalog_identity(
         crate::ReferenceTarget::Collation(id) => Some(id.as_str()),
         crate::ReferenceTarget::Parameter(_)
         | crate::ReferenceTarget::Cast(_)
+        | crate::ReferenceTarget::IoCoercion(_)
         | crate::ReferenceTarget::RelationBinding(_)
         | crate::ReferenceTarget::Cte(_)
         | crate::ReferenceTarget::OutputField(_) => None,
@@ -664,7 +665,7 @@ fn collect_expression_catalog_identities(
             }
             collect_ordering_catalog_identities(&call.order_by, output);
             collect_expression_option_catalog_identities(call.filter.as_deref(), output);
-            collect_ordering_catalog_identities(&call.within_group, output);
+            collect_within_group_ordering_catalog_identities(&call.within_group, output);
             if let Some(window) = &call.over {
                 collect_window_reference_catalog_identities(window, output);
             }
@@ -684,6 +685,34 @@ fn collect_expression_catalog_identities(
                 }
             }
         }
+        crate::TypedExpressionKind::QuantifiedComparison {
+            operator_id,
+            left,
+            right,
+            ..
+        } => {
+            output.insert(operator_id.as_str().to_string());
+            collect_argument_catalog_identities(left, output);
+            collect_argument_catalog_identities(right, output);
+        }
+        crate::TypedExpressionKind::NullIf {
+            operator_id,
+            left,
+            right,
+            ..
+        } => {
+            output.insert(operator_id.as_str().to_string());
+            collect_argument_catalog_identities(left, output);
+            collect_argument_catalog_identities(right, output);
+        }
+        crate::TypedExpressionKind::InList {
+            expression, values, ..
+        } => {
+            collect_argument_catalog_identities(expression, output);
+            for value in values {
+                collect_argument_catalog_identities(value, output);
+            }
+        }
         crate::TypedExpressionKind::Cast {
             expression,
             coercion,
@@ -692,12 +721,24 @@ fn collect_expression_catalog_identities(
             collect_expression_catalog_identities(expression, output);
             collect_coercion_catalog_identities(coercion, output);
         }
+        crate::TypedExpressionKind::ExplicitCast {
+            expression,
+            coercion,
+        } => {
+            collect_expression_catalog_identities(expression, output);
+            if let Some(coercion) = coercion {
+                collect_coercion_catalog_identities(coercion, output);
+            }
+        }
         crate::TypedExpressionKind::Collate {
             collation_id,
             expression,
         } => {
             output.insert(collation_id.as_str().to_string());
             collect_expression_catalog_identities(expression, output);
+        }
+        crate::TypedExpressionKind::Exists(statement) => {
+            collect_statement_catalog_identities(statement, output);
         }
         crate::TypedExpressionKind::Case {
             operand,
@@ -718,6 +759,40 @@ fn collect_expression_catalog_identities(
                 collect_argument_catalog_identities(else_expression, output);
             }
             collect_coercion_evidence_catalog_identities(result_coercion, output);
+        }
+        crate::TypedExpressionKind::Coalesce {
+            arguments,
+            coercion,
+        } => {
+            for argument in arguments {
+                collect_argument_catalog_identities(argument, output);
+            }
+            collect_coercion_evidence_catalog_identities(coercion, output);
+        }
+        crate::TypedExpressionKind::Greatest {
+            arguments,
+            coercion,
+        }
+        | crate::TypedExpressionKind::Least {
+            arguments,
+            coercion,
+        } => {
+            for argument in arguments {
+                collect_argument_catalog_identities(argument, output);
+            }
+            collect_coercion_evidence_catalog_identities(coercion, output);
+        }
+        crate::TypedExpressionKind::Extract { source, .. } => {
+            collect_expression_catalog_identities(source, output);
+        }
+        crate::TypedExpressionKind::Position {
+            substring,
+            string,
+            input_type,
+        } => {
+            output.insert(input_type.as_str().to_string());
+            collect_argument_catalog_identities(substring, output);
+            collect_argument_catalog_identities(string, output);
         }
         crate::TypedExpressionKind::ScalarSubquery(statement) => {
             collect_statement_catalog_identities(statement, output);
@@ -777,6 +852,10 @@ fn collect_coercion_evidence_catalog_identities(
         }
         crate::CoercionEvidence::UnknownLiteral { resolved } => {
             output.insert(resolved.as_str().to_string());
+        }
+        crate::CoercionEvidence::ExplicitIo { source, target, .. } => {
+            output.insert(source.as_str().to_string());
+            output.insert(target.as_str().to_string());
         }
         crate::CoercionEvidence::CommonType { resolved, inputs } => {
             output.insert(resolved.as_str().to_string());
@@ -849,6 +928,11 @@ fn collect_cardinality_catalog_identities(
             crate::CardinalityEvidence::UniquePredicate {
                 constraint_id,
                 columns,
+            }
+            | crate::CardinalityEvidence::MutationUniqueCteJoin {
+                constraint_id,
+                columns,
+                ..
             } => {
                 output.insert(constraint_id.as_str().to_string());
                 output.extend(columns.iter().map(|id| id.as_str().to_string()));
@@ -924,6 +1008,15 @@ fn collect_ordering_catalog_identities(
 ) {
     for order in ordering {
         collect_expression_catalog_identities(&order.expression, output);
+    }
+}
+
+fn collect_within_group_ordering_catalog_identities(
+    ordering: &[crate::TypedWithinGroupOrderBy],
+    output: &mut BTreeSet<String>,
+) {
+    for order in ordering {
+        collect_argument_catalog_identities(&order.expression, output);
     }
 }
 

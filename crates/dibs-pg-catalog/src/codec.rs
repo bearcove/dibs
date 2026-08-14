@@ -124,6 +124,12 @@ pub(crate) fn builtin_codec(canonical_name: &str) -> Result<CodecBinding, Catalo
             "Timestamp",
             "string",
         ),
+        "interval" => CodecBinding::new(
+            "pg18:pg-codec:interval",
+            "wire:postgres:text:interval",
+            "String",
+            "string",
+        ),
         "jsonb" => CodecBinding::new(
             "pg18:pg-codec:jsonb",
             "wire:postgres:binary:jsonb-v1",

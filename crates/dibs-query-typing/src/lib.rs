@@ -8,22 +8,25 @@ mod resolution;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dibs_pg_catalog::{
-    AggregateEmptyBehavior, CallableId, CallableKind, CastContext, CatalogCallable, CatalogCast,
-    CatalogOperator, CatalogSnapshot, CatalogTable, CatalogType, ColumnId,
-    Nullability as CatalogNullability, OperatorId, PgCodecId, PgTypeCategory, PgTypeKind,
+    AggregateEmptyBehavior, CallableCardinality, CallableId, CallableKind, CastContext,
+    CatalogCallable, CatalogCast, CatalogOperator, CatalogSnapshot, CatalogTable, CatalogType,
+    ColumnId, Nullability as CatalogNullability, OperatorId, PgCodecId, PgTypeCategory, PgTypeKind,
     PolymorphicType, TableId, TypeId, Volatility as CatalogVolatility, WireCodecId,
 };
 use dibs_query_ir::{
-    Cardinality, CardinalityEvidence, CoercionContext, CoercionEvidence, CteId, ExpressionId,
-    FieldId, FrameBound, HirCall, HirCaseBranch, HirCte, HirExpression, HirExpressionKind,
-    HirLiteral, HirNamedWindow, HirOrderBy, HirParameter, HirProjection, HirQuery, HirRelation,
-    HirRelationKind, HirSelect, HirStatement, HirStatementKind, JoinKind, LowerBound, Nullability,
-    NullabilityEvidence, ParameterId, RelationId, ResultMode, RuntimeAssertion, SelectDistinct,
-    SetOperationKind, SourceOrigin, TypedArgument, TypedCall, TypedCaseBranch, TypedCastStep,
-    TypedCte, TypedExpression, TypedExpressionKind, TypedLimit, TypedNamedWindow, TypedOrderBy,
-    TypedProjection, TypedRelation, TypedRelationKind, TypedSelect, TypedStatement,
-    TypedStatementKind, TypedValues, TypedValuesColumn, Typmod, UpperBound, Volatility,
-    WindowFrame, WindowReference, WindowSpec,
+    Cardinality, CardinalityEvidence, CoercionContext, CoercionEvidence, ComparisonQuantifier,
+    ConflictTarget, CteId, ExpressionId, FieldId, FrameBound, HirCall, HirCaseBranch,
+    HirConflictAction, HirConflictClause, HirConflictTarget, HirCte, HirDelete, HirExpression,
+    HirExpressionKind, HirInsert, HirInsertSource, HirLiteral, HirNamedWindow, HirOrderBy,
+    HirParameter, HirProjection, HirQuery, HirRelation, HirRelationKind, HirSelect, HirStatement,
+    HirStatementKind, HirUpdate, JoinKind, LowerBound, Nullability, NullabilityEvidence,
+    ParameterId, RelationId, ResultMode, RuntimeAssertion, SelectDistinct, SetOperationKind,
+    SourceOrigin, TypedArgument, TypedAssignment, TypedCall, TypedCaseBranch, TypedCastStep,
+    TypedConflictAction, TypedConflictClause, TypedCte, TypedDelete, TypedExpression,
+    TypedExpressionKind, TypedInsert, TypedInsertSource, TypedLimit, TypedNamedWindow,
+    TypedOrderBy, TypedProjection, TypedRelation, TypedRelationKind, TypedSelect, TypedStatement,
+    TypedStatementKind, TypedUpdate, TypedValues, TypedValuesColumn, TypedWithinGroupOrderBy,
+    Typmod, UpperBound, Volatility, WindowFrame, WindowReference, WindowSpec,
 };
 
 /// Stable HIR identity for structural SQL `AND`.
@@ -324,11 +327,18 @@ impl From<dibs_query_ir::TypedShapeError> for CheckError {
 }
 
 #[derive(Clone)]
+struct CheckedCte {
+    fields: BTreeMap<FieldId, TypedExpression>,
+    cardinality: Cardinality,
+}
+
+#[derive(Clone)]
 struct CheckContext<'hir> {
     parameters: BTreeMap<ParameterId, &'hir HirParameter>,
     relations: BTreeMap<RelationId, BTreeMap<RelationField, BoundColumn>>,
     null_extended: BTreeSet<RelationId>,
-    ctes: BTreeMap<CteId, BTreeMap<FieldId, TypedExpression>>,
+    ctes: BTreeMap<CteId, CheckedCte>,
+    cte_bindings: BTreeMap<RelationId, CteId>,
 }
 
 impl<'hir> CheckContext<'hir> {
@@ -338,6 +348,7 @@ impl<'hir> CheckContext<'hir> {
             relations: BTreeMap::new(),
             null_extended: BTreeSet::new(),
             ctes: BTreeMap::new(),
+            cte_bindings: BTreeMap::new(),
         }
     }
 
@@ -405,6 +416,7 @@ struct BuiltinTypes {
     numeric: TypeId,
     text: TypeId,
     bytea: TypeId,
+    interval: TypeId,
     unknown: TypeId,
 }
 
@@ -424,6 +436,7 @@ impl BuiltinTypes {
             numeric: resolve("pg_catalog.numeric"),
             text: resolve("pg_catalog.text"),
             bytea: resolve("pg_catalog.bytea"),
+            interval: resolve("pg_catalog.interval"),
             unknown: catalog
                 .types
                 .iter()
@@ -566,19 +579,19 @@ impl<'catalog> SemanticChecker<'catalog> {
     ) -> Result<TypedStatement, CheckError> {
         match &statement.kind {
             HirStatementKind::Select(select) => self.check_select(statement, select, context),
-            HirStatementKind::Insert(_) => Err(CheckError::UnsupportedStatement {
-                statement: "INSERT",
-                origin: statement.origin.clone(),
-            }),
-            HirStatementKind::Update(_) => Err(CheckError::UnsupportedStatement {
-                statement: "UPDATE",
-                origin: statement.origin.clone(),
-            }),
-            HirStatementKind::Delete(_) => Err(CheckError::UnsupportedStatement {
-                statement: "DELETE",
-                origin: statement.origin.clone(),
-            }),
+            HirStatementKind::Insert(insert) => self.check_insert(statement, insert, context),
+            HirStatementKind::Update(update) => self.check_update(statement, update, context),
+            HirStatementKind::Delete(delete) => self.check_delete(statement, delete, context),
         }
+    }
+}
+
+fn hir_statement_projections(statement: &HirStatement) -> &[HirProjection] {
+    match &statement.kind {
+        HirStatementKind::Select(select) => &select.projections,
+        HirStatementKind::Insert(insert) => &insert.returning,
+        HirStatementKind::Update(update) => &update.returning,
+        HirStatementKind::Delete(delete) => &delete.returning,
     }
 }
 

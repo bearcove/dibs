@@ -153,6 +153,7 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
                     PgTypeCategory::Numeric => "N",
                     PgTypeCategory::Pseudo => "P",
                     PgTypeCategory::String => "S",
+                    PgTypeCategory::Timespan => "T",
                     PgTypeCategory::Unknown => "X",
                     PgTypeCategory::UserDefined => "U",
                 }
@@ -326,5 +327,15 @@ async fn curated_postgres_18_catalog_matches_live_stable_signatures() {
             1,
             "expected exactly one live pg_cast row for {signature:?}"
         );
+    }
+
+    for coercion in catalog.builtin_io_coercions() {
+        let (source, target) = coercion
+            .live_signature(&catalog)
+            .expect("I/O coercion references registered types");
+        let sql = format!("SELECT $1::{source}::{target}");
+        client.prepare(&sql).await.unwrap_or_else(|error| {
+            panic!("PostgreSQL rejected explicit I/O coercion {sql}: {error}")
+        });
     }
 }

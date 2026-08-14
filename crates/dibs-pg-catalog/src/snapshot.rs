@@ -243,6 +243,46 @@ pub struct CatalogCast {
     pub builtin: bool,
 }
 
+/// Explicit PostgreSQL conversion through target type input/output functions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogIoCoercion {
+    /// Stable logical I/O coercion identity.
+    pub id: crate::IoCoercionId,
+    /// Source type.
+    pub source: TypeId,
+    /// Target type.
+    pub target: TypeId,
+    /// Whether this belongs to the PostgreSQL fixture.
+    pub builtin: bool,
+}
+
+/// Computes the canonical identity for a PostgreSQL explicit I/O coercion.
+#[must_use]
+pub fn io_coercion_id(
+    postgres_major: u16,
+    source: &TypeId,
+    target: &TypeId,
+) -> crate::IoCoercionId {
+    crate::IoCoercionId::new(format!(
+        "pg{postgres_major}:io-coercion:{}->{}",
+        source.as_str(),
+        target.as_str()
+    ))
+}
+
+impl CatalogIoCoercion {
+    /// Renders source and target SQL type names for the live PostgreSQL oracle.
+    pub fn live_signature(
+        &self,
+        catalog: &CatalogSnapshot,
+    ) -> Result<(String, String), CatalogError> {
+        Ok((
+            render_type_id(catalog, &self.source)?,
+            render_type_id(catalog, &self.target)?,
+        ))
+    }
+}
+
 impl CatalogCast {
     /// Renders the OID-independent signature returned by the live oracle query.
     pub fn live_signature(
@@ -282,6 +322,8 @@ pub struct CatalogSnapshot {
     pub operators: Vec<CatalogOperator>,
     /// Curated casts.
     pub casts: Vec<CatalogCast>,
+    /// Curated explicit input/output coercions not represented by `pg_cast` rows.
+    pub io_coercions: Vec<CatalogIoCoercion>,
     /// Application tables converted from Dibs schema truth.
     pub tables: Vec<CatalogTable>,
 }
@@ -334,14 +376,23 @@ impl CatalogSnapshot {
         self.casts.iter().find(|cast| &cast.id == id)
     }
 
-    /// Finds callable candidates by qualified or unqualified name and exact arity.
+    /// Resolves an explicit input/output coercion by source and target type.
+    #[must_use]
+    pub fn io_coercion(&self, source: &TypeId, target: &TypeId) -> Option<&CatalogIoCoercion> {
+        self.io_coercions
+            .iter()
+            .find(|coercion| &coercion.source == source && &coercion.target == target)
+    }
+
+    /// Finds callable candidates by qualified or unqualified name and supplied arity.
     pub fn callable_candidates<'a>(
         &'a self,
         name: &'a str,
         arity: usize,
     ) -> impl Iterator<Item = &'a CatalogCallable> + 'a {
         self.callables.iter().filter(move |callable| {
-            callable.arguments.len() == arity
+            callable.required_arguments <= arity
+                && arity <= callable.arguments.len()
                 && catalog_name_matches(&callable.qualified_name, name)
         })
     }
@@ -641,6 +692,11 @@ impl CatalogSnapshot {
         self.casts.iter().filter(|cast| cast.builtin)
     }
 
+    /// Iterates the curated explicit input/output coercions.
+    pub fn builtin_io_coercions(&self) -> impl Iterator<Item = &CatalogIoCoercion> {
+        self.io_coercions.iter().filter(|coercion| coercion.builtin)
+    }
+
     /// Internal `pg_type.typname` values used by the live PostgreSQL oracle.
     #[must_use]
     pub fn live_type_internal_names(&self) -> Vec<&str> {
@@ -695,6 +751,7 @@ impl CatalogSnapshot {
             callables: Vec::new(),
             operators: Vec::new(),
             casts: Vec::new(),
+            io_coercions: Vec::new(),
             tables: Vec::new(),
         };
         snapshot.install_builtin_types()?;
@@ -736,6 +793,7 @@ impl CatalogSnapshot {
                 PgTypeCategory::DateTime,
                 true,
             ),
+            ("interval", "interval", PgTypeCategory::Timespan, true),
             ("jsonb", "jsonb", PgTypeCategory::UserDefined, false),
         ];
         for (canonical, internal, category, preferred) in BASE_TYPES {
@@ -859,6 +917,53 @@ impl CatalogSnapshot {
         self.add_builtin_scalar("pg_catalog.lower", &["text"], "text")?;
         self.add_builtin_scalar("pg_catalog.length", &["text"], "integer")?;
         self.add_builtin_scalar("pg_catalog.jsonb_array_length", &["jsonb"], "integer")?;
+        self.add_builtin_scalar("pg_catalog.cardinality", &["anyarray"], "integer")?;
+        self.add_builtin_callable(
+            "pg_catalog.to_jsonb",
+            &["anyelement"],
+            "jsonb",
+            CallableFacts {
+                kind: CallableKind::Scalar,
+                volatility: Volatility::Stable,
+                strict: true,
+                scalar_result_nullability: Some(Nullability::NotNull),
+                cardinality: CallableCardinality::ExactlyOne,
+                aggregate_empty: None,
+            },
+        )?;
+        self.add_builtin_scalar(
+            "pg_catalog.power",
+            &["double precision", "double precision"],
+            "double precision",
+        )?;
+        self.add_builtin_scalar("pg_catalog.power", &["numeric", "numeric"], "numeric")?;
+        self.add_builtin_named_scalar(
+            "pg_catalog.make_interval",
+            &[
+                ("years", "integer"),
+                ("months", "integer"),
+                ("weeks", "integer"),
+                ("days", "integer"),
+                ("hours", "integer"),
+                ("mins", "integer"),
+                ("secs", "double precision"),
+            ],
+            0,
+            "interval",
+        )?;
+        self.add_builtin_callable(
+            "pg_catalog.now",
+            &[],
+            "timestamp with time zone",
+            CallableFacts {
+                kind: CallableKind::Scalar,
+                volatility: Volatility::Stable,
+                strict: true,
+                scalar_result_nullability: Some(Nullability::NotNull),
+                cardinality: CallableCardinality::ExactlyOne,
+                aggregate_empty: None,
+            },
+        )?;
         self.add_builtin_callable(
             "pg_catalog.count",
             &[],
@@ -897,6 +1002,61 @@ impl CatalogSnapshot {
                 cardinality: CallableCardinality::ExactlyOne,
                 aggregate_empty: Some(AggregateEmptyBehavior::Null),
             },
+        )?;
+        self.add_builtin_callable(
+            "pg_catalog.bool_and",
+            &["boolean"],
+            "boolean",
+            CallableFacts {
+                kind: CallableKind::Aggregate,
+                volatility: Volatility::Immutable,
+                strict: false,
+                scalar_result_nullability: Some(Nullability::Nullable),
+                cardinality: CallableCardinality::ExactlyOne,
+                aggregate_empty: Some(AggregateEmptyBehavior::Null),
+            },
+        )?;
+        for aggregate in ["min", "max"] {
+            for type_name in [
+                "smallint",
+                "integer",
+                "bigint",
+                "real",
+                "double precision",
+                "numeric",
+                "text",
+                "date",
+                "time without time zone",
+                "timestamp without time zone",
+                "timestamp with time zone",
+                "interval",
+            ] {
+                self.add_builtin_callable(
+                    &format!("pg_catalog.{aggregate}"),
+                    &[type_name],
+                    type_name,
+                    CallableFacts {
+                        kind: CallableKind::Aggregate,
+                        volatility: Volatility::Immutable,
+                        strict: false,
+                        scalar_result_nullability: Some(Nullability::Nullable),
+                        cardinality: CallableCardinality::ExactlyOne,
+                        aggregate_empty: Some(AggregateEmptyBehavior::Null),
+                    },
+                )?;
+            }
+        }
+        self.add_builtin_ordered_set(
+            "pg_catalog.percentile_cont",
+            &["double precision"],
+            &["double precision"],
+            "double precision",
+        )?;
+        self.add_builtin_ordered_set(
+            "pg_catalog.percentile_cont",
+            &["double precision"],
+            &["interval"],
+            "interval",
         )?;
         self.add_builtin_callable(
             "pg_catalog.row_number",
@@ -957,6 +1117,53 @@ impl CatalogSnapshot {
         Ok(())
     }
 
+    fn add_builtin_named_scalar(
+        &mut self,
+        qualified_name: &str,
+        arguments: &[(&str, &str)],
+        required_arguments: usize,
+        result_name: &str,
+    ) -> Result<(), CatalogError> {
+        let argument_types = arguments
+            .iter()
+            .map(|(_, type_name)| {
+                self.resolve_type(&format!("pg_catalog.{type_name}"))
+                    .map(|ty| ty.id.clone())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let result = self
+            .resolve_type(&format!("pg_catalog.{result_name}"))?
+            .id
+            .clone();
+        let mut callable = CatalogCallable::scalar(
+            self.postgres_major,
+            ScalarSignature {
+                qualified_name: qualified_name.to_string(),
+                arguments: argument_types,
+                result,
+            },
+            arguments
+                .iter()
+                .map(|(name, type_name)| format!("{name} {type_name}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            result_name.to_string(),
+            ScalarCallableFacts {
+                volatility: Volatility::Immutable,
+                strict: true,
+                result_nullability: Nullability::NotNull,
+            },
+            true,
+        );
+        callable.parameter_names = arguments
+            .iter()
+            .map(|(name, _)| Some((*name).to_string()))
+            .collect();
+        callable.required_arguments = required_arguments;
+        self.callables.push(callable);
+        Ok(())
+    }
+
     fn add_builtin_callable(
         &mut self,
         qualified_name: &str,
@@ -985,6 +1192,57 @@ impl CatalogSnapshot {
             render_identity_argument_names(argument_names),
             result_name.to_string(),
             facts,
+            true,
+        ));
+        Ok(())
+    }
+
+    fn add_builtin_ordered_set(
+        &mut self,
+        qualified_name: &str,
+        direct_argument_names: &[&str],
+        aggregated_argument_names: &[&str],
+        result_name: &str,
+    ) -> Result<(), CatalogError> {
+        let arguments = direct_argument_names
+            .iter()
+            .map(|name| {
+                self.resolve_type(&format!("pg_catalog.{name}"))
+                    .map(|ty| ty.id.clone())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let aggregated_arguments = aggregated_argument_names
+            .iter()
+            .map(|name| {
+                self.resolve_type(&format!("pg_catalog.{name}"))
+                    .map(|ty| ty.id.clone())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let result = self
+            .resolve_type(&format!("pg_catalog.{result_name}"))?
+            .id
+            .clone();
+        let postgres_identity_arguments = format!(
+            "{} ORDER BY {}",
+            render_identity_argument_names(direct_argument_names),
+            render_identity_argument_names(aggregated_argument_names),
+        );
+        self.callables.push(CatalogCallable::ordered_set(
+            self.postgres_major,
+            qualified_name.to_string(),
+            arguments,
+            aggregated_arguments,
+            result,
+            postgres_identity_arguments,
+            result_name.to_string(),
+            CallableFacts {
+                kind: CallableKind::Aggregate,
+                volatility: Volatility::Immutable,
+                strict: false,
+                scalar_result_nullability: Some(Nullability::Nullable),
+                cardinality: CallableCardinality::ExactlyOne,
+                aggregate_empty: Some(AggregateEmptyBehavior::Null),
+            },
             true,
         ));
         Ok(())
@@ -1052,15 +1310,82 @@ impl CatalogSnapshot {
         for (left, right, result) in NUMERIC_PLUS {
             self.add_operator("+", left, right, result)?;
         }
+        self.add_operator("-", "integer", "integer", "integer")?;
         for (left, right, _) in NUMERIC_PLUS {
             for operator in ["=", "<>", "<", ">", "<=", ">="] {
                 self.add_operator(operator, left, right, "boolean")?;
             }
         }
-        self.add_operator("=", "text", "text", "boolean")?;
+        for operator in ["=", "<>"] {
+            self.add_operator(operator, "bytea", "bytea", "boolean")?;
+        }
+        for operator in ["+", "-"] {
+            self.add_operator(operator, "interval", "interval", "interval")?;
+            self.add_operator(
+                operator,
+                "timestamp without time zone",
+                "interval",
+                "timestamp without time zone",
+            )?;
+            self.add_operator(
+                operator,
+                "timestamp with time zone",
+                "interval",
+                "timestamp with time zone",
+            )?;
+            self.add_operator(operator, "date", "interval", "timestamp without time zone")?;
+        }
+        self.add_operator("*", "numeric", "numeric", "numeric")?;
+        self.add_operator(
+            "-",
+            "timestamp with time zone",
+            "timestamp with time zone",
+            "interval",
+        )?;
+        self.add_operator("*", "interval", "double precision", "interval")?;
+        self.add_operator("*", "double precision", "interval", "interval")?;
+        for type_name in [
+            "date",
+            "time without time zone",
+            "timestamp without time zone",
+            "timestamp with time zone",
+            "interval",
+        ] {
+            for operator in ["=", "<>", "<", ">", "<=", ">="] {
+                self.add_operator(operator, type_name, type_name, "boolean")?;
+            }
+        }
+        for operator in ["=", "<>", "<", ">", "<=", ">="] {
+            self.add_operator(operator, "text", "text", "boolean")?;
+        }
         self.add_operator("=", "boolean", "boolean", "boolean")?;
         self.add_operator("||", "text", "text", "text")?;
+        self.add_operator(
+            "||",
+            "anycompatiblearray",
+            "anycompatiblearray",
+            "anycompatiblearray",
+        )?;
+        self.add_operator(
+            "||",
+            "anycompatible",
+            "anycompatiblearray",
+            "anycompatiblearray",
+        )?;
+        self.add_operator(
+            "||",
+            "anycompatiblearray",
+            "anycompatible",
+            "anycompatiblearray",
+        )?;
+        for operator in ["=", "<>", "<", ">", "<=", ">="] {
+            self.add_operator(operator, "jsonb", "jsonb", "boolean")?;
+        }
         self.add_operator("@>", "jsonb", "jsonb", "boolean")?;
+        self.add_operator("->", "jsonb", "text", "jsonb")?;
+        self.add_operator("->", "jsonb", "integer", "jsonb")?;
+        self.add_operator("->>", "jsonb", "text", "text")?;
+        self.add_operator("->>", "jsonb", "integer", "text")?;
         Ok(())
     }
 
@@ -1125,10 +1450,37 @@ impl CatalogSnapshot {
         )?;
         self.add_cast(
             "bigint",
+            "double precision",
+            CastContext::Implicit,
+            CastMethod::Function,
+        )?;
+        self.add_cast(
+            "numeric",
+            "double precision",
+            CastContext::Implicit,
+            CastMethod::Function,
+        )?;
+        self.add_cast(
+            "double precision",
+            "bigint",
+            CastContext::Assignment,
+            CastMethod::Function,
+        )?;
+        self.add_cast(
+            "numeric",
             "integer",
             CastContext::Assignment,
             CastMethod::Function,
         )?;
+        self.add_cast(
+            "bigint",
+            "integer",
+            CastContext::Assignment,
+            CastMethod::Function,
+        )?;
+        self.add_io_coercion("timestamp with time zone", "text")?;
+        self.add_io_coercion("text", "jsonb")?;
+        self.add_io_coercion("jsonb", "text")?;
         Ok(())
     }
 
@@ -1159,6 +1511,29 @@ impl CatalogSnapshot {
             target,
             context,
             method,
+            builtin: true,
+        });
+        Ok(())
+    }
+
+    fn add_io_coercion(
+        &mut self,
+        source_name: &str,
+        target_name: &str,
+    ) -> Result<(), CatalogError> {
+        let source = self
+            .resolve_type(&format!("pg_catalog.{source_name}"))?
+            .id
+            .clone();
+        let target = self
+            .resolve_type(&format!("pg_catalog.{target_name}"))?
+            .id
+            .clone();
+        let id = io_coercion_id(self.postgres_major, &source, &target);
+        self.io_coercions.push(CatalogIoCoercion {
+            id,
+            source,
+            target,
             builtin: true,
         });
         Ok(())
@@ -1220,6 +1595,24 @@ impl CatalogSnapshot {
                         columns: vec![column.name.clone()],
                     }
                 })
+                .chain(
+                    table
+                        .indices
+                        .iter()
+                        .filter(|index| index.unique && index.where_clause.is_none())
+                        .map(|index| UniqueConstraint {
+                            id: ConstraintId::new(format!(
+                                "pg{POSTGRES_MAJOR}:constraint:{qualified_name}:{}",
+                                index.name
+                            )),
+                            name: index.name.clone(),
+                            columns: index
+                                .columns
+                                .iter()
+                                .map(|column| column.name.clone())
+                                .collect(),
+                        }),
+                )
                 .collect();
             let foreign_keys = table
                 .foreign_keys
@@ -1294,6 +1687,7 @@ impl CatalogSnapshot {
         if self.callables.iter().any(|existing| {
             existing.qualified_name == callable.qualified_name
                 && existing.arguments == callable.arguments
+                && existing.aggregated_arguments == callable.aggregated_arguments
         }) {
             return Err(CatalogError::DuplicateCallableSignature {
                 qualified_name: callable.qualified_name,
@@ -1567,6 +1961,25 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
         for argument in &callable.arguments {
             write_value(&mut canonical, "callable-argument", argument.as_str());
         }
+        for argument in &callable.aggregated_arguments {
+            write_value(
+                &mut canonical,
+                "callable-aggregated-argument",
+                argument.as_str(),
+            );
+        }
+        for parameter_name in &callable.parameter_names {
+            write_optional(
+                &mut canonical,
+                "callable-parameter-name",
+                parameter_name.as_deref(),
+            );
+        }
+        let _ = writeln!(
+            canonical,
+            "callable-required-arguments:{}",
+            callable.required_arguments
+        );
         write_optional(
             &mut canonical,
             "callable-scalar-result",

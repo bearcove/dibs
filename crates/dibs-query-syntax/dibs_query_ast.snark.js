@@ -1,6 +1,7 @@
 // Rust-facing names and leaf decoding for the single structural Dibs/PostgreSQL AST.
 ast({
   declaration_identifier: { decode: "text" },
+  type_name_atom: { decode: "text" },
   result_mode: { decode: "text" },
 
   _statement: { enum: "Statement" },
@@ -65,7 +66,13 @@ ast({
   and_expr: { as: "And" },
   not_expr: { as: "Not" },
   is_predicate_expr: { as: "IsPredicate", fields: { test: { enum: "IsPredicateTestNode" } } },
-  is_value_test: { as: "Value" },
+  is_value_test: { as: "Value", fields: { value: { enum: "IsValueTestNode" } } },
+  is_null_test: { as: "Null" },
+  is_true_test: { as: "True" },
+  is_false_test: { as: "False" },
+  is_unknown_test: { as: "Unknown" },
+  is_document_test: { as: "Document" },
+  is_normalized_test: { as: "Normalized" },
   is_distinct_test: { as: "DistinctFrom" },
   between_expr: { as: "Between" },
   in_expr: { as: "In" },

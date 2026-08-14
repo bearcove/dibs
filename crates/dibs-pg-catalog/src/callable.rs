@@ -29,6 +29,8 @@ pub enum Volatility {
 pub enum CallableCardinality {
     /// One scalar value per invocation.
     ExactlyOne,
+    /// The function returns zero or one row per invocation.
+    ZeroOrOne,
     /// One window value per input row.
     OnePerInput,
     /// Set-returning cardinality is not proven by the catalog.
@@ -59,7 +61,7 @@ impl ScalarSignature {
     /// Returns the PostgreSQL 18 identity for this name and ordered input list.
     #[must_use]
     pub fn postgres_18_id(&self) -> CallableId {
-        stable_callable_id(18, &self.qualified_name, &self.arguments)
+        stable_callable_id(18, &self.qualified_name, &self.arguments, &[])
     }
 }
 
@@ -118,6 +120,12 @@ pub struct CatalogCallable {
     pub kind: CallableKind,
     /// Ordered logical argument types.
     pub arguments: Vec<TypeId>,
+    /// Ordered-set aggregated argument types supplied by `WITHIN GROUP (ORDER BY ...)`.
+    pub aggregated_arguments: Vec<TypeId>,
+    /// Ordered PostgreSQL input parameter names. Empty entries are not name-bindable.
+    pub parameter_names: Vec<Option<String>>,
+    /// Number of leading arguments required when trailing defaults are omitted.
+    pub required_arguments: usize,
     /// Scalar result type for scalar, aggregate, and window callables.
     pub scalar_result: Option<TypeId>,
     /// Table result columns, when `kind` is table.
@@ -203,11 +211,15 @@ impl CatalogCallable {
         builtin: bool,
     ) -> Self {
         let id = stable_scalar_id(postgres_major, &signature);
+        let argument_count = signature.arguments.len();
         Self {
             id,
             qualified_name: signature.qualified_name,
             kind: facts.kind,
             arguments: signature.arguments,
+            aggregated_arguments: Vec::new(),
+            parameter_names: vec![None; argument_count],
+            required_arguments: argument_count,
             scalar_result: Some(signature.result),
             table_columns: Vec::new(),
             volatility: facts.volatility,
@@ -230,14 +242,57 @@ impl CatalogCallable {
         builtin: bool,
     ) -> Self {
         let id = stable_table_id(postgres_major, &signature);
+        let argument_count = signature.arguments.len();
         let facts = CallableFacts::table(facts);
         Self {
             id,
             qualified_name: signature.qualified_name,
             kind: facts.kind,
             arguments: signature.arguments,
+            aggregated_arguments: Vec::new(),
+            parameter_names: vec![None; argument_count],
+            required_arguments: argument_count,
             scalar_result: None,
             table_columns: signature.columns,
+            volatility: facts.volatility,
+            strict: facts.strict,
+            scalar_result_nullability: facts.scalar_result_nullability,
+            cardinality: facts.cardinality,
+            aggregate_empty: facts.aggregate_empty,
+            postgres_identity_arguments,
+            postgres_result_type,
+            builtin,
+        }
+    }
+
+    pub(crate) fn ordered_set(
+        postgres_major: u16,
+        qualified_name: String,
+        arguments: Vec<TypeId>,
+        aggregated_arguments: Vec<TypeId>,
+        result: TypeId,
+        postgres_identity_arguments: String,
+        postgres_result_type: String,
+        facts: CallableFacts,
+        builtin: bool,
+    ) -> Self {
+        let id = stable_callable_id(
+            postgres_major,
+            &qualified_name,
+            &arguments,
+            &aggregated_arguments,
+        );
+        let argument_count = arguments.len();
+        Self {
+            id,
+            qualified_name,
+            kind: facts.kind,
+            arguments,
+            aggregated_arguments,
+            parameter_names: vec![None; argument_count],
+            required_arguments: argument_count,
+            scalar_result: Some(result),
+            table_columns: Vec::new(),
             volatility: facts.volatility,
             strict: facts.strict,
             scalar_result_nullability: facts.scalar_result_nullability,
@@ -255,6 +310,7 @@ pub(crate) fn stable_scalar_id(postgres_major: u16, signature: &ScalarSignature)
         postgres_major,
         &signature.qualified_name,
         &signature.arguments,
+        &[],
     )
 }
 
@@ -263,6 +319,7 @@ pub(crate) fn stable_table_id(postgres_major: u16, signature: &TableSignature) -
         postgres_major,
         &signature.qualified_name,
         &signature.arguments,
+        &[],
     )
 }
 
@@ -270,10 +327,14 @@ fn stable_callable_id(
     postgres_major: u16,
     qualified_name: &str,
     arguments: &[TypeId],
+    aggregated_arguments: &[TypeId],
 ) -> CallableId {
+    let ordered_set_suffix = (!aggregated_arguments.is_empty())
+        .then(|| format!(" ORDER BY {}", join_type_ids(aggregated_arguments)));
     CallableId::new(format!(
-        "pg{postgres_major}:callable:function:{qualified_name}({})",
-        join_type_ids(arguments)
+        "pg{postgres_major}:callable:function:{qualified_name}({}{})",
+        join_type_ids(arguments),
+        ordered_set_suffix.as_deref().unwrap_or("")
     ))
 }
 

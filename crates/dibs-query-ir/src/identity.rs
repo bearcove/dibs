@@ -514,6 +514,7 @@ impl From<&crate::FrameBound<crate::TypedExpression>> for SemanticFrameBound {
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 struct SemanticCte {
     id: crate::CteId,
+    recursive: bool,
     materialization: crate::CteMaterialization,
     statement: Box<SemanticStatement>,
     output_fields: Vec<crate::FieldId>,
@@ -523,6 +524,7 @@ impl From<&crate::TypedCte> for SemanticCte {
     fn from(cte: &crate::TypedCte) -> Self {
         Self {
             id: cte.id,
+            recursive: cte.recursive,
             materialization: cte.materialization,
             statement: Box::new(SemanticStatement::from(cte.statement.as_ref())),
             output_fields: cte.output_fields().to_vec(),
@@ -696,7 +698,7 @@ enum SemanticExpressionKind {
         star: bool,
         order_by: Vec<SemanticOrderBy>,
         filter: Option<Box<SemanticExpression>>,
-        within_group: Vec<SemanticOrderBy>,
+        within_group: Vec<SemanticWithinGroupOrderBy>,
         over: Option<SemanticWindowReference>,
     },
     Operator {
@@ -704,21 +706,64 @@ enum SemanticExpressionKind {
         operands: Vec<SemanticExpression>,
         coercions: Vec<Option<crate::TypedCoercion>>,
     },
+    NullIf {
+        operator_id: dibs_pg_catalog::OperatorId,
+        left: Box<SemanticArgument>,
+        right: Box<SemanticArgument>,
+    },
+    QuantifiedComparison {
+        operator_id: dibs_pg_catalog::OperatorId,
+        left: Box<SemanticArgument>,
+        right: Box<SemanticArgument>,
+        quantifier: crate::ComparisonQuantifier,
+    },
+    InList {
+        expression: Box<SemanticArgument>,
+        values: Vec<SemanticArgument>,
+        negated: bool,
+        coercion: crate::CoercionEvidence,
+    },
     Cast {
         cast_id: dibs_pg_catalog::CastId,
         expression: Box<SemanticExpression>,
         coercion: crate::TypedCoercion,
     },
+    ExplicitCast {
+        expression: Box<SemanticExpression>,
+        coercion: Option<crate::TypedCoercion>,
+    },
     Collate {
         collation_id: dibs_pg_catalog::CollationId,
         expression: Box<SemanticExpression>,
     },
+    Exists(Box<SemanticStatement>),
     Case {
         operand: Option<Box<SemanticExpression>>,
         branches: Vec<SemanticCaseBranch>,
         else_expression: Option<Box<SemanticArgument>>,
         implicit_else_type: Option<dibs_pg_catalog::TypeId>,
         result_coercion: crate::CoercionEvidence,
+    },
+    Coalesce {
+        arguments: Vec<SemanticArgument>,
+        coercion: crate::CoercionEvidence,
+    },
+    Greatest {
+        arguments: Vec<SemanticArgument>,
+        coercion: crate::CoercionEvidence,
+    },
+    Least {
+        arguments: Vec<SemanticArgument>,
+        coercion: crate::CoercionEvidence,
+    },
+    Extract {
+        field: crate::ExtractField,
+        source: Box<SemanticExpression>,
+    },
+    Position {
+        substring: Box<SemanticArgument>,
+        string: Box<SemanticArgument>,
+        input_type: TypeId,
     },
     ScalarSubquery(Box<SemanticStatement>),
     Row(Vec<SemanticExpression>),
@@ -728,6 +773,7 @@ enum SemanticExpressionKind {
     },
     CteColumn {
         cte_id: crate::CteId,
+        binding: crate::RelationId,
         field_id: crate::FieldId,
     },
 }
@@ -769,9 +815,22 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 within_group: call
                     .within_group
                     .iter()
-                    .map(SemanticOrderBy::from)
+                    .map(SemanticWithinGroupOrderBy::from)
                     .collect(),
                 over: call.over.as_ref().map(SemanticWindowReference::from),
+            },
+            crate::TypedExpressionKind::Extract { field, source } => Self::Extract {
+                field: *field,
+                source: Box::new(SemanticExpression::from(source.as_ref())),
+            },
+            crate::TypedExpressionKind::Position {
+                substring,
+                string,
+                input_type,
+            } => Self::Position {
+                substring: Box::new(SemanticArgument::from(substring.as_ref())),
+                string: Box::new(SemanticArgument::from(string.as_ref())),
+                input_type: input_type.clone(),
             },
             crate::TypedExpressionKind::Operator {
                 operator_id,
@@ -788,12 +847,52 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                     .map(|operand| operand.coercion.clone())
                     .collect(),
             },
+            crate::TypedExpressionKind::NullIf {
+                operator_id,
+                left,
+                right,
+                ..
+            } => Self::NullIf {
+                operator_id: operator_id.clone(),
+                left: Box::new(SemanticArgument::from(left.as_ref())),
+                right: Box::new(SemanticArgument::from(right.as_ref())),
+            },
+            crate::TypedExpressionKind::QuantifiedComparison {
+                operator_id,
+                left,
+                right,
+                quantifier,
+                ..
+            } => Self::QuantifiedComparison {
+                operator_id: operator_id.clone(),
+                left: Box::new(SemanticArgument::from(left.as_ref())),
+                right: Box::new(SemanticArgument::from(right.as_ref())),
+                quantifier: *quantifier,
+            },
+            crate::TypedExpressionKind::InList {
+                expression,
+                values,
+                negated,
+                coercion,
+            } => Self::InList {
+                expression: Box::new(SemanticArgument::from(expression.as_ref())),
+                values: values.iter().map(SemanticArgument::from).collect(),
+                negated: *negated,
+                coercion: coercion.clone(),
+            },
             crate::TypedExpressionKind::Cast {
                 cast_id,
                 expression,
                 coercion,
             } => Self::Cast {
                 cast_id: cast_id.clone(),
+                expression: Box::new(SemanticExpression::from(expression.as_ref())),
+                coercion: coercion.clone(),
+            },
+            crate::TypedExpressionKind::ExplicitCast {
+                expression,
+                coercion,
+            } => Self::ExplicitCast {
                 expression: Box::new(SemanticExpression::from(expression.as_ref())),
                 coercion: coercion.clone(),
             },
@@ -804,6 +903,9 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 collation_id: collation_id.clone(),
                 expression: Box::new(SemanticExpression::from(expression.as_ref())),
             },
+            crate::TypedExpressionKind::Exists(statement) => {
+                Self::Exists(Box::new(SemanticStatement::from(statement.as_ref())))
+            }
             crate::TypedExpressionKind::Case {
                 operand,
                 branches,
@@ -821,6 +923,27 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 implicit_else_type: implicit_else_type.clone(),
                 result_coercion: result_coercion.clone(),
             },
+            crate::TypedExpressionKind::Coalesce {
+                arguments,
+                coercion,
+            } => Self::Coalesce {
+                arguments: arguments.iter().map(SemanticArgument::from).collect(),
+                coercion: coercion.clone(),
+            },
+            crate::TypedExpressionKind::Greatest {
+                arguments,
+                coercion,
+            } => Self::Greatest {
+                arguments: arguments.iter().map(SemanticArgument::from).collect(),
+                coercion: coercion.clone(),
+            },
+            crate::TypedExpressionKind::Least {
+                arguments,
+                coercion,
+            } => Self::Least {
+                arguments: arguments.iter().map(SemanticArgument::from).collect(),
+                coercion: coercion.clone(),
+            },
             crate::TypedExpressionKind::ScalarSubquery(statement) => {
                 Self::ScalarSubquery(Box::new(SemanticStatement::from(statement.as_ref())))
             }
@@ -831,8 +954,13 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 elements: elements.iter().map(SemanticArgument::from).collect(),
                 coercion: coercion.clone(),
             },
-            crate::TypedExpressionKind::CteColumn { cte_id, field_id } => Self::CteColumn {
+            crate::TypedExpressionKind::CteColumn {
+                cte_id,
+                binding,
+                field_id,
+            } => Self::CteColumn {
                 cte_id: *cte_id,
+                binding: *binding,
                 field_id: *field_id,
             },
         }
@@ -880,6 +1008,23 @@ impl From<&crate::TypedOrderBy> for SemanticOrderBy {
     fn from(order: &crate::TypedOrderBy) -> Self {
         Self {
             expression: SemanticExpression::from(&order.expression),
+            direction: order.direction,
+            nulls: order.nulls,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+struct SemanticWithinGroupOrderBy {
+    argument: SemanticArgument,
+    direction: crate::SortDirection,
+    nulls: crate::NullsOrder,
+}
+
+impl From<&crate::TypedWithinGroupOrderBy> for SemanticWithinGroupOrderBy {
+    fn from(order: &crate::TypedWithinGroupOrderBy) -> Self {
+        Self {
+            argument: SemanticArgument::from(&order.expression),
             direction: order.direction,
             nulls: order.nulls,
         }

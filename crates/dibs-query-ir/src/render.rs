@@ -145,6 +145,12 @@ impl CatalogRenderNames {
                 id: callable.id.clone(),
                 qualified_name: split_qualified_identifier(&callable.qualified_name)?,
             });
+            for (index, column) in callable.table_columns.iter().enumerate() {
+                entries.push(CatalogRenderName::Column {
+                    id: ColumnId::new(format!("pg18:column:function:{}:{index}", callable.id)),
+                    name: column.name.clone(),
+                });
+            }
         }
         for operator in &catalog.operators {
             entries.push(CatalogRenderName::Operator {

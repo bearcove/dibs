@@ -1,5 +1,5 @@
 use dibs_pg_catalog::ColumnId;
-use dibs_query_ir::{FieldId, RelationId, SourceOrigin};
+use dibs_query_ir::{CteId, FieldId, RelationId, SourceOrigin};
 use dibs_query_syntax::{SourceId, SourceSpan, Span};
 
 use super::{CompileDiagnostic, CompileDiagnosticCode};
@@ -17,11 +17,11 @@ pub(crate) struct RelationColumnBinding {
     pub(crate) name: String,
     pub(crate) field: RelationFieldBinding,
 }
-
 #[derive(Debug, Clone)]
 pub(crate) enum RelationFieldBinding {
     Catalog(ColumnId),
     Derived(FieldId),
+    Cte { cte_id: CteId, field_id: FieldId },
 }
 
 #[derive(Debug, Clone)]
@@ -31,11 +31,19 @@ pub(crate) struct ProjectionBinding {
     pub(crate) origin: SourceOrigin,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct CteBinding {
+    pub(crate) id: CteId,
+    pub(crate) columns: Vec<RelationColumnBinding>,
+    pub(crate) origin: SourceOrigin,
+}
+
 #[derive(Debug, Default, Clone)]
 pub(crate) struct SelectScope {
     parent: Option<Box<SelectScope>>,
     relations: Vec<RelationBinding>,
     projections: Vec<ProjectionBinding>,
+    ctes: Vec<(String, CteBinding)>,
 }
 
 impl SelectScope {
@@ -44,6 +52,26 @@ impl SelectScope {
             parent: Some(Box::new(parent.clone())),
             relations: Vec::new(),
             projections: Vec::new(),
+            ctes: Vec::new(),
+        }
+    }
+
+    pub(crate) fn cte_only(parent: &SelectScope) -> Self {
+        let mut ctes = parent.ctes.clone();
+        let mut ancestor = parent.parent.as_deref();
+        while let Some(scope) = ancestor {
+            for (name, binding) in &scope.ctes {
+                if !ctes.iter().any(|(existing, _)| existing == name) {
+                    ctes.push((name.clone(), binding.clone()));
+                }
+            }
+            ancestor = scope.parent.as_deref();
+        }
+        Self {
+            parent: None,
+            relations: Vec::new(),
+            projections: Vec::new(),
+            ctes,
         }
     }
 
@@ -101,6 +129,41 @@ impl SelectScope {
         }
         self.projections.push(projection);
         Ok(())
+    }
+
+    pub(crate) fn insert_cte(
+        &mut self,
+        name: String,
+        binding: CteBinding,
+    ) -> Result<(), CompileDiagnostic> {
+        if let Some((_, existing)) = self.ctes.iter().find(|(existing, _)| existing == &name) {
+            return Err(CompileDiagnostic::new(
+                CompileDiagnosticCode::DuplicateRelationBinding,
+                binding.origin.span(),
+                format!("CTE '{name}' is declared more than once"),
+            )
+            .with_related(vec![existing.origin.span()]));
+        }
+        self.ctes.push((name, binding));
+        Ok(())
+    }
+
+    pub(crate) fn cte(&self, name: &str) -> Option<&CteBinding> {
+        self.ctes
+            .iter()
+            .find_map(|(candidate, binding)| (candidate == name).then_some(binding))
+            .or_else(|| self.parent.as_deref().and_then(|parent| parent.cte(name)))
+    }
+
+    pub(crate) fn relation(&self, name: &str) -> Option<&RelationBinding> {
+        self.relations
+            .iter()
+            .find(|binding| binding.visible_name == name)
+            .or_else(|| {
+                self.parent
+                    .as_deref()
+                    .and_then(|parent| parent.relation(name))
+            })
     }
 
     pub(crate) fn projection(&self, name: &str) -> Option<&ProjectionBinding> {

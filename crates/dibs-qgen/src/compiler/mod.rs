@@ -13,11 +13,12 @@ use dibs_query_ir::{
     CatalogRenderNames, CompiledQuery, CompilerVersions, ContentHash, ExecutionIdentityInput,
     ExecutionParameter, GeneratedContractMember, HirExpression, HirExpressionKind, HirProjection,
     HirRelation, HirRelationKind, LineageEdge, LineageGraph, LineageNode, LineageNodeId,
-    LineageValue, OutputField, Parameter, ParameterApiContract, ParameterBindAdapter,
-    ParameterPassing, PublicIdentityInput, QueryManifest, ReadWriteLockManifest, ReferenceAccess,
-    ReferenceId, ReferenceIndex, ReferenceRole, ReferenceTarget, ResolvedReference, ResultMode,
-    Sensitivity, SourceMap, TargetLanguage, TypedExpression, TypedExpressionKind, TypedNodeId,
-    TypedStatement, TypedStatementKind, Volatility, execution_identity, public_contract_identity,
+    LineageValue, MutationManifest, OutputField, Parameter, ParameterApiContract,
+    ParameterBindAdapter, ParameterPassing, PublicIdentityInput, QueryManifest,
+    ReadWriteLockManifest, ReferenceAccess, ReferenceId, ReferenceIndex, ReferenceRole,
+    ReferenceTarget, ResolvedReference, ResultMode, Sensitivity, SourceMap, TargetLanguage,
+    TypedExpression, TypedExpressionKind, TypedNodeId, TypedStatement, TypedStatementKind,
+    Volatility, execution_identity, public_contract_identity,
 };
 use dibs_query_syntax::{DibsParser, ResultMode as SyntaxResultMode, SourceId};
 use dibs_query_typing::{CheckedOutput, SemanticChecker};
@@ -89,10 +90,10 @@ fn compile_resolved(
     let resolved_references = build_references(&hir, &checked.statement)?;
     let read_write_lock_manifest = ReadWriteLockManifest {
         reads: collect_read_tables(&hir.statement),
-        writes: Vec::new(),
+        writes: collect_write_tables(&hir.statement),
         locks: Vec::new(),
         volatility: maximum_volatility(&checked.statement),
-        mutation: None,
+        mutation: mutation_manifest(&checked.statement),
     }
     .canonicalized();
     let catalog_render_names = CatalogRenderNames::from_catalog(catalog).map_err(|error| {
@@ -538,6 +539,121 @@ fn collect_expression_lineage(
                 );
             }
         }
+        HirExpressionKind::QuantifiedComparison { left, right, .. } => {
+            collect_expression_lineage(left, expression_node, projection_sources, nodes, edges);
+            collect_expression_lineage(right, expression_node, projection_sources, nodes, edges);
+        }
+        HirExpressionKind::Exists(statement) => {
+            for projection in statement_projections(statement) {
+                collect_expression_lineage(
+                    &projection.expression,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+            }
+        }
+        HirExpressionKind::Cast { expression, .. }
+        | HirExpressionKind::Collate { expression, .. } => collect_expression_lineage(
+            expression,
+            expression_node,
+            projection_sources,
+            nodes,
+            edges,
+        ),
+        HirExpressionKind::Extract { source, .. } => {
+            collect_expression_lineage(source, expression_node, projection_sources, nodes, edges)
+        }
+        HirExpressionKind::Position { substring, string } => {
+            collect_expression_lineage(
+                substring,
+                expression_node,
+                projection_sources,
+                nodes,
+                edges,
+            );
+            collect_expression_lineage(string, expression_node, projection_sources, nodes, edges);
+        }
+        HirExpressionKind::Case {
+            operand,
+            branches,
+            else_expression,
+        } => {
+            if let Some(operand) = operand {
+                collect_expression_lineage(
+                    operand,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+            }
+            for branch in branches {
+                collect_expression_lineage(
+                    &branch.when,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+                collect_expression_lineage(
+                    &branch.then,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+            }
+            if let Some(else_expression) = else_expression {
+                collect_expression_lineage(
+                    else_expression,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+            }
+        }
+        HirExpressionKind::NullIf { left, right } => {
+            collect_expression_lineage(left, expression_node, projection_sources, nodes, edges);
+            collect_expression_lineage(right, expression_node, projection_sources, nodes, edges);
+        }
+        HirExpressionKind::Coalesce(arguments)
+        | HirExpressionKind::Greatest(arguments)
+        | HirExpressionKind::Least(arguments) => {
+            for argument in arguments {
+                collect_expression_lineage(
+                    argument,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+            }
+        }
+        HirExpressionKind::Row(values) | HirExpressionKind::Array(values) => {
+            for value in values {
+                collect_expression_lineage(
+                    value,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+            }
+        }
+        HirExpressionKind::CteColumn { field_id, .. } => {
+            if let Some(source) = projection_sources.get(field_id) {
+                collect_expression_lineage(
+                    source,
+                    expression_node,
+                    projection_sources,
+                    nodes,
+                    edges,
+                );
+            }
+        }
         _ => {}
     }
 }
@@ -599,10 +715,69 @@ fn collect_statement_references(
     next_id: &mut u32,
     references: &mut Vec<ResolvedReference>,
 ) -> Result<(), DiagnosticSet> {
-    let (dibs_query_ir::HirStatementKind::Select(select), TypedStatementKind::Select(typed_select)) =
-        (&statement.kind, &typed.kind)
-    else {
-        return Ok(());
+    let Some((ctes, typed_ctes)) = statement_ctes(statement, typed) else {
+        return Err(reference_shape_diagnostic(query));
+    };
+    if ctes.len() != typed_ctes.len() {
+        return Err(reference_shape_diagnostic(query));
+    }
+    for (cte, typed_cte) in ctes.iter().zip(typed_ctes) {
+        if cte.id != typed_cte.id {
+            return Err(reference_shape_diagnostic(query));
+        }
+        collect_statement_references(
+            query,
+            &cte.statement,
+            &typed_cte.statement,
+            next_id,
+            references,
+        )?;
+    }
+    let (select, typed_select) = match (&statement.kind, &typed.kind) {
+        (
+            dibs_query_ir::HirStatementKind::Select(select),
+            TypedStatementKind::Select(typed_select),
+        ) => (select, typed_select),
+        (
+            dibs_query_ir::HirStatementKind::Insert(insert),
+            TypedStatementKind::Insert(typed_insert),
+        ) => {
+            return collect_insert_references(
+                query,
+                statement,
+                insert,
+                typed_insert,
+                next_id,
+                references,
+            );
+        }
+        (
+            dibs_query_ir::HirStatementKind::Update(update),
+            TypedStatementKind::Update(typed_update),
+        ) => {
+            return collect_update_references(
+                query,
+                statement,
+                update,
+                typed_update,
+                next_id,
+                references,
+            );
+        }
+        (
+            dibs_query_ir::HirStatementKind::Delete(delete),
+            TypedStatementKind::Delete(typed_delete),
+        ) => {
+            return collect_delete_references(
+                query,
+                statement,
+                delete,
+                typed_delete,
+                next_id,
+                references,
+            );
+        }
+        _ => return Err(reference_shape_diagnostic(query)),
     };
     if select.from.len() != typed_select.from.len()
         || select.projections.len() != typed_select.projections.len()
@@ -646,6 +821,324 @@ fn collect_statement_references(
             next_id,
             references,
         )?;
+    }
+    Ok(())
+}
+
+fn collect_insert_references(
+    query: &dibs_query_ir::HirQuery,
+    statement: &dibs_query_ir::HirStatement,
+    insert: &dibs_query_ir::HirInsert,
+    typed: &dibs_query_ir::TypedInsert,
+    next_id: &mut u32,
+    references: &mut Vec<ResolvedReference>,
+) -> Result<(), DiagnosticSet> {
+    if insert.target != typed.target
+        || insert.target_binding != typed.target_binding
+        || insert.columns != typed.columns
+        || insert.returning.len() != typed.returning.len()
+        || insert.conflict.is_some() != typed.conflict.is_some()
+    {
+        return Err(reference_shape_diagnostic(query));
+    }
+    push_reference_with_access(
+        query,
+        next_id,
+        references,
+        TypedNodeId::Statement(statement.id),
+        statement.origin.clone(),
+        ReferenceTarget::Table(insert.target.clone()),
+        ReferenceRole::InsertTarget,
+        ReferenceAccess::Write,
+    );
+    for column in &insert.columns {
+        push_reference_with_access(
+            query,
+            next_id,
+            references,
+            TypedNodeId::Statement(statement.id),
+            statement.origin.clone(),
+            ReferenceTarget::Column(column.clone()),
+            ReferenceRole::InsertTarget,
+            ReferenceAccess::Write,
+        );
+    }
+    match (&insert.source, &typed.source) {
+        (
+            dibs_query_ir::HirInsertSource::Values(values),
+            dibs_query_ir::TypedInsertSource::Values(typed_values),
+        ) if values.rows().len() == typed_values.rows().len() => {
+            for (row, typed_row) in values.rows().iter().zip(typed_values.rows()) {
+                if row.len() != typed_row.len() {
+                    return Err(reference_shape_diagnostic(query));
+                }
+                for (expression, argument) in row.iter().zip(typed_row) {
+                    collect_expression_references(
+                        query,
+                        dibs_query_ir::FieldId::new(0),
+                        expression,
+                        &argument.expression,
+                        ReferenceRole::AssignmentSource,
+                        next_id,
+                        references,
+                    )?;
+                }
+            }
+        }
+        (
+            dibs_query_ir::HirInsertSource::Select(source),
+            dibs_query_ir::TypedInsertSource::Select(typed_source),
+        ) => collect_statement_references(query, source, typed_source, next_id, references)?,
+        (
+            dibs_query_ir::HirInsertSource::DefaultValues,
+            dibs_query_ir::TypedInsertSource::DefaultValues,
+        ) => {}
+        _ => return Err(reference_shape_diagnostic(query)),
+    }
+    if let (Some(conflict), Some(typed_conflict)) = (&insert.conflict, &typed.conflict) {
+        collect_conflict_expression_references(
+            query,
+            conflict,
+            typed_conflict,
+            next_id,
+            references,
+        )?;
+    }
+    for (projection, typed_projection) in insert.returning.iter().zip(&typed.returning) {
+        collect_expression_references(
+            query,
+            projection.field_id,
+            &projection.expression,
+            &typed_projection.expression,
+            ReferenceRole::Returning,
+            next_id,
+            references,
+        )?;
+    }
+    Ok(())
+}
+
+fn collect_update_references(
+    query: &dibs_query_ir::HirQuery,
+    statement: &dibs_query_ir::HirStatement,
+    update: &dibs_query_ir::HirUpdate,
+    typed: &dibs_query_ir::TypedUpdate,
+    next_id: &mut u32,
+    references: &mut Vec<ResolvedReference>,
+) -> Result<(), DiagnosticSet> {
+    if update.target != typed.target
+        || update.target_binding != typed.target_binding
+        || update.assignments.len() != typed.assignments.len()
+        || update.from.len() != typed.from.len()
+        || update.predicate.is_some() != typed.predicate.is_some()
+        || update.returning.len() != typed.returning.len()
+    {
+        return Err(reference_shape_diagnostic(query));
+    }
+    push_reference_with_access(
+        query,
+        next_id,
+        references,
+        TypedNodeId::Statement(statement.id),
+        statement.origin.clone(),
+        ReferenceTarget::Table(update.target.clone()),
+        ReferenceRole::AssignmentTarget,
+        ReferenceAccess::Write,
+    );
+    for (assignment, typed_assignment) in update.assignments.iter().zip(&typed.assignments) {
+        if assignment.id != typed_assignment.id || assignment.target != typed_assignment.target {
+            return Err(reference_shape_diagnostic(query));
+        }
+        push_reference_with_access(
+            query,
+            next_id,
+            references,
+            TypedNodeId::Assignment(assignment.id),
+            assignment.value.origin.clone(),
+            ReferenceTarget::Column(assignment.target.clone()),
+            ReferenceRole::AssignmentTarget,
+            ReferenceAccess::Write,
+        );
+        collect_expression_references(
+            query,
+            dibs_query_ir::FieldId::new(0),
+            &assignment.value,
+            &typed_assignment.value,
+            ReferenceRole::AssignmentSource,
+            next_id,
+            references,
+        )?;
+    }
+    for (relation, typed_relation) in update.from.iter().zip(&typed.from) {
+        collect_relation_references(query, relation, typed_relation, next_id, references)?;
+    }
+    if let (Some(predicate), Some(typed_predicate)) = (&update.predicate, &typed.predicate) {
+        collect_expression_references(
+            query,
+            dibs_query_ir::FieldId::new(0),
+            predicate,
+            typed_predicate,
+            ReferenceRole::Predicate,
+            next_id,
+            references,
+        )?;
+    }
+    for (projection, typed_projection) in update.returning.iter().zip(&typed.returning) {
+        collect_expression_references(
+            query,
+            projection.field_id,
+            &projection.expression,
+            &typed_projection.expression,
+            ReferenceRole::Returning,
+            next_id,
+            references,
+        )?;
+    }
+    Ok(())
+}
+
+fn collect_delete_references(
+    query: &dibs_query_ir::HirQuery,
+    statement: &dibs_query_ir::HirStatement,
+    delete: &dibs_query_ir::HirDelete,
+    typed: &dibs_query_ir::TypedDelete,
+    next_id: &mut u32,
+    references: &mut Vec<ResolvedReference>,
+) -> Result<(), DiagnosticSet> {
+    if delete.target != typed.target
+        || delete.target_binding != typed.target_binding
+        || delete.using_relations.len() != typed.using_relations.len()
+        || delete.predicate.is_some() != typed.predicate.is_some()
+        || delete.returning.len() != typed.returning.len()
+    {
+        return Err(reference_shape_diagnostic(query));
+    }
+    push_reference_with_access(
+        query,
+        next_id,
+        references,
+        TypedNodeId::Statement(statement.id),
+        statement.origin.clone(),
+        ReferenceTarget::Table(delete.target.clone()),
+        ReferenceRole::AssignmentTarget,
+        ReferenceAccess::Write,
+    );
+    for (relation, typed_relation) in delete.using_relations.iter().zip(&typed.using_relations) {
+        collect_relation_references(query, relation, typed_relation, next_id, references)?;
+    }
+    if let (Some(predicate), Some(typed_predicate)) = (&delete.predicate, &typed.predicate) {
+        collect_expression_references(
+            query,
+            dibs_query_ir::FieldId::new(0),
+            predicate,
+            typed_predicate,
+            ReferenceRole::Predicate,
+            next_id,
+            references,
+        )?;
+    }
+    for (projection, typed_projection) in delete.returning.iter().zip(&typed.returning) {
+        collect_expression_references(
+            query,
+            projection.field_id,
+            &projection.expression,
+            &typed_projection.expression,
+            ReferenceRole::Returning,
+            next_id,
+            references,
+        )?;
+    }
+    Ok(())
+}
+
+fn collect_conflict_expression_references(
+    query: &dibs_query_ir::HirQuery,
+    conflict: &dibs_query_ir::HirConflictClause,
+    typed: &dibs_query_ir::TypedConflictClause,
+    next_id: &mut u32,
+    references: &mut Vec<ResolvedReference>,
+) -> Result<(), DiagnosticSet> {
+    if let (
+        dibs_query_ir::HirConflictTarget::Inference {
+            expressions,
+            predicate,
+        },
+        dibs_query_ir::ConflictTarget::Inference {
+            expressions: typed_expressions,
+            predicate: typed_predicate,
+        },
+    ) = (&conflict.target, &typed.target)
+    {
+        for (expression, typed_expression) in expressions.iter().zip(typed_expressions) {
+            collect_expression_references(
+                query,
+                dibs_query_ir::FieldId::new(0),
+                expression,
+                typed_expression,
+                ReferenceRole::ConflictTarget,
+                next_id,
+                references,
+            )?;
+        }
+        if let (Some(predicate), Some(typed_predicate)) =
+            (predicate.as_deref(), typed_predicate.as_deref())
+        {
+            collect_expression_references(
+                query,
+                dibs_query_ir::FieldId::new(0),
+                predicate,
+                typed_predicate,
+                ReferenceRole::ConflictTarget,
+                next_id,
+                references,
+            )?;
+        }
+    }
+    if let (
+        dibs_query_ir::HirConflictAction::Update {
+            assignments,
+            predicate,
+        },
+        dibs_query_ir::TypedConflictAction::Update {
+            assignments: typed_assignments,
+            predicate: typed_predicate,
+        },
+    ) = (&conflict.action, &typed.action)
+    {
+        for (assignment, typed_assignment) in assignments.iter().zip(typed_assignments) {
+            push_reference_with_access(
+                query,
+                next_id,
+                references,
+                TypedNodeId::Assignment(assignment.id),
+                assignment.value.origin.clone(),
+                ReferenceTarget::Column(assignment.target.clone()),
+                ReferenceRole::AssignmentTarget,
+                ReferenceAccess::Write,
+            );
+            collect_expression_references(
+                query,
+                dibs_query_ir::FieldId::new(0),
+                &assignment.value,
+                &typed_assignment.value,
+                ReferenceRole::ConflictAction,
+                next_id,
+                references,
+            )?;
+        }
+        if let (Some(predicate), Some(typed_predicate)) =
+            (predicate.as_ref(), typed_predicate.as_deref())
+        {
+            collect_expression_references(
+                query,
+                dibs_query_ir::FieldId::new(0),
+                predicate,
+                typed_predicate,
+                ReferenceRole::ConflictAction,
+                next_id,
+                references,
+            )?;
+        }
     }
     Ok(())
 }
@@ -710,8 +1203,19 @@ fn collect_relation_references(
             }
         }
         (
+            HirRelationKind::Cte { cte_id },
+            dibs_query_ir::TypedRelationKind::Cte { cte_id: typed_cte },
+        ) if cte_id == typed_cte => push_reference(
+            query,
+            next_id,
+            references,
+            TypedNodeId::Relation(relation.id),
+            relation.origin.clone(),
+            ReferenceTarget::Cte(*cte_id),
+            ReferenceRole::CteDependency,
+        ),
+        (
             HirRelationKind::Function { .. }
-            | HirRelationKind::Cte { .. }
             | HirRelationKind::Values { .. }
             | HirRelationKind::SetOperation { .. },
             _,
@@ -836,7 +1340,7 @@ fn collect_expression_references(
                     query,
                     field,
                     &order.expression,
-                    &typed_order.expression,
+                    &typed_order.expression.expression,
                     role,
                     next_id,
                     references,
@@ -887,6 +1391,446 @@ fn collect_expression_references(
                     references,
                 )?;
             }
+        }
+        (
+            HirExpressionKind::QuantifiedComparison {
+                operator_id: authored_operator,
+                left,
+                right,
+                quantifier,
+            },
+            TypedExpressionKind::QuantifiedComparison {
+                authored_operator_id,
+                operator_id,
+                left: typed_left,
+                right: typed_right,
+                quantifier: typed_quantifier,
+            },
+        ) if authored_operator == authored_operator_id && quantifier == typed_quantifier => {
+            push_reference(
+                query,
+                next_id,
+                references,
+                TypedNodeId::Expression(expression.id),
+                expression.origin.clone(),
+                ReferenceTarget::Operator(operator_id.clone()),
+                ReferenceRole::OperatorUse,
+            );
+            collect_expression_references(
+                query,
+                field,
+                left,
+                &typed_left.expression,
+                role,
+                next_id,
+                references,
+            )?;
+            collect_expression_references(
+                query,
+                field,
+                right,
+                &typed_right.expression,
+                role,
+                next_id,
+                references,
+            )?;
+        }
+        (
+            HirExpressionKind::InList {
+                expression: hir_expression,
+                values: hir_values,
+                negated: hir_negated,
+            },
+            TypedExpressionKind::InList {
+                expression: typed_expression,
+                values: typed_values,
+                negated: typed_negated,
+                ..
+            },
+        ) if hir_negated == typed_negated && hir_values.len() == typed_values.len() => {
+            collect_expression_references(
+                query,
+                field,
+                hir_expression,
+                &typed_expression.expression,
+                role,
+                next_id,
+                references,
+            )?;
+            for (hir_value, typed_value) in hir_values.iter().zip(typed_values) {
+                collect_expression_references(
+                    query,
+                    field,
+                    hir_value,
+                    &typed_value.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (
+            HirExpressionKind::Cast {
+                cast_id,
+                expression: source,
+            },
+            TypedExpressionKind::Cast {
+                cast_id: typed_cast,
+                expression: typed_source,
+                ..
+            },
+        ) if cast_id == typed_cast => {
+            push_reference(
+                query,
+                next_id,
+                references,
+                node,
+                expression.origin.clone(),
+                ReferenceTarget::Cast(cast_id.clone()),
+                ReferenceRole::CastUse,
+            );
+            collect_expression_references(
+                query,
+                field,
+                source,
+                typed_source,
+                role,
+                next_id,
+                references,
+            )?;
+        }
+        (
+            HirExpressionKind::ExplicitCast {
+                target_type,
+                target_typmod,
+                expression: source,
+            },
+            TypedExpressionKind::ExplicitCast {
+                expression: typed_source,
+                coercion,
+            },
+        ) if &typed.type_id == target_type && &typed.typmod == target_typmod => {
+            if let Some(dibs_query_ir::TypedCoercion {
+                evidence: dibs_query_ir::CoercionEvidence::CatalogCastPath { steps },
+                ..
+            }) = coercion
+            {
+                for step in steps {
+                    push_reference(
+                        query,
+                        next_id,
+                        references,
+                        node.clone(),
+                        expression.origin.clone(),
+                        ReferenceTarget::Cast(step.cast_id.clone()),
+                        ReferenceRole::CastUse,
+                    );
+                }
+            }
+            if let Some(dibs_query_ir::TypedCoercion {
+                evidence: dibs_query_ir::CoercionEvidence::ExplicitIo { coercion_id, .. },
+                ..
+            }) = coercion
+            {
+                push_reference(
+                    query,
+                    next_id,
+                    references,
+                    node.clone(),
+                    expression.origin.clone(),
+                    ReferenceTarget::IoCoercion(coercion_id.clone()),
+                    ReferenceRole::CastUse,
+                );
+            }
+            collect_expression_references(
+                query,
+                field,
+                source,
+                typed_source,
+                role,
+                next_id,
+                references,
+            )?;
+        }
+        (
+            HirExpressionKind::Collate {
+                collation_id,
+                expression: source,
+            },
+            TypedExpressionKind::Collate {
+                collation_id: typed_collation,
+                expression: typed_source,
+            },
+        ) if collation_id == typed_collation => {
+            push_reference(
+                query,
+                next_id,
+                references,
+                node,
+                expression.origin.clone(),
+                ReferenceTarget::Collation(collation_id.clone()),
+                role,
+            );
+            collect_expression_references(
+                query,
+                field,
+                source,
+                typed_source,
+                role,
+                next_id,
+                references,
+            )?;
+        }
+        (
+            HirExpressionKind::Case {
+                operand,
+                branches,
+                else_expression,
+            },
+            TypedExpressionKind::Case {
+                operand: typed_operand,
+                branches: typed_branches,
+                else_expression: typed_else,
+                ..
+            },
+        ) if operand.is_some() == typed_operand.is_some()
+            && branches.len() == typed_branches.len()
+            && else_expression.is_some() == typed_else.is_some() =>
+        {
+            if let (Some(operand), Some(typed_operand)) =
+                (operand.as_deref(), typed_operand.as_deref())
+            {
+                collect_expression_references(
+                    query,
+                    field,
+                    operand,
+                    typed_operand,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+            for (branch, typed_branch) in branches.iter().zip(typed_branches) {
+                collect_expression_references(
+                    query,
+                    field,
+                    &branch.when,
+                    &typed_branch.when,
+                    ReferenceRole::Predicate,
+                    next_id,
+                    references,
+                )?;
+                collect_expression_references(
+                    query,
+                    field,
+                    &branch.then,
+                    &typed_branch.then.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+            if let (Some(else_expression), Some(typed_else)) =
+                (else_expression.as_deref(), typed_else.as_deref())
+            {
+                collect_expression_references(
+                    query,
+                    field,
+                    else_expression,
+                    &typed_else.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (
+            HirExpressionKind::NullIf { left, right },
+            TypedExpressionKind::NullIf {
+                authored_operator_id,
+                operator_id,
+                left: typed_left,
+                right: typed_right,
+            },
+        ) if authored_operator_id.as_str() == "unresolved:operator:pg_catalog.=" => {
+            push_reference(
+                query,
+                next_id,
+                references,
+                TypedNodeId::Expression(expression.id),
+                expression.origin.clone(),
+                ReferenceTarget::Operator(operator_id.clone()),
+                ReferenceRole::OperatorUse,
+            );
+            collect_expression_references(
+                query,
+                field,
+                left,
+                &typed_left.expression,
+                role,
+                next_id,
+                references,
+            )?;
+            collect_expression_references(
+                query,
+                field,
+                right,
+                &typed_right.expression,
+                role,
+                next_id,
+                references,
+            )?;
+        }
+        (
+            HirExpressionKind::Coalesce(arguments),
+            TypedExpressionKind::Coalesce {
+                arguments: typed_arguments,
+                ..
+            },
+        ) if arguments.len() == typed_arguments.len() => {
+            for (argument, typed_argument) in arguments.iter().zip(typed_arguments) {
+                collect_expression_references(
+                    query,
+                    field,
+                    argument,
+                    &typed_argument.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (
+            HirExpressionKind::Greatest(arguments),
+            TypedExpressionKind::Greatest {
+                arguments: typed_arguments,
+                ..
+            },
+        )
+        | (
+            HirExpressionKind::Least(arguments),
+            TypedExpressionKind::Least {
+                arguments: typed_arguments,
+                ..
+            },
+        ) if arguments.len() == typed_arguments.len() => {
+            for (argument, typed_argument) in arguments.iter().zip(typed_arguments) {
+                collect_expression_references(
+                    query,
+                    field,
+                    argument,
+                    &typed_argument.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (
+            HirExpressionKind::Extract {
+                field: hir_field,
+                source,
+            },
+            TypedExpressionKind::Extract {
+                field: typed_field,
+                source: typed_source,
+            },
+        ) if hir_field == typed_field => {
+            collect_expression_references(
+                query,
+                field,
+                source,
+                typed_source,
+                role,
+                next_id,
+                references,
+            )?;
+        }
+        (
+            HirExpressionKind::Position { substring, string },
+            TypedExpressionKind::Position {
+                substring: typed_substring,
+                string: typed_string,
+                ..
+            },
+        ) => {
+            collect_expression_references(
+                query,
+                field,
+                substring,
+                &typed_substring.expression,
+                role,
+                next_id,
+                references,
+            )?;
+            collect_expression_references(
+                query,
+                field,
+                string,
+                &typed_string.expression,
+                role,
+                next_id,
+                references,
+            )?;
+        }
+        (HirExpressionKind::Exists(statement), TypedExpressionKind::Exists(typed_statement)) => {
+            collect_statement_references(query, statement, typed_statement, next_id, references)?;
+        }
+        (HirExpressionKind::Row(values), TypedExpressionKind::Row(typed_values))
+            if values.len() == typed_values.len() =>
+        {
+            for (value, typed_value) in values.iter().zip(typed_values) {
+                collect_expression_references(
+                    query,
+                    field,
+                    value,
+                    typed_value,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (
+            HirExpressionKind::Array(values),
+            TypedExpressionKind::Array {
+                elements: typed_values,
+                ..
+            },
+        ) if values.len() == typed_values.len() => {
+            for (value, typed_value) in values.iter().zip(typed_values) {
+                collect_expression_references(
+                    query,
+                    field,
+                    value,
+                    &typed_value.expression,
+                    role,
+                    next_id,
+                    references,
+                )?;
+            }
+        }
+        (
+            HirExpressionKind::CteColumn {
+                cte_id,
+                binding,
+                field_id,
+            },
+            TypedExpressionKind::CteColumn {
+                cte_id: typed_cte,
+                binding: typed_binding,
+                field_id: typed_field,
+            },
+        ) if cte_id == typed_cte && binding == typed_binding && field_id == typed_field => {
+            push_reference(
+                query,
+                next_id,
+                references,
+                node,
+                expression.origin.clone(),
+                ReferenceTarget::OutputField(*field_id),
+                role,
+            )
         }
         (
             HirExpressionKind::ScalarSubquery(statement),
@@ -1006,7 +1950,6 @@ fn collect_frame_bound_references(
         _ => Err(reference_shape_diagnostic(query)),
     }
 }
-
 fn reference_shape_diagnostic(query: &dibs_query_ir::HirQuery) -> DiagnosticSet {
     vec![CompileDiagnostic::new(
         CompileDiagnosticCode::InvalidArtifact,
@@ -1024,6 +1967,32 @@ fn push_reference(
     target: ReferenceTarget,
     role: ReferenceRole,
 ) {
+    push_reference_with_access(
+        query,
+        next_id,
+        references,
+        enclosing_node,
+        origin,
+        target,
+        role,
+        if role == ReferenceRole::Returning {
+            ReferenceAccess::ReadWrite
+        } else {
+            ReferenceAccess::Read
+        },
+    );
+}
+
+fn push_reference_with_access(
+    query: &dibs_query_ir::HirQuery,
+    next_id: &mut u32,
+    references: &mut Vec<ResolvedReference>,
+    enclosing_node: TypedNodeId,
+    origin: dibs_query_ir::SourceOrigin,
+    target: ReferenceTarget,
+    role: ReferenceRole,
+    access: ReferenceAccess,
+) {
     references.push(ResolvedReference {
         id: ReferenceId::new(*next_id),
         query_id: query.id,
@@ -1031,7 +2000,7 @@ fn push_reference(
         origin,
         target,
         role,
-        access: ReferenceAccess::Read,
+        access,
         lineage_node: None,
         generated_members: Vec::<GeneratedContractMember>::new(),
     });
@@ -1058,6 +2027,27 @@ fn rust_parameter_policy(api_type: &str) -> (ParameterPassing, ParameterBindAdap
     }
 }
 
+fn statement_ctes<'a>(
+    statement: &'a dibs_query_ir::HirStatement,
+    typed: &'a TypedStatement,
+) -> Option<(&'a [dibs_query_ir::HirCte], &'a [dibs_query_ir::TypedCte])> {
+    match (&statement.kind, &typed.kind) {
+        (dibs_query_ir::HirStatementKind::Select(hir), TypedStatementKind::Select(typed)) => {
+            Some((&hir.ctes, &typed.ctes))
+        }
+        (dibs_query_ir::HirStatementKind::Insert(hir), TypedStatementKind::Insert(typed)) => {
+            Some((&hir.ctes, &typed.ctes))
+        }
+        (dibs_query_ir::HirStatementKind::Update(hir), TypedStatementKind::Update(typed)) => {
+            Some((&hir.ctes, &typed.ctes))
+        }
+        (dibs_query_ir::HirStatementKind::Delete(hir), TypedStatementKind::Delete(typed)) => {
+            Some((&hir.ctes, &typed.ctes))
+        }
+        _ => None,
+    }
+}
+
 fn statement_projections(statement: &dibs_query_ir::HirStatement) -> &[HirProjection] {
     match &statement.kind {
         dibs_query_ir::HirStatementKind::Select(select) => &select.projections,
@@ -1066,44 +2056,171 @@ fn statement_projections(statement: &dibs_query_ir::HirStatement) -> &[HirProjec
         dibs_query_ir::HirStatementKind::Delete(delete) => &delete.returning,
     }
 }
-
 fn collect_read_tables(statement: &dibs_query_ir::HirStatement) -> Vec<dibs_pg_catalog::TableId> {
     let mut tables = Vec::new();
-    if let dibs_query_ir::HirStatementKind::Select(select) = &statement.kind {
-        for relation in &select.from {
-            collect_relation_tables(relation, &mut tables);
-        }
-    }
+    collect_statement_read_tables(statement, &mut tables);
     tables.sort();
     tables.dedup();
     tables
 }
 
+fn collect_statement_read_tables(
+    statement: &dibs_query_ir::HirStatement,
+    output: &mut Vec<dibs_pg_catalog::TableId>,
+) {
+    match &statement.kind {
+        dibs_query_ir::HirStatementKind::Select(select) => {
+            collect_cte_read_tables(&select.ctes, output);
+            for relation in &select.from {
+                collect_relation_tables(relation, output);
+            }
+        }
+        dibs_query_ir::HirStatementKind::Insert(insert) => {
+            collect_cte_read_tables(&insert.ctes, output);
+            if let dibs_query_ir::HirInsertSource::Select(source) = &insert.source {
+                collect_statement_read_tables(source, output);
+            }
+        }
+        dibs_query_ir::HirStatementKind::Update(update) => {
+            collect_cte_read_tables(&update.ctes, output);
+            for relation in &update.from {
+                collect_relation_tables(relation, output);
+            }
+        }
+        dibs_query_ir::HirStatementKind::Delete(delete) => {
+            collect_cte_read_tables(&delete.ctes, output);
+            for relation in &delete.using_relations {
+                collect_relation_tables(relation, output);
+            }
+        }
+    }
+}
+
+fn collect_cte_read_tables(
+    ctes: &[dibs_query_ir::HirCte],
+    output: &mut Vec<dibs_pg_catalog::TableId>,
+) {
+    for cte in ctes {
+        collect_statement_read_tables(&cte.statement, output);
+    }
+}
+
+fn collect_write_tables(statement: &dibs_query_ir::HirStatement) -> Vec<dibs_pg_catalog::TableId> {
+    match &statement.kind {
+        dibs_query_ir::HirStatementKind::Select(_) => Vec::new(),
+        dibs_query_ir::HirStatementKind::Insert(insert) => vec![insert.target.clone()],
+        dibs_query_ir::HirStatementKind::Update(update) => vec![update.target.clone()],
+        dibs_query_ir::HirStatementKind::Delete(delete) => vec![delete.target.clone()],
+    }
+}
+
+fn mutation_manifest(statement: &TypedStatement) -> Option<MutationManifest> {
+    match &statement.kind {
+        TypedStatementKind::Select(_) => None,
+        TypedStatementKind::Insert(insert) => Some(MutationManifest::Insert {
+            target: insert.target.clone(),
+        }),
+        TypedStatementKind::Update(update) => Some(MutationManifest::Update {
+            target: update.target.clone(),
+            has_predicate: update.predicate.is_some(),
+        }),
+        TypedStatementKind::Delete(delete) => Some(MutationManifest::Delete {
+            target: delete.target.clone(),
+            has_predicate: delete.predicate.is_some(),
+        }),
+    }
+}
+
 fn collect_relation_tables(relation: &HirRelation, output: &mut Vec<dibs_pg_catalog::TableId>) {
     match &relation.kind {
         HirRelationKind::Table { table_id } => output.push(table_id.clone()),
+        HirRelationKind::Subquery(statement) => collect_statement_read_tables(statement, output),
         HirRelationKind::Join { left, right, .. } => {
             collect_relation_tables(left, output);
             collect_relation_tables(right, output);
         }
-        _ => {}
+        HirRelationKind::SetOperation { left, right, .. } => {
+            collect_statement_read_tables(left, output);
+            collect_statement_read_tables(right, output);
+        }
+        HirRelationKind::Cte { .. }
+        | HirRelationKind::Function { .. }
+        | HirRelationKind::Values { .. } => {}
     }
 }
 
-fn maximum_volatility(statement: &dibs_query_ir::TypedStatement) -> Volatility {
-    let mut volatility = Volatility::Immutable;
-    if let dibs_query_ir::TypedStatementKind::Select(select) = &statement.kind {
-        for projection in &select.projections {
-            volatility = volatility.max(projection.expression.volatility);
+fn maximum_volatility(statement: &TypedStatement) -> Volatility {
+    statement_expressions(statement)
+        .map(|expression| expression.volatility)
+        .max()
+        .unwrap_or(Volatility::Immutable)
+}
+
+fn statement_expressions(
+    statement: &TypedStatement,
+) -> Box<dyn Iterator<Item = &TypedExpression> + '_> {
+    match &statement.kind {
+        TypedStatementKind::Select(select) => Box::new(
+            select
+                .projections
+                .iter()
+                .map(|projection| &projection.expression)
+                .chain(select.predicate.iter())
+                .chain(select.order_by.iter().map(|order| &order.expression)),
+        ),
+        TypedStatementKind::Insert(insert) => {
+            let values = match &insert.source {
+                dibs_query_ir::TypedInsertSource::Values(values) => Box::new(
+                    values
+                        .rows()
+                        .iter()
+                        .flatten()
+                        .map(|argument| &argument.expression),
+                )
+                    as Box<dyn Iterator<Item = &TypedExpression>>,
+                dibs_query_ir::TypedInsertSource::Select(statement) => {
+                    statement_expressions(statement)
+                }
+                dibs_query_ir::TypedInsertSource::DefaultValues => Box::new(std::iter::empty()),
+            };
+            let conflict = insert
+                .conflict
+                .iter()
+                .flat_map(|conflict| match &conflict.action {
+                    dibs_query_ir::TypedConflictAction::Nothing => Vec::new(),
+                    dibs_query_ir::TypedConflictAction::Update {
+                        assignments,
+                        predicate,
+                    } => assignments
+                        .iter()
+                        .map(|assignment| &assignment.value)
+                        .chain(predicate.iter().map(AsRef::as_ref))
+                        .collect(),
+                });
+            Box::new(
+                values.chain(conflict).chain(
+                    insert
+                        .returning
+                        .iter()
+                        .map(|projection| &projection.expression),
+                ),
+            )
         }
-        if let Some(predicate) = &select.predicate {
-            volatility = volatility.max(predicate.volatility);
-        }
-        for order in &select.order_by {
-            volatility = volatility.max(order.expression.volatility);
-        }
+        TypedStatementKind::Update(_) | TypedStatementKind::Delete(_) => Box::new(
+            statement_projections_typed(statement)
+                .iter()
+                .map(|projection| &projection.expression),
+        ),
     }
-    volatility
+}
+
+fn statement_projections_typed(statement: &TypedStatement) -> &[dibs_query_ir::TypedProjection] {
+    match &statement.kind {
+        TypedStatementKind::Select(select) => &select.projections,
+        TypedStatementKind::Insert(insert) => &insert.returning,
+        TypedStatementKind::Update(update) => &update.returning,
+        TypedStatementKind::Delete(delete) => &delete.returning,
+    }
 }
 
 fn to_snake_case(value: &str) -> String {

@@ -7,8 +7,9 @@ use dibs_query_ir::{
     HirProjection, HirSelect, HirStatement, HirStatementKind, Nullability, NullabilityEvidence,
     NullsOrder, ParameterId, RelationId, SelectDistinct, SortDirection, SourceOrigin, SourceSpan,
     Span, StatementId, TypedArgument, TypedCall, TypedCte, TypedExpression, TypedExpressionKind,
-    TypedOrderBy, TypedProjection, TypedSelect, TypedStatement, TypedStatementKind, Volatility,
-    WindowExclusion, WindowFrame, WindowFrameMode, WindowReference, WindowSpec,
+    TypedOrderBy, TypedProjection, TypedSelect, TypedShapeError, TypedStatement,
+    TypedStatementKind, TypedWithinGroupOrderBy, Volatility, WindowExclusion, WindowFrame,
+    WindowFrameMode, WindowReference, WindowSpec,
 };
 use dibs_query_syntax::SourceId;
 
@@ -43,6 +44,59 @@ fn typed_integer(id: u32, value: &str) -> TypedExpression {
     }
 }
 
+fn typed_position() -> TypedExpression {
+    let input_type = TypeId::new("pg18:type:base:pg_catalog.bytea");
+    let argument = |id| TypedArgument {
+        expression: TypedExpression {
+            id: ExpressionId::new(id),
+            origin: origin(id, id + 1),
+            type_id: input_type.clone(),
+            typmod: None,
+            nullability: Nullability::not_null(NullabilityEvidence::CallableContract {
+                callable_id: CallableId::new("pg18:syntax:position"),
+                proves_non_null: true,
+            }),
+            volatility: Volatility::Immutable,
+            kind: TypedExpressionKind::Parameter(ParameterId::new(id)),
+        },
+        coercion: None,
+    };
+    TypedExpression {
+        id: ExpressionId::new(40),
+        origin: origin(40, 50),
+        type_id: TypeId::new("pg18:type:base:pg_catalog.integer"),
+        typmod: None,
+        nullability: Nullability::not_null(NullabilityEvidence::CallableContract {
+            callable_id: CallableId::new("pg18:syntax:position"),
+            proves_non_null: true,
+        }),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::Position {
+            substring: Box::new(argument(41)),
+            string: Box::new(argument(42)),
+            input_type,
+        },
+    }
+}
+
+#[test]
+fn position_shape_rejects_wrong_result_input_and_typmod() {
+    let mut wrong_result = typed_position();
+    wrong_result.type_id = TypeId::new("pg18:type:base:pg_catalog.bigint");
+    assert_eq!(wrong_result.validate(), Err(TypedShapeError::Expression));
+
+    let mut wrong_typmod = typed_position();
+    wrong_typmod.typmod = Some(dibs_query_ir::Typmod::new("1"));
+    assert_eq!(wrong_typmod.validate(), Err(TypedShapeError::Expression));
+
+    let mut wrong_input = typed_position();
+    let TypedExpressionKind::Position { input_type, .. } = &mut wrong_input.kind else {
+        unreachable!()
+    };
+    *input_type = TypeId::new("pg18:type:base:pg_catalog.integer");
+    assert_eq!(wrong_input.validate(), Err(TypedShapeError::Expression));
+}
+
 fn hir_order(id: u32) -> HirOrderBy {
     HirOrderBy {
         expression: hir_integer(id, "1"),
@@ -54,6 +108,17 @@ fn hir_order(id: u32) -> HirOrderBy {
 fn typed_order(id: u32) -> TypedOrderBy {
     TypedOrderBy {
         expression: typed_integer(id, "1"),
+        direction: SortDirection::Descending,
+        nulls: NullsOrder::Last,
+    }
+}
+
+fn typed_within_group_order(id: u32) -> TypedWithinGroupOrderBy {
+    TypedWithinGroupOrderBy {
+        expression: TypedArgument {
+            expression: typed_integer(id, "1"),
+            coercion: None,
+        },
         direction: SortDirection::Descending,
         nulls: NullsOrder::Last,
     }
@@ -103,6 +168,7 @@ fn full_select_and_call_vocabulary_round_trips_with_facet_json() {
             authored_callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
             callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
             arguments: Vec::new(),
+            argument_names: Vec::new(),
             distinct: true,
             star: false,
             order_by: Vec::new(),
@@ -149,6 +215,7 @@ fn checked_typed_ir_rejects_full_language_hir_divergence() {
         kind: HirExpressionKind::Call(Box::new(HirCall {
             callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
             arguments: Vec::new(),
+            argument_names: Vec::new(),
             distinct: true,
             star: false,
             order_by: vec![hir_order(12)],
@@ -210,11 +277,12 @@ fn checked_typed_ir_rejects_full_language_hir_divergence() {
                         authored_callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
                         callable_id: CallableId::new("pg18:callable:pg_catalog.count(*)"),
                         arguments: Vec::new(),
+                        argument_names: Vec::new(),
                         distinct: true,
                         star: false,
                         order_by: vec![typed_order(12)],
                         filter: Some(Box::new(typed_integer(13, "1"))),
-                        within_group: vec![typed_order(14)],
+                        within_group: vec![typed_within_group_order(14)],
                         over: Some(WindowReference::Inline(window_spec_typed())),
                     })),
                 },
@@ -272,6 +340,7 @@ fn cte_materialization_recursive_flag_and_render_names_are_artifact_owned() {
     });
     let cte = TypedCte::try_new(
         CteId::new(1),
+        false,
         "dependency_path".to_string(),
         CteMaterialization::Materialized,
         cte_statement,
@@ -284,6 +353,7 @@ fn cte_materialization_recursive_flag_and_render_names_are_artifact_owned() {
 
     let hir = HirCte {
         id: CteId::new(1),
+        recursive: false,
         name: "dependency_path".to_string(),
         origin: origin(0, 10),
         materialization: CteMaterialization::Materialized,
@@ -480,6 +550,7 @@ fn invalid_window_and_call_shapes_are_rejected() {
                 expression: typed_integer(3, "1"),
                 coercion: None,
             }],
+            argument_names: vec![None],
             distinct: true,
             star: true,
             order_by: Vec::new(),
@@ -493,6 +564,37 @@ fn invalid_window_and_call_shapes_are_rejected() {
             })),
         })),
     };
+    let mut unsafe_name = call.clone();
+    let TypedExpressionKind::Call(unsafe_call) = &mut unsafe_name.kind else {
+        unreachable!()
+    };
+    unsafe_call.star = false;
+    unsafe_call.argument_names = vec![Some("secs); DROP TABLE job; --".to_string())];
+    assert!(unsafe_name.validate().is_err());
+
+    let mut invalid_order = call.clone();
+    let TypedExpressionKind::Call(invalid_call) = &mut invalid_order.kind else {
+        unreachable!()
+    };
+    invalid_call.star = false;
+    invalid_call.arguments.push(TypedArgument {
+        expression: typed_integer(4, "2"),
+        coercion: None,
+    });
+    invalid_call.argument_names = vec![Some("first".to_string()), None];
+    assert!(invalid_order.validate().is_err());
+
+    let mut duplicate_name = call.clone();
+    let TypedExpressionKind::Call(duplicate_call) = &mut duplicate_name.kind else {
+        unreachable!()
+    };
+    duplicate_call.star = false;
+    duplicate_call.arguments.push(TypedArgument {
+        expression: typed_integer(5, "2"),
+        coercion: None,
+    });
+    duplicate_call.argument_names = vec![Some("value".to_string()), Some("value".to_string())];
+    assert!(duplicate_name.validate().is_err());
     assert!(call.validate().is_err());
 }
 

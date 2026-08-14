@@ -525,7 +525,7 @@ fn unordered_inputs_are_canonical_but_semantic_order_is_preserved() {
         source_name: "other".to_string(),
         origin: origin(1, 41, 46),
         type_id: type_id(),
-        typmod: Some(Typmod::new("numeric(20,6)")),
+        typmod: Some(Typmod::new("20,6")),
         nullable: true,
         pg_codec_id: PgCodecId::new("pg18:codec:numeric"),
         wire_codec_id: WireCodecId::new("wire:numeric-decimal"),
@@ -836,6 +836,7 @@ fn typed_conflict_target_preserves_named_constraint_exclusively() {
     let constraint =
         dibs_pg_catalog::ConstraintId::new("pg18:constraint:public.job:job_external_key");
     let clause = dibs_query_ir::TypedConflictClause {
+        excluded_binding: dibs_query_ir::RelationId::new(1),
         target: dibs_query_ir::ConflictTarget::Constraint(constraint.clone()),
         action: dibs_query_ir::TypedConflictAction::Nothing,
     };
@@ -853,12 +854,14 @@ fn typed_conflict_clause_rejects_impossible_postgresql_forms() {
         predicate: None,
     };
     let unspecified_update = dibs_query_ir::TypedConflictClause {
+        excluded_binding: dibs_query_ir::RelationId::new(1),
         target: dibs_query_ir::ConflictTarget::Unspecified,
         action: update.clone(),
     };
     assert!(unspecified_update.validate().is_err());
 
     let empty_inference = dibs_query_ir::TypedConflictClause {
+        excluded_binding: dibs_query_ir::RelationId::new(1),
         target: dibs_query_ir::ConflictTarget::Inference {
             expressions: Vec::new(),
             predicate: None,
@@ -868,6 +871,7 @@ fn typed_conflict_clause_rejects_impossible_postgresql_forms() {
     assert!(empty_inference.validate().is_err());
 
     let empty_update = dibs_query_ir::TypedConflictClause {
+        excluded_binding: dibs_query_ir::RelationId::new(1),
         target: dibs_query_ir::ConflictTarget::Constraint(dibs_pg_catalog::ConstraintId::new(
             "pg18:constraint:public.job:job_pkey",
         )),
@@ -886,6 +890,7 @@ fn typed_arguments_and_values_cannot_desynchronize() {
         authored_callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:app.identity"),
         callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:app.identity"),
         arguments: vec![argument],
+        argument_names: vec![None],
         distinct: false,
         star: false,
         order_by: Vec::new(),
@@ -909,6 +914,50 @@ fn typed_arguments_and_values_cannot_desynchronize() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn non_identity_explicit_cast_requires_a_coercion_proof() {
+    let integer = TypeId::new("pg18:type:pg_catalog.integer:base");
+    let numeric = TypeId::new("pg18:type:pg_catalog.numeric:base");
+    let expression = TypedExpression {
+        id: ExpressionId::new(91),
+        origin: origin(1, 0, 1),
+        type_id: numeric,
+        typmod: None,
+        nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+        volatility: Volatility::Immutable,
+        kind: TypedExpressionKind::ExplicitCast {
+            expression: Box::new(typed_expression_of_type("1", integer)),
+            coercion: None,
+        },
+    };
+    assert!(expression.validate().is_err());
+}
+
+#[test]
+fn explicit_io_coercion_rejects_forged_identity() {
+    let text = TypeId::new("pg18:type:base:pg_catalog.text");
+    let jsonb = TypeId::new("pg18:type:base:pg_catalog.jsonb");
+    let mut coercion = dibs_query_ir::TypedCoercion {
+        source_type: text.clone(),
+        target_type: jsonb.clone(),
+        target_typmod: None,
+        result_nullability: Nullability::not_null(NullabilityEvidence::CastPropagation),
+        evidence: dibs_query_ir::CoercionEvidence::ExplicitIo {
+            postgres_major: 18,
+            coercion_id: dibs_pg_catalog::io_coercion_id(18, &text, &jsonb),
+            source: text.clone(),
+            target: jsonb.clone(),
+        },
+    };
+    assert!(coercion.validate().is_ok());
+    let dibs_query_ir::CoercionEvidence::ExplicitIo { coercion_id, .. } = &mut coercion.evidence
+    else {
+        unreachable!()
+    };
+    *coercion_id = dibs_pg_catalog::IoCoercionId::new("pg18:io-coercion:forged");
+    assert!(coercion.validate().is_err());
 }
 
 #[test]
@@ -1146,6 +1195,7 @@ fn hir_correspondence_uses_authored_ids_while_execution_uses_resolved_ids() {
         kind: HirExpressionKind::Call(Box::new(dibs_query_ir::HirCall {
             callable_id: dibs_pg_catalog::CallableId::new("unresolved:function:app.pick"),
             arguments: vec![hir_integer("1")],
+            argument_names: vec![None],
             distinct: false,
             star: false,
             order_by: Vec::new(),
@@ -1170,6 +1220,7 @@ fn hir_correspondence_uses_authored_ids_while_execution_uses_resolved_ids() {
                 expression: typed_integer_with_nullability("1", true),
                 coercion: None,
             }],
+            argument_names: vec![None],
             distinct: false,
             star: false,
             order_by: Vec::new(),
@@ -1190,6 +1241,15 @@ fn hir_correspondence_uses_authored_ids_while_execution_uses_resolved_ids() {
     };
     call.authored_callable_id = dibs_pg_catalog::CallableId::new("unresolved:function:app.other");
     assert!(!wrong_authored_call.corresponds_to_hir(&hir_call_statement));
+    let mut wrong_argument_name = typed_call_statement.clone();
+    let dibs_query_ir::TypedStatementKind::Select(select) = &mut wrong_argument_name.kind else {
+        unreachable!()
+    };
+    let TypedExpressionKind::Call(call) = &mut select.projections[0].expression.kind else {
+        unreachable!()
+    };
+    call.argument_names = vec![Some("value".to_string())];
+    assert!(!wrong_argument_name.corresponds_to_hir(&hir_call_statement));
 
     let hir_operator = HirExpression {
         id: ExpressionId::new(71),
@@ -1297,6 +1357,7 @@ fn cte_output_fields_must_match_statement_projections() {
     assert!(
         dibs_query_ir::TypedCte::try_new(
             dibs_query_ir::CteId::new(20),
+            false,
             "example".to_string(),
             dibs_query_ir::CteMaterialization::Default,
             statement,

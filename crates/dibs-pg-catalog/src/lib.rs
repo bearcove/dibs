@@ -17,13 +17,13 @@ pub use callable::{
 };
 pub use codec::{ApiLanguage, CodecBinding};
 pub use id::{
-    ApiTypeId, CallableId, CastId, CollationId, ColumnId, ConstraintId, IndexId, OperatorId,
-    PgCodecId, TableId, TypeId, WireCodecId,
+    ApiTypeId, CallableId, CastId, CollationId, ColumnId, ConstraintId, IndexId, IoCoercionId,
+    OperatorId, PgCodecId, TableId, TypeId, WireCodecId,
 };
 pub use snapshot::{
     CastContext, CastMethod, CatalogCast, CatalogColumn, CatalogForeignKey, CatalogIndex,
-    CatalogIndexColumn, CatalogOperator, CatalogSnapshot, CatalogTable, Nullability, PrimaryKey,
-    SchemaFingerprint, UniqueConstraint,
+    CatalogIndexColumn, CatalogIoCoercion, CatalogOperator, CatalogSnapshot, CatalogTable,
+    Nullability, PrimaryKey, SchemaFingerprint, UniqueConstraint, io_coercion_id,
 };
 pub use type_system::{
     CatalogType, DomainCollation, DomainConstraint, DomainDefinition, PgTypeCategory, PgTypeKind,

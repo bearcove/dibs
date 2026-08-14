@@ -49,6 +49,8 @@ pub enum PgTypeCategory {
     Unknown,
     /// User-defined or otherwise uncategorized values.
     UserDefined,
+    /// Time-span values such as `interval`.
+    Timespan,
 }
 
 /// Supported PostgreSQL polymorphic pseudo-type families.

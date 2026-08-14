@@ -386,7 +386,7 @@ fn generation_fails_closed_when_rust_contract_facts_are_absent() {
 }
 
 #[test]
-fn unsupported_dynamic_limit_assertion_fails_closed() {
+fn dynamic_limit_assertion_generates_typed_preflight() {
     let mut query = row_query(
         ResultMode::Many,
         &[direct_parameter(1, "row_limit", BIGINT)],
@@ -398,12 +398,16 @@ fn unsupported_dynamic_limit_assertion_fails_closed() {
     }];
     finalize_query(&mut query);
 
-    assert_eq!(
-        generate_compiled_rust(&query),
-        Err(RustGenerationError::UnsupportedLimitParameterAssertion {
-            parameter_id: ParameterId::new(1),
-        })
-    );
+    let generated = generate_compiled_rust(&query).expect("dynamic LIMIT preflight generates");
+    let preflight = generated
+        .source
+        .find("valid_limit(&CONTEXT, \"row_limit\", *row_limit)?;")
+        .expect("typed LIMIT preflight");
+    let execution = generated
+        .source
+        .find("client\n            .query(SQL")
+        .expect("PostgreSQL execution");
+    assert!(preflight < execution);
 }
 
 #[test]

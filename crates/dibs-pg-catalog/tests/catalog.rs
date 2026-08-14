@@ -279,6 +279,43 @@ fn schema_conversion_preserves_tables_columns_constraints_indexes_foreign_keys_a
 }
 
 #[test]
+fn schema_conversion_promotes_unfiltered_unique_indexes_to_constraints() {
+    let mut job = table(
+        "job",
+        vec![
+            column("run_binding_id", PgType::BigInt, false),
+            column("job_id", PgType::Text, false),
+            column("active", PgType::Boolean, false),
+        ],
+    );
+    job.indices.push(Index {
+        name: "uq_job_binding_job".to_string(),
+        columns: vec![
+            IndexColumn::new("run_binding_id"),
+            IndexColumn::new("job_id"),
+        ],
+        unique: true,
+        where_clause: None,
+    });
+    job.indices.push(Index {
+        name: "uq_job_active".to_string(),
+        columns: vec![IndexColumn::new("job_id")],
+        unique: true,
+        where_clause: Some("active".to_string()),
+    });
+
+    let snapshot = CatalogSnapshot::from_schema_postgres_18(&schema(vec![job])).unwrap();
+    let job = snapshot.resolve_table("public.job").unwrap();
+    assert_eq!(job.unique_constraints.len(), 1);
+    assert_eq!(job.unique_constraints[0].name, "uq_job_binding_job");
+    assert_eq!(
+        job.unique_constraints[0].columns,
+        vec!["run_binding_id", "job_id"]
+    );
+    assert_eq!(job.indexes.len(), 2);
+}
+
+#[test]
 fn registered_enum_and_domain_have_distinct_stable_type_relationships() {
     let mut catalog = CatalogSnapshot::postgres_18_fixture();
     let enum_id = catalog
@@ -893,6 +930,7 @@ fn pg18_type_resolution_facts_cover_categories_preferences_and_pseudo_types() {
     let text = catalog.resolve_type("pg_catalog.text").unwrap();
     let unknown = catalog.resolve_type("pg_catalog.unknown").unwrap();
     let anyelement = catalog.resolve_type("pg_catalog.anyelement").unwrap();
+    let interval = catalog.resolve_type("pg_catalog.interval").unwrap();
 
     assert_eq!(boolean.category, PgTypeCategory::Boolean);
     assert!(boolean.preferred);
@@ -900,6 +938,8 @@ fn pg18_type_resolution_facts_cover_categories_preferences_and_pseudo_types() {
     assert!(float8.preferred);
     assert_eq!(text.category, PgTypeCategory::String);
     assert!(text.preferred);
+    assert_eq!(interval.category, PgTypeCategory::Timespan);
+    assert!(interval.preferred);
     assert_eq!(unknown.category, PgTypeCategory::Unknown);
     assert_eq!(unknown.kind, PgTypeKind::Pseudo);
     assert_eq!(unknown.polymorphic, None);
@@ -943,6 +983,35 @@ fn curated_callable_and_operator_semantics_are_explicit() {
         Some(AggregateEmptyBehavior::Identity)
     );
 
+    let to_jsonb = catalog
+        .callable_candidates("to_jsonb", 1)
+        .find(|callable| callable.postgres_identity_arguments == "anyelement")
+        .unwrap();
+    assert_eq!(to_jsonb.volatility, Volatility::Stable);
+    assert!(to_jsonb.strict);
+    assert_eq!(
+        to_jsonb.scalar_result.as_ref(),
+        Some(&catalog.resolve_type("pg_catalog.jsonb").unwrap().id)
+    );
+    let make_interval = catalog
+        .callable_candidates("make_interval", 7)
+        .find(|callable| {
+            callable
+                .postgres_identity_arguments
+                .starts_with("years integer")
+        })
+        .unwrap();
+    assert_eq!(
+        make_interval.postgres_identity_arguments,
+        "years integer, months integer, weeks integer, days integer, hours integer, mins integer, secs double precision"
+    );
+    assert!(make_interval.strict);
+    assert_eq!(make_interval.required_arguments, 0);
+    assert_eq!(
+        make_interval.parameter_names,
+        ["years", "months", "weeks", "days", "hours", "mins", "secs"]
+            .map(|name| Some(name.to_string()))
+    );
     let text = catalog.resolve_type("pg_catalog.text").unwrap();
     assert!(catalog.operator_candidates("=", 2).any(|operator| {
         operator.left.as_ref() == Some(&text.id)
@@ -964,6 +1033,84 @@ fn curated_callable_and_operator_semantics_are_explicit() {
             && operator.result == boolean.id
             && operator.strict
     }));
+    let bytea = catalog.resolve_type("pg_catalog.bytea").unwrap();
+    for operator_name in ["=", "<>"] {
+        assert!(
+            catalog
+                .operator_candidates(operator_name, 2)
+                .any(|operator| {
+                    operator.left.as_ref() == Some(&bytea.id)
+                        && operator.right.as_ref() == Some(&bytea.id)
+                        && operator.result == boolean.id
+                        && operator.strict
+                })
+        );
+    }
+    let jsonb = catalog.resolve_type("pg_catalog.jsonb").unwrap();
+    for operator_name in ["=", "<>", "<", ">", "<=", ">="] {
+        assert!(
+            catalog
+                .operator_candidates(operator_name, 2)
+                .any(|operator| {
+                    operator.left.as_ref() == Some(&jsonb.id)
+                        && operator.right.as_ref() == Some(&jsonb.id)
+                        && operator.result == boolean.id
+                        && operator.strict
+                })
+        );
+    }
+    let integer = catalog.resolve_type("pg_catalog.integer").unwrap();
+    for (operator_name, right, result) in [
+        ("->", &text.id, &jsonb.id),
+        ("->", &integer.id, &jsonb.id),
+        ("->>", &text.id, &text.id),
+        ("->>", &integer.id, &text.id),
+    ] {
+        assert!(
+            catalog
+                .operator_candidates(operator_name, 2)
+                .any(|operator| {
+                    operator.left.as_ref() == Some(&jsonb.id)
+                        && operator.right.as_ref() == Some(right)
+                        && &operator.result == result
+                        && operator.strict
+                })
+        );
+    }
+    assert!(catalog.operator_candidates("-", 2).any(|operator| {
+        operator.left.as_ref() == Some(&integer.id)
+            && operator.right.as_ref() == Some(&integer.id)
+            && operator.result == integer.id
+            && operator.strict
+    }));
+    let timestamptz = catalog
+        .resolve_type("pg_catalog.timestamp with time zone")
+        .unwrap();
+    let interval = catalog.resolve_type("pg_catalog.interval").unwrap();
+    assert!(catalog.operator_candidates("-", 2).any(|operator| {
+        operator.left.as_ref() == Some(&timestamptz.id)
+            && operator.right.as_ref() == Some(&timestamptz.id)
+            && operator.result == interval.id
+            && operator.strict
+    }));
+    let numeric = catalog.resolve_type("pg_catalog.numeric").unwrap();
+    assert!(catalog.operator_candidates("*", 2).any(|operator| {
+        operator.left.as_ref() == Some(&numeric.id)
+            && operator.right.as_ref() == Some(&numeric.id)
+            && operator.result == numeric.id
+            && operator.strict
+    }));
+    for type_name in ["double precision", "numeric"] {
+        let type_id = &catalog
+            .resolve_type(&format!("pg_catalog.{type_name}"))
+            .unwrap()
+            .id;
+        assert!(catalog.callable_candidates("power", 2).any(|callable| {
+            callable.arguments == [type_id.clone(), type_id.clone()]
+                && callable.scalar_result.as_ref() == Some(type_id)
+                && callable.strict
+        }));
+    }
 
     let sum = catalog
         .callable_candidates("sum", 1)
@@ -972,7 +1119,87 @@ fn curated_callable_and_operator_semantics_are_explicit() {
     assert_eq!(sum.kind, CallableKind::Aggregate);
     assert_eq!(sum.scalar_result_nullability, Some(Nullability::Nullable));
     assert_eq!(sum.aggregate_empty, Some(AggregateEmptyBehavior::Null));
+    for aggregate_name in ["min", "max"] {
+        let aggregate = catalog
+            .callable_candidates(aggregate_name, 1)
+            .find(|callable| callable.postgres_identity_arguments == "bigint")
+            .unwrap();
+        assert_eq!(aggregate.kind, CallableKind::Aggregate);
+        assert_eq!(aggregate.scalar_result.as_ref(), Some(&bigint.id));
+        assert_eq!(
+            aggregate.scalar_result_nullability,
+            Some(Nullability::Nullable)
+        );
+        assert_eq!(
+            aggregate.aggregate_empty,
+            Some(AggregateEmptyBehavior::Null)
+        );
+    }
+    for aggregate_name in ["min", "max"] {
+        for type_name in [
+            "date",
+            "time without time zone",
+            "timestamp without time zone",
+            "timestamp with time zone",
+            "interval",
+        ] {
+            let type_id = &catalog
+                .resolve_type(&format!("pg_catalog.{type_name}"))
+                .unwrap()
+                .id;
+            assert!(
+                catalog
+                    .callable_candidates(aggregate_name, 1)
+                    .any(|callable| {
+                        callable.arguments == [type_id.clone()]
+                            && callable.scalar_result.as_ref() == Some(type_id)
+                            && callable.scalar_result_nullability == Some(Nullability::Nullable)
+                            && callable.aggregate_empty == Some(AggregateEmptyBehavior::Null)
+                    })
+            );
+        }
+    }
+    let boolean = catalog.resolve_type("pg_catalog.boolean").unwrap();
+    let bool_and = catalog
+        .callable_candidates("bool_and", 1)
+        .find(|callable| callable.arguments == [boolean.id.clone()])
+        .unwrap();
+    assert_eq!(bool_and.kind, CallableKind::Aggregate);
+    assert_eq!(bool_and.scalar_result.as_ref(), Some(&boolean.id));
+    assert_eq!(
+        bool_and.scalar_result_nullability,
+        Some(Nullability::Nullable)
+    );
+    assert_eq!(bool_and.aggregate_empty, Some(AggregateEmptyBehavior::Null));
 
+    let double_precision = catalog.resolve_type("pg_catalog.double precision").unwrap();
+    let interval = catalog.resolve_type("pg_catalog.interval").unwrap();
+    for (ordered_type, identity, result_type) in [
+        (
+            &double_precision.id,
+            "double precision ORDER BY double precision",
+            "double precision",
+        ),
+        (
+            &interval.id,
+            "double precision ORDER BY interval",
+            "interval",
+        ),
+    ] {
+        let percentile = catalog
+            .callable_candidates("percentile_cont", 1)
+            .find(|callable| callable.postgres_identity_arguments == identity)
+            .unwrap();
+        assert_eq!(percentile.kind, CallableKind::Aggregate);
+        assert_eq!(percentile.arguments, [double_precision.id.clone()]);
+        assert_eq!(percentile.aggregated_arguments, [ordered_type.clone()]);
+        assert_eq!(percentile.scalar_result.as_ref(), Some(ordered_type));
+        assert_eq!(percentile.postgres_result_type, result_type);
+        assert_eq!(
+            percentile.aggregate_empty,
+            Some(AggregateEmptyBehavior::Null)
+        );
+    }
     let row_number = catalog.callable_candidates("row_number", 0).next().unwrap();
     assert_eq!(row_number.kind, CallableKind::Window);
     assert_eq!(row_number.cardinality, CallableCardinality::OnePerInput);
@@ -995,6 +1222,12 @@ fn cast_path_is_shortest_deterministic_and_context_aware() {
     let int4 = catalog.resolve_type("pg_catalog.integer").unwrap();
     let int8 = catalog.resolve_type("pg_catalog.bigint").unwrap();
     let numeric = catalog.resolve_type("pg_catalog.numeric").unwrap();
+    let float8 = catalog.resolve_type("pg_catalog.double precision").unwrap();
+    assert!(
+        catalog
+            .cast_path(&numeric.id, &float8.id, CastContext::Implicit)
+            .is_some()
+    );
 
     let empty = catalog
         .cast_path(&int4.id, &int4.id, CastContext::Implicit)
@@ -1014,8 +1247,25 @@ fn cast_path_is_shortest_deterministic_and_context_aware() {
     assert_eq!(transitive.len(), 2);
     assert_eq!(transitive[0].source, int4.id);
     assert_eq!(transitive[0].target, int8.id);
+    assert!(
+        catalog
+            .cast_path(&float8.id, &int8.id, CastContext::Implicit)
+            .is_none()
+    );
+    let float8_to_bigint = catalog
+        .cast_path(&float8.id, &int8.id, CastContext::Explicit)
+        .unwrap();
+    assert_eq!(float8_to_bigint.len(), 1);
+    assert_eq!(float8_to_bigint[0].source, float8.id);
+    assert_eq!(float8_to_bigint[0].target, int8.id);
+    assert_eq!(float8_to_bigint[0].context, CastContext::Assignment);
     assert_eq!(transitive[1].source, int8.id);
     assert_eq!(transitive[1].target, numeric.id);
+    let numeric_to_integer = catalog
+        .cast_path(&numeric.id, &int4.id, CastContext::Explicit)
+        .unwrap();
+    assert_eq!(numeric_to_integer.len(), 1);
+    assert_eq!(numeric_to_integer[0].context, CastContext::Assignment);
 
     let longer = catalog
         .cast_path(&int2.id, &numeric.id, CastContext::Implicit)
@@ -1037,6 +1287,14 @@ fn cast_path_is_shortest_deterministic_and_context_aware() {
         .unwrap();
     assert_eq!(assignment.len(), 1);
     assert_eq!(assignment[0].context, CastContext::Assignment);
+
+    let float8 = catalog.resolve_type("pg_catalog.double precision").unwrap();
+    let float_path = catalog
+        .cast_path(&int8.id, &float8.id, CastContext::Implicit)
+        .unwrap();
+    assert_eq!(float_path.len(), 1);
+    assert_eq!(float_path[0].source, int8.id);
+    assert_eq!(float_path[0].target, float8.id);
 }
 
 #[test]
@@ -1103,6 +1361,31 @@ fn cast_by_id_resolves_the_exact_catalog_fact() {
         catalog
             .cast_by_id(&dibs_pg_catalog::CastId::new("pg18:cast:missing"))
             .is_none()
+    );
+}
+
+#[test]
+fn explicit_io_coercion_is_distinct_from_pg_cast_edges() {
+    let catalog = CatalogSnapshot::postgres_18_fixture();
+    let text = catalog.resolve_type("pg_catalog.text").unwrap();
+    let jsonb = catalog.resolve_type("pg_catalog.jsonb").unwrap();
+    assert!(
+        catalog
+            .cast_path(&text.id, &jsonb.id, CastContext::Explicit)
+            .is_none()
+    );
+    let coercion = catalog.io_coercion(&text.id, &jsonb.id).unwrap();
+    assert_eq!(
+        coercion.id,
+        dibs_pg_catalog::io_coercion_id(18, &text.id, &jsonb.id)
+    );
+    let timestamptz = catalog
+        .resolve_type("pg_catalog.timestamp with time zone")
+        .unwrap();
+    let timestamptz_text = catalog.io_coercion(&timestamptz.id, &text.id).unwrap();
+    assert_eq!(
+        timestamptz_text.id,
+        dibs_pg_catalog::io_coercion_id(18, &timestamptz.id, &text.id)
     );
 }
 

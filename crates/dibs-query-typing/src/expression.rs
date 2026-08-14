@@ -105,10 +105,40 @@ impl SemanticChecker<'_> {
                 operator_id,
                 operands,
             } => self.check_operator(expression, operator_id, operands, context),
+            HirExpressionKind::QuantifiedComparison {
+                operator_id,
+                left,
+                right,
+                quantifier,
+            } => self.check_quantified_comparison(
+                expression,
+                operator_id,
+                left,
+                right,
+                *quantifier,
+                context,
+            ),
+            HirExpressionKind::InList {
+                expression: operand,
+                values,
+                negated,
+            } => self.check_in_list(expression, operand, values, *negated, context),
+
             HirExpressionKind::Cast {
                 cast_id,
                 expression: source,
             } => self.check_explicit_cast(expression, cast_id, source, context),
+            HirExpressionKind::ExplicitCast {
+                target_type,
+                target_typmod,
+                expression: source,
+            } => self.check_authored_explicit_cast(
+                expression,
+                target_type,
+                target_typmod.as_ref(),
+                source,
+                context,
+            ),
             HirExpressionKind::Collate {
                 collation_id,
                 expression: source,
@@ -146,6 +176,87 @@ impl SemanticChecker<'_> {
                 context,
                 expected,
             ),
+            HirExpressionKind::Coalesce(arguments) => {
+                self.check_coalesce(expression, arguments, context, expected)
+            }
+            HirExpressionKind::NullIf { left, right } => {
+                self.check_nullif(expression, left, right, context)
+            }
+            HirExpressionKind::Greatest(arguments) => self.check_common_type_special_form(
+                expression,
+                arguments,
+                context,
+                expected,
+                CommonTypeSpecialForm::Greatest,
+            ),
+            HirExpressionKind::Least(arguments) => self.check_common_type_special_form(
+                expression,
+                arguments,
+                context,
+                expected,
+                CommonTypeSpecialForm::Least,
+            ),
+            HirExpressionKind::Position { substring, string } => {
+                let typed_substring = self.check_expression(substring, context, None)?;
+                let typed_string = self.check_expression(string, context, None)?;
+                let input_type = self.common_type(&[
+                    typed_substring.type_id.clone(),
+                    typed_string.type_id.clone(),
+                ])?;
+                if input_type != self.types.text && input_type != self.types.bytea {
+                    return Err(TypeResolutionError::IncompatibleCommonType {
+                        types: vec![
+                            self.known_type(&typed_substring.type_id),
+                            self.known_type(&typed_string.type_id),
+                        ],
+                    }
+                    .into());
+                }
+                let substring = self.check_argument(
+                    substring,
+                    context,
+                    &input_type,
+                    CoercionContext::Implicit,
+                )?;
+                let string =
+                    self.check_argument(string, context, &input_type, CoercionContext::Implicit)?;
+                let nullable = substring.expression.nullability.is_nullable()
+                    || string.expression.nullability.is_nullable();
+                Ok(TypedExpression {
+                    id: expression.id,
+                    origin: expression.origin.clone(),
+                    type_id: self.types.integer.clone(),
+                    typmod: None,
+                    nullability: if nullable {
+                        Nullability::nullable(NullabilityEvidence::Conservative)
+                    } else {
+                        synthetic_not_null("position")
+                    },
+                    volatility: max_volatility([
+                        substring.expression.volatility,
+                        string.expression.volatility,
+                    ]),
+                    kind: TypedExpressionKind::Position {
+                        substring: Box::new(substring),
+                        string: Box::new(string),
+                        input_type,
+                    },
+                })
+            }
+            HirExpressionKind::Exists(statement) => {
+                let mut nested = context.clone();
+                let statement = self.check_statement(statement, &mut nested)?;
+                let volatility = statement_volatility(&statement);
+                Ok(TypedExpression {
+                    id: expression.id,
+                    origin: expression.origin.clone(),
+                    type_id: self.types.boolean.clone(),
+                    typmod: None,
+                    nullability: synthetic_not_null("exists"),
+                    volatility,
+                    kind: TypedExpressionKind::Exists(Box::new(statement)),
+                })
+            }
             HirExpressionKind::ScalarSubquery(statement) => {
                 let mut nested = context.clone();
                 let statement = self.check_statement(statement, &mut nested)?;
@@ -201,11 +312,53 @@ impl SemanticChecker<'_> {
             HirExpressionKind::Array(elements) => {
                 self.check_array(expression, elements, context, expected)
             }
-            HirExpressionKind::CteColumn { cte_id, field_id } => {
+            HirExpressionKind::Extract { field, source } => {
+                let source = self.check_expression(source, context, None)?;
+                let source_type = self.catalog.type_by_id(&source.type_id).ok_or_else(|| {
+                    TypeResolutionError::MissingCatalogFact {
+                        kind: "type",
+                        identity: source.type_id.to_string(),
+                    }
+                })?;
+                if !matches!(
+                    source_type.category,
+                    PgTypeCategory::DateTime | PgTypeCategory::Timespan
+                ) {
+                    return Err(TypeResolutionError::MissingCatalogFact {
+                        kind: "extract-source",
+                        identity: source.type_id.to_string(),
+                    }
+                    .into());
+                }
+                Ok(TypedExpression {
+                    id: expression.id,
+                    origin: expression.origin.clone(),
+                    type_id: self.types.numeric.clone(),
+                    typmod: None,
+                    nullability: source.nullability.clone(),
+                    volatility: source.volatility,
+                    kind: TypedExpressionKind::Extract {
+                        field: *field,
+                        source: Box::new(source),
+                    },
+                })
+            }
+            HirExpressionKind::CteColumn {
+                cte_id,
+                binding,
+                field_id,
+            } => {
+                if context.cte_bindings.get(binding) != Some(cte_id) {
+                    return Err(CheckError::UnknownColumn {
+                        binding: *binding,
+                        column_id: synthetic_field_column(*binding, *field_id),
+                        origin: expression.origin.clone(),
+                    });
+                }
                 let value = context
                     .ctes
                     .get(cte_id)
-                    .and_then(|fields| fields.get(field_id))
+                    .and_then(|cte| cte.fields.get(field_id))
                     .ok_or_else(|| CheckError::UnknownCteField {
                         cte_id: *cte_id,
                         field_id: *field_id,
@@ -216,14 +369,21 @@ impl SemanticChecker<'_> {
                     origin: expression.origin.clone(),
                     type_id: value.type_id.clone(),
                     typmod: value.typmod.clone(),
-                    nullability: if value.nullability.is_nullable() {
-                        Nullability::nullable(NullabilityEvidence::CtePropagation { cte: *cte_id })
+                    nullability: if context.null_extended.contains(binding)
+                        || value.nullability.is_nullable()
+                    {
+                        Nullability::nullable(if context.null_extended.contains(binding) {
+                            NullabilityEvidence::OuterJoinNullExtension { binding: *binding }
+                        } else {
+                            NullabilityEvidence::CtePropagation { cte: *cte_id }
+                        })
                     } else {
                         Nullability::not_null(NullabilityEvidence::CtePropagation { cte: *cte_id })
                     },
                     volatility: value.volatility,
                     kind: TypedExpressionKind::CteColumn {
                         cte_id: *cte_id,
+                        binding: *binding,
                         field_id: *field_id,
                     },
                 })
@@ -284,6 +444,10 @@ impl SemanticChecker<'_> {
                     .unwrap_or_else(|| self.types.bytea.clone()),
                 synthetic_not_null("bytes-literal"),
             ),
+            HirLiteral::Interval { .. } => (
+                self.types.interval.clone(),
+                synthetic_not_null("interval-literal"),
+            ),
         };
         Ok(TypedExpression {
             id: expression.id,
@@ -325,6 +489,66 @@ impl SemanticChecker<'_> {
         }
     }
 
+    fn check_in_list(
+        &self,
+        expression: &HirExpression,
+        operand: &HirExpression,
+        values: &[HirExpression],
+        negated: bool,
+        context: &CheckContext<'_>,
+    ) -> Result<TypedExpression, CheckError> {
+        let typed_operand = self.check_expression(operand, context, None)?;
+        let typed_values = values
+            .iter()
+            .map(|value| self.check_expression(value, context, None))
+            .collect::<Result<Vec<_>, _>>()?;
+        let input_types = std::iter::once(typed_operand.type_id.clone())
+            .chain(typed_values.iter().map(|value| value.type_id.clone()))
+            .collect::<Vec<_>>();
+        let common = self.common_type(&input_types)?;
+        let nullable = typed_operand.nullability.is_nullable()
+            || typed_values
+                .iter()
+                .any(|value| value.nullability.is_nullable());
+        let volatility = max_volatility(
+            std::iter::once(typed_operand.volatility)
+                .chain(typed_values.iter().map(|value| value.volatility)),
+        );
+        let typed_operand = TypedArgument {
+            coercion: self.coercion(&typed_operand, &common, CoercionContext::Implicit)?,
+            expression: typed_operand,
+        };
+        let typed_values = typed_values
+            .into_iter()
+            .map(|value| {
+                Ok(TypedArgument {
+                    coercion: self.coercion(&value, &common, CoercionContext::Implicit)?,
+                    expression: value,
+                })
+            })
+            .collect::<Result<Vec<_>, CheckError>>()?;
+        Ok(TypedExpression {
+            id: expression.id,
+            origin: expression.origin.clone(),
+            type_id: self.types.boolean.clone(),
+            typmod: None,
+            nullability: if nullable {
+                Nullability::nullable(NullabilityEvidence::Conservative)
+            } else {
+                synthetic_not_null("in-list")
+            },
+            volatility,
+            kind: TypedExpressionKind::InList {
+                expression: Box::new(typed_operand),
+                values: typed_values,
+                negated,
+                coercion: CoercionEvidence::CommonType {
+                    resolved: common,
+                    inputs: input_types,
+                },
+            },
+        })
+    }
     fn check_operator(
         &self,
         expression: &HirExpression,
@@ -391,6 +615,88 @@ impl SemanticChecker<'_> {
                 authored_operator_id: authored_id.clone(),
                 operator_id: operator.id.clone(),
                 operands: arguments,
+            },
+        })
+    }
+
+    fn check_quantified_comparison(
+        &self,
+        expression: &HirExpression,
+        authored_id: &OperatorId,
+        left: &HirExpression,
+        right: &HirExpression,
+        quantifier: ComparisonQuantifier,
+        context: &CheckContext<'_>,
+    ) -> Result<TypedExpression, CheckError> {
+        let typed_left = self.check_expression(left, context, None)?;
+        let typed_right = self.check_expression(right, context, None)?;
+        let right_element_type = self
+            .catalog
+            .type_by_id(&typed_right.type_id)
+            .and_then(|facts| facts.element_type.clone())
+            .ok_or_else(|| TypeResolutionError::MissingCatalogFact {
+                kind: "array-element-type",
+                identity: typed_right.type_id.to_string(),
+            })?;
+        let actual = vec![
+            self.known_type(&typed_left.type_id),
+            self.known_type(&right_element_type),
+        ];
+        let selected = self.select_operator(
+            operator_candidates(self.catalog, authored_id, 2),
+            &actual,
+            authored_id,
+        )?;
+        let ResolvedCandidate {
+            candidate: operator,
+            argument_types,
+        } = selected;
+        let declared = operator
+            .left
+            .iter()
+            .chain(operator.right.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        let result =
+            self.resolve_polymorphic_result(&operator.result, &declared, &argument_types)?;
+        if result != self.types.boolean {
+            return Err(CheckError::NonBooleanPredicate {
+                clause: "quantified comparison",
+                actual: result,
+                origin: expression.origin.clone(),
+            });
+        }
+        let expected_array = self
+            .catalog
+            .types
+            .iter()
+            .find(|facts| facts.element_type.as_ref() == argument_types.get(1))
+            .map(|facts| facts.id.clone())
+            .ok_or_else(|| TypeResolutionError::MissingCatalogFact {
+                kind: "array-type",
+                identity: argument_types[1].to_string(),
+            })?;
+        let left = TypedArgument {
+            coercion: self.coercion(&typed_left, &argument_types[0], CoercionContext::Implicit)?,
+            expression: typed_left,
+        };
+        let right = TypedArgument {
+            coercion: self.coercion(&typed_right, &expected_array, CoercionContext::Implicit)?,
+            expression: typed_right,
+        };
+        Ok(TypedExpression {
+            id: expression.id,
+            origin: expression.origin.clone(),
+            type_id: self.types.boolean.clone(),
+            typmod: None,
+            nullability: Nullability::nullable(NullabilityEvidence::Conservative),
+            volatility: max_volatility([left.expression.volatility, right.expression.volatility]),
+            kind: TypedExpressionKind::QuantifiedComparison {
+                authored_operator_id: authored_id.clone(),
+                operator_id: operator.id.clone(),
+                left: Box::new(left),
+                right: Box::new(right),
+                quantifier,
             },
         })
     }
@@ -518,16 +824,36 @@ impl SemanticChecker<'_> {
             .iter()
             .map(|argument| self.check_expression(argument, context, None))
             .collect::<Result<Vec<_>, _>>()?;
+        let initial_within_group = call
+            .within_group
+            .iter()
+            .map(|order| self.check_expression(&order.expression, context, None))
+            .collect::<Result<Vec<_>, _>>()?;
         let actual = initial
             .iter()
+            .chain(&initial_within_group)
             .map(|argument| self.known_type(&argument.type_id))
             .collect::<Vec<_>>();
+        let candidates = callable_candidates(self.catalog, &call.callable_id, call.arguments.len())
+            .into_iter()
+            .filter(|callable| callable.aggregated_arguments.len() == call.within_group.len())
+            .filter_map(|callable| {
+                callable_argument_types(callable, &call.argument_names).map(|argument_types| {
+                    CallableCandidate {
+                        callable,
+                        argument_types,
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
         let selected = self
-            .select_pg_candidate(
-                callable_candidates(self.catalog, &call.callable_id, call.arguments.len()),
-                &actual,
-                |candidate| candidate.arguments.iter().collect::<Vec<_>>(),
-            )
+            .select_pg_candidate(&candidates, &actual, |candidate| {
+                candidate
+                    .argument_types
+                    .iter()
+                    .chain(&candidate.callable.aggregated_arguments)
+                    .collect::<Vec<_>>()
+            })
             .map_err(|selection| match selection {
                 SelectionError::None => {
                     CheckError::Type(TypeResolutionError::IncompatibleCallable {
@@ -541,15 +867,19 @@ impl SemanticChecker<'_> {
                         argument_types: actual.clone(),
                         candidates: candidates
                             .into_iter()
-                            .map(|candidate| candidate.id.clone())
+                            .map(|candidate| candidate.callable.id.clone())
                             .collect(),
                     })
                 }
             })?;
         let ResolvedCandidate {
-            candidate: callable,
-            argument_types: resolved_arguments,
+            candidate,
+            argument_types: resolved_types,
         } = selected;
+        let callable = candidate.callable;
+        let direct_count = candidate.argument_types.len();
+        let (resolved_arguments, resolved_aggregated_arguments) =
+            resolved_types.split_at(direct_count);
         if call.star && !(callable.kind == CallableKind::Aggregate && callable.arguments.is_empty())
         {
             return Err(TypeResolutionError::IncompatibleCallable {
@@ -567,19 +897,45 @@ impl SemanticChecker<'_> {
         let arguments = call
             .arguments
             .iter()
-            .zip(&resolved_arguments)
+            .zip(resolved_arguments)
             .map(|(argument, expected)| {
                 self.check_argument(argument, context, expected, CoercionContext::Implicit)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let result = self.resolve_polymorphic_result(
-            declared_result,
-            &callable.arguments,
-            &resolved_arguments,
-        )?;
+        let within_group = call
+            .within_group
+            .iter()
+            .zip(resolved_aggregated_arguments)
+            .map(|(order, expected)| {
+                Ok(TypedWithinGroupOrderBy {
+                    expression: self.check_argument(
+                        &order.expression,
+                        context,
+                        expected,
+                        CoercionContext::Implicit,
+                    )?,
+                    direction: order.direction,
+                    nulls: order.nulls,
+                })
+            })
+            .collect::<Result<Vec<_>, CheckError>>()?;
+        let declared_types = callable
+            .arguments
+            .iter()
+            .chain(&callable.aggregated_arguments)
+            .cloned()
+            .collect::<Vec<_>>();
+        let result =
+            self.resolve_polymorphic_result(declared_result, &declared_types, &resolved_types)?;
         let nullable_arguments = arguments
             .iter()
-            .any(|argument| argument.expression.nullability.is_nullable());
+            .map(|argument| &argument.expression)
+            .chain(
+                within_group
+                    .iter()
+                    .map(|order| &order.expression.expression),
+            )
+            .any(|expression| expression.nullability.is_nullable());
         Ok(TypedExpression {
             id: expression.id,
             origin: expression.origin.clone(),
@@ -591,6 +947,7 @@ impl SemanticChecker<'_> {
                 authored_callable_id: call.callable_id.clone(),
                 callable_id: callable.id.clone(),
                 arguments,
+                argument_names: call.argument_names.clone(),
                 distinct: call.distinct,
                 star: call.star,
                 order_by: call
@@ -604,11 +961,7 @@ impl SemanticChecker<'_> {
                     .map(|value| self.check_predicate("FILTER", value, context))
                     .transpose()?
                     .map(Box::new),
-                within_group: call
-                    .within_group
-                    .iter()
-                    .map(|order| self.check_order_by(order, context))
-                    .collect::<Result<Vec<_>, _>>()?,
+                within_group,
                 over: call
                     .over
                     .as_ref()
@@ -681,6 +1034,42 @@ impl SemanticChecker<'_> {
                 cast_id: cast.id.clone(),
                 expression: Box::new(source),
                 coercion,
+            },
+        })
+    }
+
+    fn check_authored_explicit_cast(
+        &self,
+        expression: &HirExpression,
+        target_type: &TypeId,
+        target_typmod: Option<&Typmod>,
+        source: &HirExpression,
+        context: &CheckContext<'_>,
+    ) -> Result<TypedExpression, CheckError> {
+        let source = self.check_expression(source, context, None)?;
+        let mut coercion = self.coercion(&source, target_type, CoercionContext::Explicit)?;
+        if let Some(coercion) = &mut coercion {
+            coercion.target_typmod = target_typmod.cloned();
+        }
+        let identity_without_typmod = source.type_id == *target_type && target_typmod.is_none();
+        Ok(TypedExpression {
+            id: expression.id,
+            origin: expression.origin.clone(),
+            type_id: target_type.clone(),
+            typmod: target_typmod.cloned(),
+            nullability: if source.nullability.is_nullable() {
+                Nullability::nullable(NullabilityEvidence::CastPropagation)
+            } else {
+                Nullability::not_null(NullabilityEvidence::CastPropagation)
+            },
+            volatility: source.volatility,
+            kind: TypedExpressionKind::ExplicitCast {
+                expression: Box::new(source),
+                coercion: if identity_without_typmod {
+                    None
+                } else {
+                    coercion
+                },
             },
         })
     }
@@ -788,6 +1177,161 @@ impl SemanticChecker<'_> {
                     inputs: result_types,
                 },
             },
+        })
+    }
+
+    fn check_nullif(
+        &self,
+        expression: &HirExpression,
+        left: &HirExpression,
+        right: &HirExpression,
+        context: &CheckContext<'_>,
+    ) -> Result<TypedExpression, CheckError> {
+        let authored_operator_id = OperatorId::new("unresolved:operator:pg_catalog.=");
+        let typed_left = self.check_expression(left, context, None)?;
+        let typed_right = self.check_expression(right, context, None)?;
+        let actual = vec![
+            self.known_type(&typed_left.type_id),
+            self.known_type(&typed_right.type_id),
+        ];
+        let selected = self.select_operator(
+            operator_candidates(self.catalog, &authored_operator_id, 2),
+            &actual,
+            &authored_operator_id,
+        )?;
+        let ResolvedCandidate {
+            candidate: operator,
+            argument_types,
+        } = selected;
+        let left = TypedArgument {
+            coercion: self.coercion(&typed_left, &argument_types[0], CoercionContext::Implicit)?,
+            expression: typed_left,
+        };
+        let right = TypedArgument {
+            coercion: self.coercion(&typed_right, &argument_types[1], CoercionContext::Implicit)?,
+            expression: typed_right,
+        };
+        Ok(TypedExpression {
+            id: expression.id,
+            origin: expression.origin.clone(),
+            type_id: argument_types[0].clone(),
+            typmod: argument_output_typmod(&left).cloned(),
+            nullability: Nullability::nullable(NullabilityEvidence::Conservative),
+            volatility: max_volatility([left.expression.volatility, right.expression.volatility]),
+            kind: TypedExpressionKind::NullIf {
+                authored_operator_id,
+                operator_id: operator.id.clone(),
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+        })
+    }
+
+    fn check_coalesce(
+        &self,
+        expression: &HirExpression,
+        arguments: &[HirExpression],
+        context: &CheckContext<'_>,
+        expected: Option<&TypeId>,
+    ) -> Result<TypedExpression, CheckError> {
+        let values = arguments
+            .iter()
+            .map(|argument| self.check_expression(argument, context, None))
+            .collect::<Result<Vec<_>, _>>()?;
+        let input_types = values
+            .iter()
+            .map(|value| value.type_id.clone())
+            .collect::<Vec<_>>();
+        let result_type = expected
+            .cloned()
+            .map_or_else(|| self.common_type(&input_types), Ok)?;
+        let nullable = values.iter().all(|value| value.nullability.is_nullable());
+        let volatility = max_volatility(values.iter().map(|value| value.volatility));
+        let arguments = values
+            .into_iter()
+            .map(|value| {
+                Ok(TypedArgument {
+                    coercion: self.coercion(&value, &result_type, CoercionContext::Implicit)?,
+                    expression: value,
+                })
+            })
+            .collect::<Result<Vec<_>, CheckError>>()?;
+        Ok(TypedExpression {
+            id: expression.id,
+            origin: expression.origin.clone(),
+            type_id: result_type.clone(),
+            typmod: None,
+            nullability: if nullable {
+                Nullability::nullable(NullabilityEvidence::Conservative)
+            } else {
+                synthetic_not_null("coalesce")
+            },
+            volatility,
+            kind: TypedExpressionKind::Coalesce {
+                arguments,
+                coercion: CoercionEvidence::CommonType {
+                    resolved: result_type,
+                    inputs: input_types,
+                },
+            },
+        })
+    }
+    fn check_common_type_special_form(
+        &self,
+        expression: &HirExpression,
+        arguments: &[HirExpression],
+        context: &CheckContext<'_>,
+        expected: Option<&TypeId>,
+        form: CommonTypeSpecialForm,
+    ) -> Result<TypedExpression, CheckError> {
+        let values = arguments
+            .iter()
+            .map(|argument| self.check_expression(argument, context, None))
+            .collect::<Result<Vec<_>, _>>()?;
+        let input_types = values
+            .iter()
+            .map(|value| value.type_id.clone())
+            .collect::<Vec<_>>();
+        let result_type = expected
+            .cloned()
+            .map_or_else(|| self.common_type(&input_types), Ok)?;
+        let nullability = if values.iter().all(|value| value.nullability.is_nullable()) {
+            Nullability::nullable(NullabilityEvidence::Conservative)
+        } else {
+            synthetic_not_null(form.name())
+        };
+        let volatility = max_volatility(values.iter().map(|value| value.volatility));
+        let arguments = values
+            .into_iter()
+            .map(|value| {
+                Ok(TypedArgument {
+                    coercion: self.coercion(&value, &result_type, CoercionContext::Implicit)?,
+                    expression: value,
+                })
+            })
+            .collect::<Result<Vec<_>, CheckError>>()?;
+        let coercion = CoercionEvidence::CommonType {
+            resolved: result_type.clone(),
+            inputs: input_types,
+        };
+        let kind = match form {
+            CommonTypeSpecialForm::Greatest => TypedExpressionKind::Greatest {
+                arguments,
+                coercion,
+            },
+            CommonTypeSpecialForm::Least => TypedExpressionKind::Least {
+                arguments,
+                coercion,
+            },
+        };
+        Ok(TypedExpression {
+            id: expression.id,
+            origin: expression.origin.clone(),
+            type_id: result_type,
+            typmod: None,
+            nullability,
+            volatility,
+            kind,
         })
     }
 
@@ -1002,9 +1546,24 @@ fn structural_operator(id: &OperatorId) -> Option<StructuralOperator> {
         SYNTAX_NOT_OPERATOR_ID => Some(StructuralOperator::Not),
         SYNTAX_IS_NULL_OPERATOR_ID => Some(StructuralOperator::IsNull),
         SYNTAX_IS_NOT_NULL_OPERATOR_ID => Some(StructuralOperator::IsNotNull),
+
         SYNTAX_IS_DISTINCT_FROM_OPERATOR_ID => Some(StructuralOperator::IsDistinctFrom),
         SYNTAX_IS_NOT_DISTINCT_FROM_OPERATOR_ID => Some(StructuralOperator::IsNotDistinctFrom),
         _ => None,
+    }
+}
+#[derive(Debug, Clone, Copy)]
+enum CommonTypeSpecialForm {
+    Greatest,
+    Least,
+}
+
+impl CommonTypeSpecialForm {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Greatest => "greatest",
+            Self::Least => "least",
+        }
     }
 }
 
@@ -1028,13 +1587,21 @@ fn operator_candidates<'a>(
         .collect()
 }
 
+struct CallableCandidate<'a> {
+    callable: &'a CatalogCallable,
+    argument_types: Vec<TypeId>,
+}
+
 fn callable_candidates<'a>(
     catalog: &'a CatalogSnapshot,
     id: &CallableId,
     arity: usize,
 ) -> Vec<&'a CatalogCallable> {
     if let Some(exact) = catalog.callable_by_id(id) {
-        return vec![exact];
+        return ((exact.required_arguments <= arity) && (arity <= exact.arguments.len()))
+            .then_some(exact)
+            .into_iter()
+            .collect();
     }
     let name = callable_lookup_name(id);
     catalog
@@ -1043,9 +1610,49 @@ fn callable_candidates<'a>(
         .filter(|callable| {
             (callable.qualified_name == name
                 || callable.qualified_name.rsplit('.').next() == Some(name.as_str()))
-                && callable.arguments.len() == arity
+                && callable.required_arguments <= arity
+                && arity <= callable.arguments.len()
         })
         .collect()
+}
+
+fn callable_argument_types(
+    callable: &CatalogCallable,
+    authored_names: &[Option<String>],
+) -> Option<Vec<TypeId>> {
+    let mut used = vec![false; callable.arguments.len()];
+    let mut next_positional = 0;
+    let mut saw_named = false;
+    let mut argument_types = Vec::with_capacity(authored_names.len());
+    for authored_name in authored_names {
+        let position = if let Some(name) = authored_name {
+            saw_named = true;
+            callable
+                .parameter_names
+                .iter()
+                .position(|candidate| candidate.as_deref() == Some(name.as_str()))?
+        } else {
+            if saw_named {
+                return None;
+            }
+            let position = next_positional;
+            next_positional += 1;
+            position
+        };
+        if position >= callable.arguments.len() || used[position] {
+            return None;
+        }
+        used[position] = true;
+        argument_types.push(callable.arguments[position].clone());
+    }
+    if used
+        .iter()
+        .take(callable.required_arguments)
+        .any(|used| !used)
+    {
+        return None;
+    }
+    Some(argument_types)
 }
 
 fn operator_lookup_name(id: &OperatorId) -> String {
@@ -1116,6 +1723,15 @@ fn synthetic_row_type(values: &[TypedExpression]) -> TypeId {
     ))
 }
 
+fn argument_output_typmod(argument: &TypedArgument) -> Option<&Typmod> {
+    argument
+        .coercion
+        .as_ref()
+        .map_or(argument.expression.typmod.as_ref(), |coercion| {
+            coercion.target_typmod.as_ref()
+        })
+}
+
 pub(super) fn max_volatility(values: impl IntoIterator<Item = Volatility>) -> Volatility {
     values.into_iter().max().unwrap_or(Volatility::Immutable)
 }
@@ -1131,12 +1747,38 @@ pub(super) fn expression_has_scalar_aggregate(
                     .callable_by_id(&call.callable_id)
                     .is_some_and(|callable| callable.kind == CallableKind::Aggregate)
         }
+        TypedExpressionKind::Extract { source, .. } => {
+            expression_has_scalar_aggregate(source, catalog)
+        }
         TypedExpressionKind::Operator { operands, .. } => operands
             .iter()
             .any(|argument| expression_has_scalar_aggregate(&argument.expression, catalog)),
+        TypedExpressionKind::QuantifiedComparison { left, right, .. } => {
+            expression_has_scalar_aggregate(&left.expression, catalog)
+                || expression_has_scalar_aggregate(&right.expression, catalog)
+        }
+        TypedExpressionKind::NullIf { left, right, .. } => {
+            expression_has_scalar_aggregate(&left.expression, catalog)
+                || expression_has_scalar_aggregate(&right.expression, catalog)
+        }
+        TypedExpressionKind::InList {
+            expression, values, ..
+        } => {
+            expression_has_scalar_aggregate(&expression.expression, catalog)
+                || values
+                    .iter()
+                    .any(|value| expression_has_scalar_aggregate(&value.expression, catalog))
+        }
         TypedExpressionKind::Cast { expression, .. }
+        | TypedExpressionKind::ExplicitCast { expression, .. }
         | TypedExpressionKind::Collate { expression, .. } => {
             expression_has_scalar_aggregate(expression, catalog)
+        }
+        TypedExpressionKind::Position {
+            substring, string, ..
+        } => {
+            expression_has_scalar_aggregate(&substring.expression, catalog)
+                || expression_has_scalar_aggregate(&string.expression, catalog)
         }
         TypedExpressionKind::Case {
             operand,
@@ -1155,6 +1797,11 @@ pub(super) fn expression_has_scalar_aggregate(
                     expression_has_scalar_aggregate(&value.expression, catalog)
                 })
         }
+        TypedExpressionKind::Coalesce { arguments, .. }
+        | TypedExpressionKind::Greatest { arguments, .. }
+        | TypedExpressionKind::Least { arguments, .. } => arguments
+            .iter()
+            .any(|argument| expression_has_scalar_aggregate(&argument.expression, catalog)),
         TypedExpressionKind::Row(values) => values
             .iter()
             .any(|value| expression_has_scalar_aggregate(value, catalog)),
@@ -1165,6 +1812,7 @@ pub(super) fn expression_has_scalar_aggregate(
         | TypedExpressionKind::Parameter(_)
         | TypedExpressionKind::Column { .. }
         | TypedExpressionKind::DerivedColumn { .. }
+        | TypedExpressionKind::Exists(_)
         | TypedExpressionKind::ScalarSubquery(_)
         | TypedExpressionKind::CteColumn { .. } => false,
     }
@@ -1195,10 +1843,36 @@ pub(super) fn expression_is_group_legal(
                 })
             }
         }
+        TypedExpressionKind::Extract { source, .. } => {
+            expression_is_group_legal(source, group_by, catalog)
+        }
         TypedExpressionKind::Operator { operands, .. } => operands
             .iter()
             .all(|argument| expression_is_group_legal(&argument.expression, group_by, catalog)),
+        TypedExpressionKind::QuantifiedComparison { left, right, .. } => {
+            expression_is_group_legal(&left.expression, group_by, catalog)
+                && expression_is_group_legal(&right.expression, group_by, catalog)
+        }
+        TypedExpressionKind::NullIf { left, right, .. } => {
+            expression_is_group_legal(&left.expression, group_by, catalog)
+                && expression_is_group_legal(&right.expression, group_by, catalog)
+        }
+        TypedExpressionKind::InList {
+            expression, values, ..
+        } => {
+            expression_is_group_legal(&expression.expression, group_by, catalog)
+                && values
+                    .iter()
+                    .all(|value| expression_is_group_legal(&value.expression, group_by, catalog))
+        }
+        TypedExpressionKind::Position {
+            substring, string, ..
+        } => {
+            expression_is_group_legal(&substring.expression, group_by, catalog)
+                && expression_is_group_legal(&string.expression, group_by, catalog)
+        }
         TypedExpressionKind::Cast { expression, .. }
+        | TypedExpressionKind::ExplicitCast { expression, .. }
         | TypedExpressionKind::Collate { expression, .. } => {
             expression_is_group_legal(expression, group_by, catalog)
         }
@@ -1219,18 +1893,56 @@ pub(super) fn expression_is_group_legal(
                     expression_is_group_legal(&value.expression, group_by, catalog)
                 })
         }
+        TypedExpressionKind::Coalesce { arguments, .. }
+        | TypedExpressionKind::Greatest { arguments, .. }
+        | TypedExpressionKind::Least { arguments, .. } => arguments
+            .iter()
+            .all(|argument| expression_is_group_legal(&argument.expression, group_by, catalog)),
         TypedExpressionKind::Row(values) => values
             .iter()
             .all(|value| expression_is_group_legal(value, group_by, catalog)),
         TypedExpressionKind::Array { elements, .. } => elements
             .iter()
             .all(|value| expression_is_group_legal(&value.expression, group_by, catalog)),
-        TypedExpressionKind::Literal(_) | TypedExpressionKind::Parameter(_) => true,
-        TypedExpressionKind::Column { .. }
-        | TypedExpressionKind::DerivedColumn { .. }
-        | TypedExpressionKind::CteColumn { .. } => false,
+        TypedExpressionKind::Literal(_)
+        | TypedExpressionKind::Parameter(_)
+        | TypedExpressionKind::Exists(_) => true,
+        TypedExpressionKind::Column { binding, column_id } => {
+            column_is_functionally_grouped(*binding, column_id, group_by, catalog)
+        }
+        TypedExpressionKind::DerivedColumn { .. } | TypedExpressionKind::CteColumn { .. } => false,
         TypedExpressionKind::ScalarSubquery(_) => true,
     }
+}
+
+fn column_is_functionally_grouped(
+    binding: RelationId,
+    column_id: &dibs_pg_catalog::ColumnId,
+    group_by: &[TypedExpression],
+    catalog: &CatalogSnapshot,
+) -> bool {
+    let Some(table) = catalog
+        .tables
+        .iter()
+        .find(|table| table.columns.iter().any(|column| &column.id == column_id))
+    else {
+        return false;
+    };
+    !table.primary_key.columns.is_empty()
+        && table.primary_key.columns.iter().all(|key_name| {
+            let Some(key_column) = table.column(key_name) else {
+                return false;
+            };
+            group_by.iter().any(|group| {
+                matches!(
+                    &group.kind,
+                    TypedExpressionKind::Column {
+                        binding: grouped_binding,
+                        column_id: grouped_column,
+                    } if *grouped_binding == binding && grouped_column == &key_column.id
+                )
+            })
+        })
 }
 
 pub(super) fn expression_same_value(left: &TypedExpression, right: &TypedExpression) -> bool {
@@ -1245,10 +1957,117 @@ pub(super) fn expression_same_value(left: &TypedExpression, right: &TypedExpress
                 column_id: right_column,
             },
         ) => left_binding == right_binding && left_column == right_column,
+        (
+            TypedExpressionKind::DerivedColumn {
+                binding: left_binding,
+                field_id: left_field,
+            },
+            TypedExpressionKind::DerivedColumn {
+                binding: right_binding,
+                field_id: right_field,
+            },
+        ) => left_binding == right_binding && left_field == right_field,
+        (
+            TypedExpressionKind::CteColumn {
+                cte_id: left_cte,
+                binding: left_binding,
+                field_id: left_field,
+            },
+            TypedExpressionKind::CteColumn {
+                cte_id: right_cte,
+                binding: right_binding,
+                field_id: right_field,
+            },
+        ) => left_cte == right_cte && left_binding == right_binding && left_field == right_field,
         (TypedExpressionKind::Parameter(left), TypedExpressionKind::Parameter(right)) => {
             left == right
         }
         (TypedExpressionKind::Literal(left), TypedExpressionKind::Literal(right)) => left == right,
         _ => false,
+    }
+}
+
+fn statement_volatility(statement: &TypedStatement) -> Volatility {
+    match &statement.kind {
+        TypedStatementKind::Select(select) => max_volatility(
+            select
+                .ctes
+                .iter()
+                .map(|cte| statement_volatility(&cte.statement))
+                .chain(select.projections.iter().map(|p| p.expression.volatility))
+                .chain(select.from.iter().map(relation_volatility))
+                .chain(select.predicate.iter().map(|e| e.volatility))
+                .chain(select.group_by.iter().map(|e| e.volatility))
+                .chain(select.having.iter().map(|e| e.volatility))
+                .chain(select.order_by.iter().map(|o| o.expression.volatility)),
+        ),
+        TypedStatementKind::Insert(insert) => max_volatility(
+            insert
+                .ctes
+                .iter()
+                .map(|cte| statement_volatility(&cte.statement))
+                .chain(insert_source_volatility(&insert.source))
+                .chain(insert.returning.iter().map(|p| p.expression.volatility)),
+        ),
+        TypedStatementKind::Update(update) => max_volatility(
+            update
+                .ctes
+                .iter()
+                .map(|cte| statement_volatility(&cte.statement))
+                .chain(update.assignments.iter().map(|a| a.value.volatility))
+                .chain(update.from.iter().map(relation_volatility))
+                .chain(update.predicate.iter().map(|e| e.volatility))
+                .chain(update.returning.iter().map(|p| p.expression.volatility)),
+        ),
+        TypedStatementKind::Delete(delete) => max_volatility(
+            delete
+                .ctes
+                .iter()
+                .map(|cte| statement_volatility(&cte.statement))
+                .chain(delete.using_relations.iter().map(relation_volatility))
+                .chain(delete.predicate.iter().map(|e| e.volatility))
+                .chain(delete.returning.iter().map(|p| p.expression.volatility)),
+        ),
+    }
+}
+
+fn insert_source_volatility(source: &TypedInsertSource) -> std::vec::IntoIter<Volatility> {
+    let values = match source {
+        TypedInsertSource::Values(values) => values
+            .rows()
+            .iter()
+            .flat_map(|row| row.iter().map(|cell| cell.expression.volatility))
+            .collect(),
+        TypedInsertSource::Select(statement) => vec![statement_volatility(statement)],
+        TypedInsertSource::DefaultValues => Vec::new(),
+    };
+    values.into_iter()
+}
+
+fn relation_volatility(relation: &TypedRelation) -> Volatility {
+    match &relation.kind {
+        TypedRelationKind::Table { .. } | TypedRelationKind::Cte { .. } => Volatility::Immutable,
+        TypedRelationKind::Subquery(statement) => statement_volatility(statement),
+        TypedRelationKind::Function { arguments, .. } => {
+            max_volatility(arguments.iter().map(|argument| argument.volatility))
+        }
+        TypedRelationKind::Join {
+            left,
+            right,
+            predicate,
+            ..
+        } => max_volatility(
+            [relation_volatility(left), relation_volatility(right)]
+                .into_iter()
+                .chain(predicate.iter().map(|predicate| predicate.volatility)),
+        ),
+        TypedRelationKind::Values { rows } => max_volatility(
+            rows.rows()
+                .iter()
+                .flat_map(|row| row.iter().map(|cell| cell.expression.volatility)),
+        ),
+        TypedRelationKind::SetOperation { left, right, .. } => {
+            max_volatility([statement_volatility(left), statement_volatility(right)])
+        }
     }
 }

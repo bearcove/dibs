@@ -136,6 +136,13 @@ pub enum QueryErrorKind {
     Decode(Box<facet_tokio_postgres::Error>),
     /// The decoded result did not satisfy its declared result mode.
     UnexpectedRowCount(UnexpectedRowCount),
+    /// A generated query parameter violates its static input contract.
+    InvalidLimitParameter {
+        /// Public generated parameter name.
+        parameter: &'static str,
+        /// Rejected signed bigint value.
+        value: i64,
+    },
 }
 
 /// Error type for generated query functions.
@@ -171,6 +178,13 @@ impl QueryError {
         }
     }
 
+    fn invalid_limit(context: QueryContext, parameter: &'static str, value: i64) -> Self {
+        Self {
+            context: Some(context),
+            kind: QueryErrorKind::InvalidLimitParameter { parameter, value },
+        }
+    }
+
     /// Query identity associated with this failure, once attached.
     pub fn context(&self) -> Option<&QueryContext> {
         self.context.as_ref()
@@ -192,7 +206,9 @@ impl QueryError {
     pub const fn unexpected_row_count(&self) -> Option<&UnexpectedRowCount> {
         match &self.kind {
             QueryErrorKind::UnexpectedRowCount(source) => Some(source),
-            QueryErrorKind::Database(_) | QueryErrorKind::Decode(_) => None,
+            QueryErrorKind::Database(_)
+            | QueryErrorKind::Decode(_)
+            | QueryErrorKind::InvalidLimitParameter { .. } => None,
         }
     }
 
@@ -200,7 +216,9 @@ impl QueryError {
     pub fn database_source(&self) -> Option<&tokio_postgres::Error> {
         match &self.kind {
             QueryErrorKind::Database(source) => Some(source.as_ref()),
-            QueryErrorKind::Decode(_) | QueryErrorKind::UnexpectedRowCount(_) => None,
+            QueryErrorKind::Decode(_)
+            | QueryErrorKind::UnexpectedRowCount(_)
+            | QueryErrorKind::InvalidLimitParameter { .. } => None,
         }
     }
 
@@ -208,7 +226,9 @@ impl QueryError {
     pub fn decode_source(&self) -> Option<&facet_tokio_postgres::Error> {
         match &self.kind {
             QueryErrorKind::Decode(source) => Some(source.as_ref()),
-            QueryErrorKind::Database(_) | QueryErrorKind::UnexpectedRowCount(_) => None,
+            QueryErrorKind::Database(_)
+            | QueryErrorKind::UnexpectedRowCount(_)
+            | QueryErrorKind::InvalidLimitParameter { .. } => None,
         }
     }
 
@@ -227,6 +247,12 @@ impl std::fmt::Display for QueryError {
             QueryErrorKind::Database(source) => write!(f, "database error: {source}"),
             QueryErrorKind::Decode(source) => write!(f, "row decoding error: {source}"),
             QueryErrorKind::UnexpectedRowCount(source) => source.fmt(f),
+            QueryErrorKind::InvalidLimitParameter { parameter, .. } => {
+                write!(
+                    f,
+                    "invalid LIMIT parameter {parameter}: expected non-negative bigint"
+                )
+            }
         }
     }
 }
@@ -237,6 +263,7 @@ impl std::error::Error for QueryError {
             QueryErrorKind::Database(source) => Some(source.as_ref()),
             QueryErrorKind::Decode(source) => Some(source.as_ref()),
             QueryErrorKind::UnexpectedRowCount(source) => Some(source),
+            QueryErrorKind::InvalidLimitParameter { .. } => None,
         }
     }
 }
@@ -255,6 +282,15 @@ impl From<facet_tokio_postgres::Error> for QueryError {
 
 /// Result type returned by generated query functions.
 pub type QueryResult<T> = Result<T, QueryError>;
+
+/// Enforce PostgreSQL's non-negative dynamic `LIMIT` contract before execution.
+pub fn valid_limit(context: &QueryContext, parameter: &'static str, value: i64) -> QueryResult<()> {
+    if value < 0 {
+        Err(QueryError::invalid_limit(context.clone(), parameter, value))
+    } else {
+        Ok(())
+    }
+}
 
 /// Preserve every decoded row for a `many` query.
 pub fn many<T>(rows: Vec<T>) -> QueryResult<Vec<T>> {
@@ -468,6 +504,15 @@ fn log_query_error(
             error = %source,
             "dibs query returned an unexpected number of rows",
         ),
+        QueryErrorKind::InvalidLimitParameter { parameter, .. } => tracing::error!(
+            name: "dibs_query_failed",
+            query_name = %context.name,
+            query_identity = %context.identity,
+            duration_us = ?duration_us,
+            kind = "invalid_limit_parameter",
+            parameter,
+            "dibs query received an invalid LIMIT parameter",
+        ),
     }
 }
 
@@ -480,6 +525,7 @@ pub mod prelude {
     pub use super::{
         QueryContext, QueryError, QueryErrorKind, QueryResult, RowCountExpectation,
         TraceCompletion, TraceErr, UnexpectedRowCount, WithQueryContext, exec, many, one, optional,
+        valid_limit,
     };
 }
 
@@ -533,6 +579,27 @@ mod tests {
             error.source().unwrap().to_string(),
             "expected at most one row, got 2"
         );
+    }
+
+    #[test]
+    fn dynamic_limit_accepts_zero_and_positive_values() {
+        let context = context();
+        assert!(valid_limit(&context, "row_limit", 0).is_ok());
+        assert!(valid_limit(&context, "row_limit", i64::MAX).is_ok());
+    }
+
+    #[test]
+    fn dynamic_limit_rejects_negative_value_with_context() {
+        let context = context();
+        let error = valid_limit(&context, "row_limit", -1).unwrap_err();
+        assert_eq!(error.context(), Some(&context));
+        assert!(matches!(
+            error.kind(),
+            QueryErrorKind::InvalidLimitParameter {
+                parameter: "row_limit",
+                value: -1,
+            }
+        ));
     }
 
     #[test]

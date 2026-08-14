@@ -66,6 +66,7 @@ mod traced;
 
 pub use backoffice::SquelServiceImpl;
 pub use dibs_jsonb::Jsonb;
+pub use dibs_pg_catalog;
 pub use diff::{Change, SchemaDiff, TableDiff};
 pub use error::{Error, MigrationError, SqlErrorContext};
 pub use meta::{create_meta_tables_sql, record_migration_sql, sync_tables_sql};
@@ -94,6 +95,7 @@ pub use dibs_macros::migration;
 
 // Re-export query DSL codegen types
 pub use dibs_qgen::{GeneratedCode, QueryFile, generate_rust_code, parse_query_file};
+pub use dibs_qgen::{compile_query_source, generate_compiled_rust};
 
 /// Quote a PostgreSQL identifier.
 ///
@@ -363,4 +365,121 @@ pub fn build_queries(queries_path: impl AsRef<std::path::Path>) {
         .unwrap_or_else(|e| panic!("Failed to write {}: {}", dest_path.display(), e));
 
     println!("cargo::rustc-env=QUERIES_PATH={}", dest_path.display());
+}
+
+/// Compile a `.dibs` source file and generate its Rust execution API.
+///
+/// The application schema is collected from linked Dibs table inventory and
+/// converted to a PostgreSQL 18 catalog snapshot before compilation.
+pub fn build_compiled_queries(queries_path: impl AsRef<std::path::Path>) {
+    build_compiled_queries_with_catalog(queries_path, |_| Ok(()));
+}
+
+/// Compile a `.dibs` source file after applying application-owned catalog registrations.
+///
+/// The callback receives the PostgreSQL 18 catalog after linked Dibs tables have been added.
+/// Applications use it for exact scalar or table-function signatures owned by their migrations.
+pub fn build_compiled_queries_with_catalog(
+    queries_path: impl AsRef<std::path::Path>,
+    configure: impl FnOnce(
+        &mut dibs_pg_catalog::CatalogSnapshot,
+    ) -> std::result::Result<(), dibs_pg_catalog::CatalogError>,
+) {
+    let queries_path = queries_path.as_ref();
+    println!("cargo::rerun-if-changed={}", queries_path.display());
+
+    let schema = schema::collect_schema();
+    let mut catalog = dibs_pg_catalog::CatalogSnapshot::from_schema_postgres_18(&schema)
+        .expect("build PostgreSQL 18 query catalog");
+    configure(&mut catalog).expect("configure application query catalog");
+    let source = std::fs::read_to_string(queries_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", queries_path.display()));
+    let parser = dibs_query_syntax::DibsParser::new();
+    let declarations = dibs_query_syntax::declaration_sources(&source)
+        .expect("split complete Dibs query declarations");
+    let mut generated_queries = Vec::with_capacity(declarations.len());
+    for (index, declaration) in declarations.into_iter().enumerate() {
+        let mut compiled = dibs_qgen::compile_query_source(
+            &parser,
+            dibs_query_syntax::SourceId::new(index as u32 + 1),
+            declaration,
+            &catalog,
+        )
+        .unwrap_or_else(|diagnostics| panic!("query compilation failed: {diagnostics:#?}"));
+        let query = compiled
+            .pop()
+            .expect("one compiled query per declaration source");
+        assert!(compiled.is_empty(), "one query per declaration source");
+        let generated = dibs_qgen::generate_compiled_rust(&query)
+            .unwrap_or_else(|error| panic!("generate {}: {error}", query.query_name));
+        generated_queries.push((query.query_name, generated.source));
+    }
+    let generated = combine_generated_queries(
+        generated_queries
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str())),
+    );
+
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+    let destination = std::path::Path::new(&out_dir).join("queries.rs");
+    std::fs::write(&destination, generated)
+        .unwrap_or_else(|error| panic!("write {}: {error}", destination.display()));
+    println!("cargo::rustc-env=QUERIES_PATH={}", destination.display());
+}
+
+fn combine_generated_queries<'a>(queries: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
+    let mut combined = String::new();
+    for (index, (query_name, source)) in queries.into_iter().enumerate() {
+        let module_name = format!("query_{index}_{}", snake_case(query_name));
+        combined.push_str("mod ");
+        combined.push_str(&module_name);
+        combined.push_str(" {\n");
+        for line in source.lines() {
+            combined.push_str("    ");
+            combined.push_str(line);
+            combined.push('\n');
+        }
+        combined.push_str("}\n");
+        combined.push_str("pub use ");
+        combined.push_str(&module_name);
+        combined.push_str("::*;\n\n");
+    }
+    combined
+}
+
+fn snake_case(name: &str) -> String {
+    let mut output = String::with_capacity(name.len());
+    for (index, character) in name.chars().enumerate() {
+        if character.is_uppercase() {
+            if index != 0 {
+                output.push('_');
+            }
+            output.extend(character.to_lowercase());
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+#[cfg(test)]
+mod compiled_query_build_tests {
+    #[test]
+    fn generated_queries_are_isolated_before_root_reexport() {
+        let generated = super::combine_generated_queries([
+            (
+                "Alpha",
+                "use dibs_runtime::prelude::*;\npub async fn alpha() {}",
+            ),
+            (
+                "Beta",
+                "use dibs_runtime::prelude::*;\npub async fn beta() {}",
+            ),
+        ]);
+
+        assert!(generated.contains("mod query_0_alpha {"));
+        assert!(generated.contains("mod query_1_beta {"));
+        assert!(generated.contains("pub use query_0_alpha::*;"));
+        assert!(generated.contains("pub use query_1_beta::*;"));
+    }
 }

@@ -102,6 +102,8 @@ pub struct HirSelect {
 pub struct HirCte {
     /// Revision-local CTE identity.
     pub id: CteId,
+    /// Whether this CTE is self-recursive within a `WITH RECURSIVE` list.
+    pub recursive: bool,
     /// Authored CTE name retained only as binding presentation.
     pub name: String,
     /// Exact source origin.
@@ -299,11 +301,40 @@ pub enum HirExpressionKind {
         /// Operands in semantic order.
         operands: Vec<HirExpression>,
     },
+    /// Authored scalar comparison quantified over an array expression.
+    QuantifiedComparison {
+        /// Stable authored operator identity awaiting semantic selection.
+        operator_id: OperatorId,
+        /// Scalar left operand.
+        left: Box<HirExpression>,
+        /// Array-valued right operand.
+        right: Box<HirExpression>,
+        /// PostgreSQL comparison quantifier.
+        quantifier: ComparisonQuantifier,
+    },
+    /// Authored `[NOT] IN` value-list predicate.
+    InList {
+        /// Scalar expression evaluated once.
+        expression: Box<HirExpression>,
+        /// Non-empty values in authored order.
+        values: Vec<HirExpression>,
+        /// Whether the predicate was authored as `NOT IN`.
+        negated: bool,
+    },
     /// Explicit or implicit cast node.
     Cast {
         /// Stable catalog cast identity.
         cast_id: CastId,
         /// Source expression.
+        expression: Box<HirExpression>,
+    },
+    /// Authored explicit cast awaiting semantic source-type resolution.
+    ExplicitCast {
+        /// Authored target type resolved to a stable catalog identity.
+        target_type: TypeId,
+        /// Authored target typmod, when present.
+        target_typmod: Option<crate::Typmod>,
+        /// Source expression whose type is established by semantic checking.
         expression: Box<HirExpression>,
     },
     /// Explicit collation.
@@ -313,6 +344,8 @@ pub enum HirExpressionKind {
         /// Source expression.
         expression: Box<HirExpression>,
     },
+    /// Boolean existence test over a nested statement.
+    Exists(Box<HirStatement>),
     /// `CASE` expression.
     Case {
         /// Optional simple-case operand.
@@ -322,19 +355,139 @@ pub enum HirExpressionKind {
         /// Optional ELSE expression.
         else_expression: Option<Box<HirExpression>>,
     },
+    /// Ordered `COALESCE` arguments. PostgreSQL evaluates each argument at most once.
+    Coalesce(Vec<HirExpression>),
+    /// PostgreSQL `NULLIF(left, right)` special form.
+    NullIf {
+        /// Left operand, evaluated once and returned when unequal.
+        left: Box<HirExpression>,
+        /// Right comparison operand, evaluated once.
+        right: Box<HirExpression>,
+    },
+    /// Ordered `GREATEST` arguments.
+    Greatest(Vec<HirExpression>),
+    /// Ordered `LEAST` arguments.
+    Least(Vec<HirExpression>),
+    /// PostgreSQL `EXTRACT(field FROM source)` special form.
+    Extract {
+        /// Validated extraction field.
+        field: ExtractField,
+        /// Temporal source expression.
+        source: Box<HirExpression>,
+    },
+    /// PostgreSQL `POSITION(substring IN string)` special form.
+    Position {
+        /// Substring to search for.
+        substring: Box<HirExpression>,
+        /// String or byte sequence to search within.
+        string: Box<HirExpression>,
+    },
     /// Scalar subquery.
     ScalarSubquery(Box<HirStatement>),
     /// Row constructor.
     Row(Vec<HirExpression>),
     /// Array constructor.
     Array(Vec<HirExpression>),
-    /// CTE output reference.
+    /// CTE output reference through one exact relation use.
     CteColumn {
         /// Stable local CTE identity.
         cte_id: CteId,
+        /// Exact relation binding used by this reference.
+        binding: RelationId,
         /// Projected CTE field identity.
         field_id: FieldId,
     },
+}
+
+/// PostgreSQL scalar-array comparison quantifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[repr(u8)]
+pub enum ComparisonQuantifier {
+    /// Succeeds when the comparison is true for at least one array element.
+    Any,
+    /// Succeeds when the comparison is true for every array element.
+    All,
+}
+
+/// Closed PostgreSQL `EXTRACT` field vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
+#[repr(u8)]
+pub enum ExtractField {
+    /// Calendar century.
+    Century,
+    /// Day of month or interval day count.
+    Day,
+    /// Calendar decade.
+    Decade,
+    /// Sunday-based day of week.
+    Dow,
+    /// Day of year.
+    Doy,
+    /// Seconds from the PostgreSQL epoch convention.
+    Epoch,
+    /// Hour component.
+    Hour,
+    /// ISO Monday-based day of week.
+    IsoDow,
+    /// ISO week-numbering year.
+    IsoYear,
+    /// Julian date.
+    Julian,
+    /// Microsecond component.
+    Microseconds,
+    /// Calendar millennium.
+    Millennium,
+    /// Millisecond component.
+    Milliseconds,
+    /// Minute component.
+    Minute,
+    /// Month component.
+    Month,
+    /// Calendar quarter.
+    Quarter,
+    /// Second component.
+    Second,
+    /// Time-zone offset in seconds.
+    Timezone,
+    /// Time-zone hour component.
+    TimezoneHour,
+    /// Time-zone minute component.
+    TimezoneMinute,
+    /// ISO week number.
+    Week,
+    /// Calendar year.
+    Year,
+}
+
+impl ExtractField {
+    /// Returns PostgreSQL's canonical uppercase spelling.
+    #[must_use]
+    pub const fn sql(self) -> &'static str {
+        match self {
+            Self::Century => "CENTURY",
+            Self::Day => "DAY",
+            Self::Decade => "DECADE",
+            Self::Dow => "DOW",
+            Self::Doy => "DOY",
+            Self::Epoch => "EPOCH",
+            Self::Hour => "HOUR",
+            Self::IsoDow => "ISODOW",
+            Self::IsoYear => "ISOYEAR",
+            Self::Julian => "JULIAN",
+            Self::Microseconds => "MICROSECONDS",
+            Self::Millennium => "MILLENNIUM",
+            Self::Milliseconds => "MILLISECONDS",
+            Self::Minute => "MINUTE",
+            Self::Month => "MONTH",
+            Self::Quarter => "QUARTER",
+            Self::Second => "SECOND",
+            Self::Timezone => "TIMEZONE",
+            Self::TimezoneHour => "TIMEZONE_HOUR",
+            Self::TimezoneMinute => "TIMEZONE_MINUTE",
+            Self::Week => "WEEK",
+            Self::Year => "YEAR",
+        }
+    }
 }
 
 /// Semantic literal value retained by resolved and typed IR.
@@ -353,6 +506,17 @@ pub enum HirLiteral {
     String(String),
     /// Byte string as exact bytes.
     Bytes(Vec<u8>),
+    /// PostgreSQL interval literal with optional field and precision qualifiers.
+    Interval {
+        /// Decoded interval string value.
+        value: String,
+        /// Optional leading interval field.
+        field: Option<String>,
+        /// Optional trailing field after `TO`.
+        to_field: Option<String>,
+        /// Optional authored precision.
+        precision: Option<String>,
+    },
 }
 
 /// One `CASE WHEN ... THEN ...` branch.
@@ -386,6 +550,8 @@ pub struct HirCall {
     pub callable_id: CallableId,
     /// Arguments in authored semantic order.
     pub arguments: Vec<HirExpression>,
+    /// Authored argument names parallel to `arguments`.
+    pub argument_names: Vec<Option<String>>,
     /// Whether the argument tuple is duplicate-eliminated.
     pub distinct: bool,
     /// Whether the call uses the `*` argument form.
@@ -597,6 +763,8 @@ pub enum HirInsertSource {
 pub struct HirConflictClause {
     /// Mutually exclusive PostgreSQL conflict target form.
     pub target: HirConflictTarget,
+    /// Synthetic `EXCLUDED` relation binding available to conflict actions.
+    pub excluded_binding: RelationId,
     /// Conflict action.
     pub action: HirConflictAction,
 }

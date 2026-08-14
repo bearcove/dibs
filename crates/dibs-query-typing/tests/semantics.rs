@@ -106,12 +106,14 @@ fn operator(id: u32, operator_id: OperatorId, operands: Vec<HirExpression>) -> H
 }
 
 fn call(id: u32, callable_id: CallableId, arguments: Vec<HirExpression>) -> HirExpression {
+    let argument_count = arguments.len();
     HirExpression {
         id: ExpressionId::new(id),
         origin: origin(),
         kind: HirExpressionKind::Call(Box::new(HirCall {
             callable_id,
             arguments,
+            argument_names: vec![None; argument_count],
             distinct: false,
             star: false,
             order_by: Vec::new(),
@@ -427,6 +429,9 @@ fn polymorphic_arguments_are_unified_across_the_whole_call() {
         qualified_name: "app.same_element".to_string(),
         kind: CallableKind::Scalar,
         arguments: vec![anyelement.clone(), anyelement.clone()],
+        aggregated_arguments: Vec::new(),
+        parameter_names: vec![None, None],
+        required_arguments: 2,
         scalar_result: Some(anyelement.clone()),
         table_columns: Vec::new(),
         volatility: dibs_pg_catalog::Volatility::Immutable,
@@ -443,6 +448,9 @@ fn polymorphic_arguments_are_unified_across_the_whole_call() {
         qualified_name: "app.array_element".to_string(),
         kind: CallableKind::Scalar,
         arguments: vec![anyarray, anyelement.clone()],
+        aggregated_arguments: Vec::new(),
+        parameter_names: vec![None, None],
+        required_arguments: 2,
         scalar_result: Some(anyelement),
         table_columns: Vec::new(),
         volatility: dibs_pg_catalog::Volatility::Immutable,
@@ -595,6 +603,9 @@ fn anycompatible_uses_one_common_family_type_for_arguments_and_result() {
         qualified_name: "app.compatible_pair".to_string(),
         kind: CallableKind::Scalar,
         arguments: vec![anycompatible.clone(), anycompatible.clone()],
+        aggregated_arguments: Vec::new(),
+        parameter_names: vec![None, None],
+        required_arguments: 2,
         scalar_result: Some(anycompatible),
         table_columns: Vec::new(),
         volatility: dibs_pg_catalog::Volatility::Immutable,
@@ -786,6 +797,7 @@ fn scalar_aggregate_produces_exactly_one_row() {
             kind: HirExpressionKind::Call(Box::new(HirCall {
                 callable_id: count_id,
                 arguments: Vec::new(),
+                argument_names: Vec::new(),
                 distinct: false,
                 star: true,
                 order_by: Vec::new(),
@@ -1058,6 +1070,7 @@ fn having_can_remove_scalar_aggregate_row() {
             kind: HirExpressionKind::Call(Box::new(HirCall {
                 callable_id: count.id.clone(),
                 arguments: Vec::new(),
+                argument_names: Vec::new(),
                 distinct: false,
                 star: true,
                 order_by: Vec::new(),
@@ -1111,6 +1124,35 @@ fn ungrouped_column_alongside_aggregate_is_rejected() {
             .unwrap_err(),
         CheckError::UngroupedAggregateProjection { .. }
     ));
+}
+
+#[test]
+fn grouping_by_primary_key_allows_same_binding_columns() {
+    let catalog = catalog();
+    let table = catalog.resolve_table("public.item").unwrap();
+    let id = table.column("id").unwrap();
+    let name = table.column("name").unwrap();
+    let count = catalog.callable_candidates("count", 0).next().unwrap();
+    let mut hir = query(
+        &catalog,
+        call(105, count.id.clone(), Vec::new()),
+        None,
+        vec![column_ref(106, 1, id.id.clone())],
+        None,
+        None,
+        Vec::new(),
+    );
+    let HirStatementKind::Select(select) = &mut hir.statement.kind else {
+        unreachable!()
+    };
+    select.projections.push(HirProjection {
+        field_id: FieldId::new(107),
+        alias: "name".to_string(),
+        alias_origin: origin(),
+        expression: column_ref(107, 1, name.id.clone()),
+    });
+
+    SemanticChecker::new(&catalog).check_query(&hir).unwrap();
 }
 
 #[test]
@@ -1518,16 +1560,24 @@ fn cte_and_subquery_bindings_propagate_post_coercion_projection_facts() {
     };
     select.ctes = vec![HirCte {
         id: cte_id,
+        recursive: false,
         name: "typed_rows".to_string(),
         origin: origin(),
         materialization: CteMaterialization::Default,
         statement: Box::new(set_statement()),
+    }];
+    select.from = vec![HirRelation {
+        id: RelationId::new(7),
+        origin: origin(),
+        alias: None,
+        kind: HirRelationKind::Cte { cte_id },
     }];
     select.projections[0].expression = HirExpression {
         id: ExpressionId::new(138),
         origin: origin(),
         kind: HirExpressionKind::CteColumn {
             cte_id,
+            binding: RelationId::new(7),
             field_id: FieldId::new(90),
         },
     };
@@ -1538,9 +1588,9 @@ fn cte_and_subquery_bindings_propagate_post_coercion_projection_facts() {
 }
 
 #[test]
-fn recursive_ctes_and_unbounded_scalar_subqueries_fail_closed() {
+fn unsupported_recursive_cte_body_fails_closed() {
     let catalog = catalog();
-    let mut recursive = query(
+    let mut recursive_query = query(
         &catalog,
         literal(109, HirLiteral::Integer("1".to_string())),
         None,
@@ -1549,17 +1599,40 @@ fn recursive_ctes_and_unbounded_scalar_subqueries_fail_closed() {
         None,
         Vec::new(),
     );
-    let HirStatementKind::Select(select) = &mut recursive.statement.kind else {
+    let HirStatementKind::Select(select) = &mut recursive_query.statement.kind else {
         unreachable!()
     };
     select.recursive = true;
+    select.ctes.push(HirCte {
+        id: CteId::new(9),
+        recursive: true,
+        name: "recursive_rows".to_string(),
+        origin: origin(),
+        materialization: CteMaterialization::Default,
+        statement: Box::new(
+            query(
+                &catalog,
+                literal(110, HirLiteral::Integer("1".to_string())),
+                None,
+                Vec::new(),
+                None,
+                None,
+                Vec::new(),
+            )
+            .statement,
+        ),
+    });
     assert!(matches!(
         SemanticChecker::new(&catalog)
-            .check_query(&recursive)
+            .check_query(&recursive_query)
             .unwrap_err(),
         CheckError::UnsupportedRecursiveCte { .. }
     ));
+}
 
+#[test]
+fn unbounded_scalar_subqueries_fail_closed() {
+    let catalog = catalog();
     let subquery = query(
         &catalog,
         literal(110, HirLiteral::Integer("1".to_string())),
