@@ -161,7 +161,7 @@ impl CatalogRenderNames {
         for ty in &catalog.types {
             entries.push(CatalogRenderName::Type {
                 id: ty.id.clone(),
-                qualified_name: split_qualified_identifier(&ty.qualified_name)?,
+                qualified_name: split_qualified_identifier(&ty.internal_qualified_name)?,
             });
         }
         for collation in &catalog.collations {

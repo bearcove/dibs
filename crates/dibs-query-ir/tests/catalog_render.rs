@@ -9,7 +9,7 @@ fn reviewed_postgres_18_catalog_builds_canonical_render_vocabulary() {
     let bigint = catalog.resolve_type("pg_catalog.bigint").unwrap();
     assert_eq!(
         render_names.type_name(&bigint.id).unwrap(),
-        &["pg_catalog".to_string(), "bigint".to_string()]
+        &["pg_catalog".to_string(), "int8".to_string()]
     );
     assert_eq!(
         render_names
