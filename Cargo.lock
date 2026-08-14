@@ -1049,6 +1049,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dibs-pg-catalog"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dibs-db-schema",
+ "dockside",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "indexmap 2.14.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+]
+
+[[package]]
 name = "dibs-proto"
 version = "0.2.0-rc.5"
 dependencies = [
@@ -1064,16 +1079,45 @@ dependencies = [
  "camino",
  "codegen",
  "dibs-db-schema",
+ "dibs-pg-catalog",
+ "dibs-qgen-generated-api-fixture",
+ "dibs-query-ir",
  "dibs-query-schema",
+ "dibs-query-syntax",
+ "dibs-query-typing",
  "dibs-sql",
  "dockside",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-styx",
  "facet-testhelpers",
  "indexmap 2.14.0",
  "insta",
+ "tempfile",
  "tokio",
  "tokio-postgres",
  "tracing",
+]
+
+[[package]]
+name = "dibs-qgen-generated-api-fixture"
+version = "0.0.0"
+dependencies = [
+ "dibs-pg-catalog",
+ "dibs-qgen",
+ "dibs-query-ir",
+ "dibs-runtime",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+]
+
+[[package]]
+name = "dibs-query-ir"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dibs-pg-catalog",
+ "dibs-query-syntax",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-json",
 ]
 
 [[package]]
@@ -1086,6 +1130,28 @@ dependencies = [
  "facet-styx",
  "facet-testhelpers",
  "indexmap 2.14.0",
+]
+
+[[package]]
+name = "dibs-query-syntax"
+version = "0.1.0"
+dependencies = [
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
+ "margin-term 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
+ "snark",
+ "snark-dsl",
+]
+
+[[package]]
+name = "dibs-query-typing"
+version = "0.1.0"
+dependencies = [
+ "dibs-db-schema",
+ "dibs-pg-catalog",
+ "dibs-query-ir",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1500,8 +1566,8 @@ dependencies = [
  "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-format",
  "facet-reflect",
- "margin",
- "margin-term",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
+ "margin-term 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
  "serde_json",
  "styx-format",
  "styx-parse",
@@ -2598,12 +2664,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "margin"
+version = "0.10.0-rc.1"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
+dependencies = [
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "unicode-width",
+]
+
+[[package]]
 name = "margin-term"
 version = "0.10.0-rc.1"
 source = "git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a#2dcfc039aa43e14fa004238d00bd9eeb16bf859a"
 dependencies = [
  "arborium-theme",
- "margin",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
+ "unicode-width",
+]
+
+[[package]]
+name = "margin-term"
+version = "0.10.0-rc.1"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
+dependencies = [
+ "arborium-theme",
+ "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
  "unicode-width",
 ]
 
@@ -3605,9 +3690,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.12.3"
+version = "1.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
+checksum = "f1292b7759ae1cb9ec195452d1390a074f0cd8541ab7a5a8c31cd6db45d4a6ba"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3628,9 +3713,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rend"
@@ -4148,6 +4233,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef784004ca8777809dcdad6ac37629f0a97caee4c685fcea805278d81dd8b857"
 
 [[package]]
+name = "snark"
+version = "0.0.1"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
+dependencies = [
+ "aho-corasick",
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-json",
+ "indexmap 2.14.0",
+ "regex",
+ "regex-automata",
+ "smallvec 1.15.1",
+ "weavy",
+]
+
+[[package]]
+name = "snark-dsl"
+version = "0.1.0"
+source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
+dependencies = [
+ "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
+ "facet-json",
+ "snark",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "socket2"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4178,7 +4290,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 [[package]]
 name = "strid"
 version = "11.0.0-rc.5"
-source = "git+https://github.com/bearcove/strid-next?rev=98a76b12c2a65f1a909123ec5a03fcc12d89444b#98a76b12c2a65f1a909123ec5a03fcc12d89444b"
+source = "git+https://github.com/bearcove/strid?rev=c48464a22b6511b0119be92ea2c86c1f61e06153#c48464a22b6511b0119be92ea2c86c1f61e06153"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "strid-macros",
@@ -4187,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "strid-macros"
 version = "11.0.0-rc.4"
-source = "git+https://github.com/bearcove/strid-next?rev=98a76b12c2a65f1a909123ec5a03fcc12d89444b#98a76b12c2a65f1a909123ec5a03fcc12d89444b"
+source = "git+https://github.com/bearcove/strid?rev=c48464a22b6511b0119be92ea2c86c1f61e06153#c48464a22b6511b0119be92ea2c86c1f61e06153"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -1,0 +1,20 @@
+query RelationForms(owner: text) -> many {
+    select distinct on (job.id)
+        job.id,
+        account.name as account_name,
+        recent.raw_body,
+        retry.intent_id
+    from only fleet_job as job
+    inner join account as account on account.id = job.account_id
+    left join lateral (
+        select candidate.raw_body
+        from raw_webhook_delivery as candidate
+        where candidate.source_event_id = job.source_event_id
+        order by candidate.received_at desc
+        limit 1
+    ) as recent on true
+    cross join checks_retry_fleet_job(job.id, :owner, 1, 2, null::text::jsonb, 3, 4)
+        as retry(intent_id, from_generation, to_generation, epoch, coalesced)
+    where account.owner = :owner
+    order by job.id, recent.raw_body nulls last
+}

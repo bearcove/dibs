@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- add generated-query context, cardinality helpers, typed unexpected-row-count errors, preserved execution/decode sources, affected counts, and structured duration/result tracing
+
 ## [0.1.0](https://github.com/bearcove/dibs/compare/dibs-runtime-v0.0.0...dibs-runtime-v0.1.0) - 2026-06-02
 
 ### Added

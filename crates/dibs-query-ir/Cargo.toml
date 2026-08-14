@@ -1,0 +1,14 @@
+[package]
+name = "dibs-query-ir"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+description = "Immutable compiled query artifact model for Dibs"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+blake3.workspace = true
+dibs-pg-catalog.workspace = true
+dibs-query-syntax = { path = "../dibs-query-syntax", version = "0.1.0" }
+facet.workspace = true
+facet-json.workspace = true

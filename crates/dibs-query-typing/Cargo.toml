@@ -1,0 +1,16 @@
+[package]
+name = "dibs-query-typing"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+description = "PostgreSQL 18 semantic type checking and cardinality inference for Dibs queries"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+dibs-pg-catalog.workspace = true
+dibs-query-ir = { path = "../dibs-query-ir", version = "0.1.0" }
+facet.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+dibs-db-schema.workspace = true

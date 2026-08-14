@@ -1,0 +1,17 @@
+query SetAndValues(limit_count: bigint) -> many {
+    (
+        select 'line'::text as kind, line.sequence, line.bytes
+        from fleet_log_line as line
+        union all
+        values ('gap'::text, 0::bigint, null::bytea)
+        intersect
+        select event.kind, event.sequence, event.bytes
+        from fleet_log_event as event
+    )
+    except distinct
+    select 'hidden'::text, hidden.sequence, null::bytea
+    from hidden_log_line as hidden
+    order by 2 desc
+    limit :limit_count
+    offset 1 rows
+}

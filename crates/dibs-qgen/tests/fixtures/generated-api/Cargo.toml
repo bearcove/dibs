@@ -1,0 +1,14 @@
+[package]
+name = "dibs-qgen-generated-api-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+dibs-runtime = { path = "../../../../dibs-runtime" }
+facet = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+
+[build-dependencies]
+dibs-pg-catalog = { path = "../../../../dibs-pg-catalog" }
+dibs-qgen = { path = "../../.." }
+dibs-query-ir = { path = "../../../../dibs-query-ir" }

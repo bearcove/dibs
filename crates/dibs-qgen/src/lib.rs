@@ -8,6 +8,16 @@ pub use error::{QError, QErrorKind, QSource};
 
 // Happy types;
 pub use dibs_query_schema::*;
+// Compiled-query backends
+pub mod backend;
+pub use backend::{
+    GeneratedRust, RenderedSql, RustGenerationError, SqlRenderError, generate_compiled_rust,
+    render_compiled_sql,
+};
+
+// Strict PostgreSQL source compiler
+mod compiler;
+pub use compiler::{CompileDiagnostic, CompileDiagnosticCode, DiagnosticSet, compile_query_source};
 
 // Parse
 mod parse;
