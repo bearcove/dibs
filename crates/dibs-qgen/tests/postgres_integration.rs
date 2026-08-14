@@ -254,7 +254,7 @@ async fn postgres_18_accepts_compiled_full_language_sql() {
         let rows = client
             .query(&rendered.sql, &[])
             .await
-            .unwrap_or_else(|error| panic!("{name} oracle SQL executes: {error}"));
+            .unwrap_or_else(|error| panic_postgres_oracle_error(name, &rendered.sql, &error));
         let mut actual = rows
             .iter()
             .map(|row| {
@@ -270,6 +270,20 @@ async fn postgres_18_accepts_compiled_full_language_sql() {
         let actual = actual.join("\n");
         assert_eq!(actual, expected, "{name} oracle result");
     }
+}
+
+fn panic_postgres_oracle_error(name: &str, sql: &str, error: &tokio_postgres::Error) -> ! {
+    if let Some(db_error) = error.as_db_error() {
+        panic!(
+            "{name} oracle SQL executes: code={} message={:?} detail={:?} hint={:?} position={:?} sql={sql}",
+            db_error.code().code(),
+            db_error.message(),
+            db_error.detail(),
+            db_error.hint(),
+            db_error.position(),
+        );
+    }
+    panic!("{name} oracle SQL executes: {error:?}; sql={sql}");
 }
 
 fn postgres_cell_text(row: &Row, column: usize) -> String {
