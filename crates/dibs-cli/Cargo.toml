@@ -43,6 +43,7 @@ facet-json.workspace = true
 facet-styx.workspace = true
 vox.workspace = true
 vox-stream.workspace = true
+styx-vox-stream.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 jiff.workspace = true

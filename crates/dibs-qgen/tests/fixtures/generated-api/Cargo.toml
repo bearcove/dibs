@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 dibs-runtime = { path = "../../../../dibs-runtime" }
-facet = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet = { git = "https://github.com/facet-rs/facet", branch = "deps/align-weavy-for-dibs" }
 
 [build-dependencies]
 dibs-pg-catalog = { path = "../../../../dibs-pg-catalog" }
