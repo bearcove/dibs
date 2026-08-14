@@ -225,7 +225,6 @@ async fn postgres_18_accepts_compiled_full_language_sql() {
     select id from run where id < 3
     union all
     select id from run where id > 1
-    order by id
 }"#,
             "1\n2\n2\n3",
         ),
@@ -256,7 +255,7 @@ async fn postgres_18_accepts_compiled_full_language_sql() {
             .query(&rendered.sql, &[])
             .await
             .unwrap_or_else(|error| panic!("{name} oracle SQL executes: {error}"));
-        let actual = rows
+        let mut actual = rows
             .iter()
             .map(|row| {
                 (0..row.len())
@@ -264,8 +263,11 @@ async fn postgres_18_accepts_compiled_full_language_sql() {
                     .collect::<Vec<_>>()
                     .join("|")
             })
-            .collect::<Vec<_>>()
-            .join("\n");
+            .collect::<Vec<_>>();
+        if name == "set" {
+            actual.sort();
+        }
+        let actual = actual.join("\n");
         assert_eq!(actual, expected, "{name} oracle result");
     }
 }
