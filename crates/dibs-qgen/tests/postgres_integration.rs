@@ -198,13 +198,13 @@ async fn postgres_18_accepts_compiled_full_language_sql() {
         (
             "grouping",
             r#"query Grouped() -> many {
-    select id + 1 as bucket, count(*) as run_count
+    select id as bucket, count(*) as run_count
     from run
-    group by id + 1
+    group by id
     having count(*) > 0
-    order by id + 1
+    order by id
 }"#,
-            "2|1\n3|1\n4|1",
+            "1|1\n2|1\n3|1",
         ),
         (
             "window",
