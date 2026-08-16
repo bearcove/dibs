@@ -460,6 +460,7 @@ pub fn build_compiled_queries_with_catalog(
 ) {
     let queries_path = queries_path.as_ref();
     println!("cargo::rerun-if-changed={}", queries_path.display());
+    println!("cargo::rerun-if-env-changed=DIBS_BUILD_TIMINGS");
     let timings = BuildTimings::from_env();
 
     let schema = timings.measure(BuildPhase::SchemaInventory, schema::collect_schema);
