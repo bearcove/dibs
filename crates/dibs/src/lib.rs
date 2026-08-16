@@ -361,7 +361,7 @@ pub fn build_queries(queries_path: impl AsRef<std::path::Path>) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest_path = std::path::Path::new(&out_dir).join("queries.rs");
 
-    std::fs::write(&dest_path, &generated.code)
+    write_if_changed(&dest_path, generated.code.as_bytes())
         .unwrap_or_else(|e| panic!("Failed to write {}: {}", dest_path.display(), e));
 
     println!("cargo::rustc-env=QUERIES_PATH={}", dest_path.display());
@@ -379,6 +379,79 @@ pub fn build_compiled_queries(queries_path: impl AsRef<std::path::Path>) {
 ///
 /// The callback receives the PostgreSQL 18 catalog after linked Dibs tables have been added.
 /// Applications use it for exact scalar or table-function signatures owned by their migrations.
+#[derive(Clone, Copy)]
+enum BuildPhase {
+    SchemaInventory,
+    Catalog,
+    SourceRead,
+    ParserAdmission,
+    DeclarationSplit,
+    QueryCompilation,
+    RustGeneration,
+    Combination,
+    OutputWrite,
+}
+
+impl BuildPhase {
+    fn name(self) -> &'static str {
+        match self {
+            Self::SchemaInventory => "schema_inventory",
+            Self::Catalog => "catalog",
+            Self::SourceRead => "source_read",
+            Self::ParserAdmission => "parser_admission",
+            Self::DeclarationSplit => "declaration_split",
+            Self::QueryCompilation => "query_compilation",
+            Self::RustGeneration => "rust_generation",
+            Self::Combination => "combination",
+            Self::OutputWrite => "output_write",
+        }
+    }
+}
+
+struct BuildTimings {
+    enabled: bool,
+}
+
+impl BuildTimings {
+    fn from_env() -> Self {
+        Self {
+            enabled: std::env::var_os("DIBS_BUILD_TIMINGS").is_some(),
+        }
+    }
+
+    fn measure<T>(&self, phase: BuildPhase, operation: impl FnOnce() -> T) -> T {
+        let started = self.enabled.then(std::time::Instant::now);
+        let result = operation();
+        if let Some(started) = started {
+            self.report(phase, started.elapsed());
+        }
+        result
+    }
+
+    fn measure_into<T>(
+        &self,
+        elapsed: &mut std::time::Duration,
+        operation: impl FnOnce() -> T,
+    ) -> T {
+        let started = self.enabled.then(std::time::Instant::now);
+        let result = operation();
+        if let Some(started) = started {
+            *elapsed += started.elapsed();
+        }
+        result
+    }
+
+    fn report(&self, phase: BuildPhase, elapsed: std::time::Duration) {
+        if self.enabled {
+            println!(
+                "cargo::warning=dibs-build-phase phase={} elapsed_us={}",
+                phase.name(),
+                elapsed.as_micros()
+            );
+        }
+    }
+}
+
 pub fn build_compiled_queries_with_catalog(
     queries_path: impl AsRef<std::path::Path>,
     configure: impl FnOnce(
@@ -387,44 +460,88 @@ pub fn build_compiled_queries_with_catalog(
 ) {
     let queries_path = queries_path.as_ref();
     println!("cargo::rerun-if-changed={}", queries_path.display());
+    let timings = BuildTimings::from_env();
 
-    let schema = schema::collect_schema();
-    let mut catalog = dibs_pg_catalog::CatalogSnapshot::from_schema_postgres_18(&schema)
-        .expect("build PostgreSQL 18 query catalog");
-    configure(&mut catalog).expect("configure application query catalog");
-    let source = std::fs::read_to_string(queries_path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", queries_path.display()));
-    let parser = dibs_query_syntax::DibsParser::new();
-    let declarations = dibs_query_syntax::declaration_sources(&source)
-        .expect("split complete Dibs query declarations");
+    let schema = timings.measure(BuildPhase::SchemaInventory, schema::collect_schema);
+    let catalog = timings.measure(BuildPhase::Catalog, || {
+        let mut catalog = dibs_pg_catalog::CatalogSnapshot::from_schema_postgres_18(&schema)
+            .expect("build PostgreSQL 18 query catalog");
+        configure(&mut catalog).expect("configure application query catalog");
+        catalog
+    });
+    let source = timings.measure(BuildPhase::SourceRead, || {
+        std::fs::read_to_string(queries_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", queries_path.display()))
+    });
+    let parser = timings.measure(
+        BuildPhase::ParserAdmission,
+        dibs_query_syntax::DibsParser::new,
+    );
+    let declarations = timings.measure(BuildPhase::DeclarationSplit, || {
+        dibs_query_syntax::declaration_sources(&source)
+            .expect("split complete Dibs query declarations")
+    });
+    let mut compilation_elapsed = std::time::Duration::ZERO;
+    let mut generation_elapsed = std::time::Duration::ZERO;
     let mut generated_queries = Vec::with_capacity(declarations.len());
     for (index, declaration) in declarations.into_iter().enumerate() {
-        let mut compiled = dibs_qgen::compile_query_source(
-            &parser,
-            dibs_query_syntax::SourceId::new(index as u32 + 1),
-            declaration,
-            &catalog,
-        )
-        .unwrap_or_else(|diagnostics| panic!("query compilation failed: {diagnostics:#?}"));
+        let mut compiled = timings.measure_into(&mut compilation_elapsed, || {
+            dibs_qgen::compile_query_source(
+                &parser,
+                dibs_query_syntax::SourceId::new(index as u32 + 1),
+                declaration,
+                &catalog,
+            )
+            .unwrap_or_else(|diagnostics| panic!("query compilation failed: {diagnostics:#?}"))
+        });
         let query = compiled
             .pop()
             .expect("one compiled query per declaration source");
         assert!(compiled.is_empty(), "one query per declaration source");
-        let generated = dibs_qgen::generate_compiled_rust(&query)
-            .unwrap_or_else(|error| panic!("generate {}: {error}", query.query_name));
+        let generated = timings.measure_into(&mut generation_elapsed, || {
+            dibs_qgen::generate_compiled_rust(&query)
+                .unwrap_or_else(|error| panic!("generate {}: {error}", query.query_name))
+        });
         generated_queries.push((query.query_name, generated.source));
     }
-    let generated = combine_generated_queries(
-        generated_queries
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str())),
-    );
+    timings.report(BuildPhase::QueryCompilation, compilation_elapsed);
+    timings.report(BuildPhase::RustGeneration, generation_elapsed);
+    let generated = timings.measure(BuildPhase::Combination, || {
+        combine_generated_queries(
+            generated_queries
+                .iter()
+                .map(|(name, source)| (name.as_str(), source.as_str())),
+        )
+    });
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let destination = std::path::Path::new(&out_dir).join("queries.rs");
-    std::fs::write(&destination, generated)
-        .unwrap_or_else(|error| panic!("write {}: {error}", destination.display()));
+    let changed = timings.measure(BuildPhase::OutputWrite, || {
+        write_if_changed(&destination, generated.as_bytes())
+            .unwrap_or_else(|error| panic!("write {}: {error}", destination.display()))
+    });
+    if timings.enabled {
+        println!(
+            "cargo::warning=dibs-build-output changed={changed} bytes={}",
+            generated.len()
+        );
+    }
     println!("cargo::rustc-env=QUERIES_PATH={}", destination.display());
+}
+
+fn write_if_changed(path: &std::path::Path, contents: &[u8]) -> std::io::Result<bool> {
+    match std::fs::read(path) {
+        Ok(existing) if existing == contents => Ok(false),
+        Ok(_) => {
+            std::fs::write(path, contents)?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::write(path, contents)?;
+            Ok(true)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn combine_generated_queries<'a>(queries: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
@@ -481,5 +598,60 @@ mod compiled_query_build_tests {
         assert!(generated.contains("mod query_1_beta {"));
         assert!(generated.contains("pub use query_0_alpha::*;"));
         assert!(generated.contains("pub use query_1_beta::*;"));
+    }
+
+    #[test]
+    fn generated_output_is_not_rewritten_when_bytes_match() {
+        let path = temporary_output_path("unchanged");
+        std::fs::write(&path, b"same").unwrap();
+
+        assert!(!super::write_if_changed(&path, b"same").unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"same");
+
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn generated_output_is_rewritten_when_bytes_change() {
+        let path = temporary_output_path("changed");
+        std::fs::write(&path, b"before").unwrap();
+
+        assert!(super::write_if_changed(&path, b"after").unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"after");
+
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn temporary_output_path(case: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "dibs-{case}-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ))
+    }
+
+    #[test]
+    fn build_phase_names_are_stable() {
+        assert_eq!(
+            super::BuildPhase::SchemaInventory.name(),
+            "schema_inventory"
+        );
+        assert_eq!(super::BuildPhase::Catalog.name(), "catalog");
+        assert_eq!(super::BuildPhase::SourceRead.name(), "source_read");
+        assert_eq!(
+            super::BuildPhase::ParserAdmission.name(),
+            "parser_admission"
+        );
+        assert_eq!(
+            super::BuildPhase::DeclarationSplit.name(),
+            "declaration_split"
+        );
+        assert_eq!(
+            super::BuildPhase::QueryCompilation.name(),
+            "query_compilation"
+        );
+        assert_eq!(super::BuildPhase::RustGeneration.name(), "rust_generation");
+        assert_eq!(super::BuildPhase::Combination.name(), "combination");
+        assert_eq!(super::BuildPhase::OutputWrite.name(), "output_write");
     }
 }
