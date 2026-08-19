@@ -9,6 +9,15 @@ pub enum CallableKind {
     Table,
 }
 
+impl CallableKind {
+    pub(crate) const fn id_component(self) -> &'static str {
+        match self {
+            Self::Scalar => "scalar",
+            Self::Table => "table",
+        }
+    }
+}
+
 /// Exact application scalar-function signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScalarSignature {
@@ -18,14 +27,6 @@ pub struct ScalarSignature {
     pub arguments: Vec<TypeId>,
     /// Logical result type.
     pub result: TypeId,
-}
-
-impl ScalarSignature {
-    /// Returns the PostgreSQL 18 identity for this name and ordered input list.
-    #[must_use]
-    pub fn postgres_18_id(&self) -> CallableId {
-        stable_callable_id(18, &self.qualified_name, &self.arguments)
-    }
 }
 
 /// Exact application table-function signature.
@@ -118,29 +119,40 @@ impl CatalogCallable {
 }
 
 pub(crate) fn stable_scalar_id(postgres_major: u16, signature: &ScalarSignature) -> CallableId {
-    stable_callable_id(
-        postgres_major,
-        &signature.qualified_name,
-        &signature.arguments,
-    )
+    CallableId::new(format!(
+        "pg{postgres_major}:callable:{}:{}({})->{}",
+        CallableKind::Scalar.id_component(),
+        signature.qualified_name,
+        join_type_ids(&signature.arguments),
+        signature.result.as_str()
+    ))
 }
 
 pub(crate) fn stable_table_id(postgres_major: u16, signature: &TableSignature) -> CallableId {
-    stable_callable_id(
-        postgres_major,
-        &signature.qualified_name,
-        &signature.arguments,
-    )
-}
-
-fn stable_callable_id(
-    postgres_major: u16,
-    qualified_name: &str,
-    arguments: &[TypeId],
-) -> CallableId {
+    let mut result = String::new();
+    for (index, column) in signature.columns.iter().enumerate() {
+        if index != 0 {
+            result.push(',');
+        }
+        use std::fmt::Write as _;
+        let nullability = match column.nullability {
+            Nullability::NotNull => "not-null",
+            Nullability::Nullable => "nullable",
+        };
+        let _ = write!(
+            result,
+            "{}:{}:{}:{}",
+            column.name.len(),
+            column.name,
+            column.type_id.as_str(),
+            nullability
+        );
+    }
     CallableId::new(format!(
-        "pg{postgres_major}:callable:function:{qualified_name}({})",
-        join_type_ids(arguments)
+        "pg{postgres_major}:callable:{}:{}({})->table({result})",
+        CallableKind::Table.id_component(),
+        signature.qualified_name,
+        join_type_ids(&signature.arguments),
     ))
 }
 

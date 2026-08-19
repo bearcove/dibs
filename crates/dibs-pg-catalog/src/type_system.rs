@@ -27,45 +27,6 @@ impl PgTypeKind {
     }
 }
 
-/// One named PostgreSQL domain CHECK constraint in definition order.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DomainConstraint {
-    /// Constraint name.
-    pub name: String,
-    /// PostgreSQL CHECK expression over `VALUE`.
-    pub expression: String,
-}
-
-/// How a domain obtains its collation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DomainCollation {
-    /// Inherit the base type's applicable collation.
-    Inherit,
-    /// Use no collation; valid only when the base type is noncollatable.
-    None,
-    /// Use this exact collation; valid only when the base type is collatable.
-    Explicit(CollationId),
-}
-
-/// Complete defining facts for one PostgreSQL domain.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DomainDefinition {
-    /// Canonical base logical type.
-    pub base_type: TypeId,
-    /// Canonical base typmod, if fixed by the domain.
-    pub base_typmod: Option<String>,
-    /// Domain-level `NOT NULL` requirement.
-    pub not_null: bool,
-    /// Domain default expression.
-    pub default: Option<String>,
-    /// Domain collation policy supplied at registration.
-    pub collation_policy: DomainCollation,
-    /// Effective applicable domain collation.
-    pub collation: Option<CollationId>,
-    /// Named CHECK constraints in PostgreSQL evaluation order.
-    pub constraints: Vec<DomainConstraint>,
-}
-
 /// Versioned catalog type with separate storage, wire, and API identities.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogType {
@@ -81,11 +42,11 @@ pub struct CatalogType {
     pub typmod: Option<String>,
     /// Array element type relationship.
     pub element_type: Option<TypeId>,
-    /// Complete domain definition for domain types.
-    pub domain: Option<DomainDefinition>,
+    /// Domain base type relationship.
+    pub base_type: Option<TypeId>,
     /// Ordered enum labels for registered enum types.
     pub enum_variants: Vec<String>,
-    /// Default or applicable collation identity.
+    /// Default collation identity, where applicable.
     pub collation: Option<CollationId>,
     /// PostgreSQL storage codec identity.
     pub pg_codec_id: PgCodecId,
@@ -165,32 +126,25 @@ impl CatalogType {
         postgres_major: u16,
         qualified_name: &str,
         base: &CatalogType,
-        mut domain: DomainDefinition,
     ) -> Self {
-        domain.base_type = base.id.clone();
-        domain.collation = match &domain.collation_policy {
-            DomainCollation::Inherit => base.collation.clone(),
-            DomainCollation::None => None,
-            DomainCollation::Explicit(collation) => Some(collation.clone()),
-        };
-        let details = domain_identity_details(&domain);
+        let details = [base.id.as_str()];
         Self::with_codec(
             stable_type_id(
                 postgres_major,
                 qualified_name,
                 PgTypeKind::Domain,
-                domain.base_typmod.as_deref(),
-                Some(&domain.base_type),
+                None,
+                None,
                 Some(&details),
             ),
             qualified_name,
             qualified_name,
             PgTypeKind::Domain,
-            domain.base_typmod.clone(),
             None,
-            Some(domain.clone()),
+            None,
+            Some(base.id.clone()),
             Vec::new(),
-            domain.collation.clone(),
+            base.collation.clone(),
             CodecBinding {
                 pg_codec_id: PgCodecId::new(format!(
                     "pg{postgres_major}:pg-codec:domain<{}>",
@@ -247,7 +201,7 @@ impl CatalogType {
         kind: PgTypeKind,
         typmod: Option<String>,
         element_type: Option<TypeId>,
-        domain: Option<DomainDefinition>,
+        base_type: Option<TypeId>,
         enum_variants: Vec<String>,
         collation: Option<CollationId>,
         codec: CodecBinding,
@@ -260,7 +214,7 @@ impl CatalogType {
             kind,
             typmod,
             element_type,
-            domain,
+            base_type,
             enum_variants,
             collation,
             pg_codec_id: codec.pg_codec_id,
@@ -291,18 +245,8 @@ pub enum TypeRegistrationKind {
     },
     /// Domain whose lossless codecs are inherited from its base type.
     Domain {
-        /// SQL-qualified canonical base type name.
+        /// SQL-qualified base type name.
         base_type: String,
-        /// Canonical base typmod fixed by the domain.
-        base_typmod: Option<String>,
-        /// Domain-level `NOT NULL` requirement.
-        not_null: bool,
-        /// Domain default expression.
-        default: Option<String>,
-        /// Applicable collation policy.
-        collation: DomainCollation,
-        /// Named CHECK constraints in definition order.
-        constraints: Vec<DomainConstraint>,
     },
     /// Array whose lossless codecs are derived from its element type.
     Array {
@@ -338,32 +282,6 @@ pub(crate) fn stable_type_id<T: AsRef<str>>(
         }
     }
     TypeId::new(value)
-}
-
-fn domain_identity_details(domain: &DomainDefinition) -> Vec<String> {
-    let mut details = vec![format!("not-null={}", domain.not_null)];
-    details.push(format!(
-        "default={}",
-        domain.default.as_deref().unwrap_or("<none>")
-    ));
-    details.push(format!("collation-policy={:?}", domain.collation_policy));
-    details.push(format!(
-        "collation={}",
-        domain
-            .collation
-            .as_ref()
-            .map_or("<none>", CollationId::as_str)
-    ));
-    for constraint in &domain.constraints {
-        details.push(format!(
-            "constraint:{}:{}:{}:{}",
-            constraint.name.len(),
-            constraint.name,
-            constraint.expression.len(),
-            constraint.expression
-        ));
-    }
-    details
 }
 
 fn append_len_prefixed(output: &mut String, value: &str) {

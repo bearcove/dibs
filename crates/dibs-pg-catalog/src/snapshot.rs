@@ -8,8 +8,8 @@ use dibs_db_schema::{
 
 use crate::{
     ApiLanguage, ApiTypeId, CallableId, CastId, CatalogCallable, CatalogError, CatalogType,
-    CollationId, OperatorId, PgTypeKind, ScalarSignature, TableOutputColumn, TableSignature,
-    TypeId, TypeRegistration, TypeRegistrationKind,
+    OperatorId, PgTypeKind, ScalarSignature, TableOutputColumn, TableSignature, TypeId,
+    TypeRegistration, TypeRegistrationKind,
 };
 
 const POSTGRES_MAJOR: u16 = 18;
@@ -248,8 +248,6 @@ pub struct CatalogSnapshot {
     pub postgres_major: u16,
     /// Deterministic application schema fingerprint.
     pub schema_fingerprint: SchemaFingerprint,
-    /// Curated and registered collation identities.
-    pub collations: Vec<CollationId>,
     /// Curated and registered logical types.
     pub types: Vec<CatalogType>,
     /// Curated and registered functions.
@@ -314,12 +312,6 @@ impl CatalogSnapshot {
             })
     }
 
-    /// Resolves a collation by exact stable identity.
-    #[must_use]
-    pub fn collation_by_id(&self, id: &CollationId) -> Option<&CollationId> {
-        self.collations.iter().find(|collation| *collation == id)
-    }
-
     /// Resolves an API type only when it identifies exactly one logical type.
     pub fn resolve_api_type(
         &self,
@@ -377,53 +369,12 @@ impl CatalogSnapshot {
                     variants,
                 )
             }
-            TypeRegistrationKind::Domain {
-                base_type,
-                base_typmod,
-                not_null,
-                default,
-                collation,
-                constraints,
-            } => {
+            TypeRegistrationKind::Domain { base_type } => {
                 let base = self.resolve_type(&base_type)?.clone();
-                let mut constraint_names = BTreeSet::new();
-                for constraint in &constraints {
-                    if !constraint_names.insert(constraint.name.as_str()) {
-                        return Err(CatalogError::DuplicateDomainConstraintName {
-                            qualified_name: registration.qualified_name,
-                            constraint: constraint.name.clone(),
-                        });
-                    }
-                }
-                let collation_valid = match &collation {
-                    crate::DomainCollation::Inherit => true,
-                    crate::DomainCollation::None => base.collation.is_none(),
-                    crate::DomainCollation::Explicit(id) => {
-                        if self.collation_by_id(id).is_none() {
-                            return Err(CatalogError::UnknownCollation { id: id.clone() });
-                        }
-                        base.collation.is_some()
-                    }
-                };
-                if !collation_valid {
-                    return Err(CatalogError::InvalidDomainCollation {
-                        qualified_name: registration.qualified_name,
-                        base_type,
-                    });
-                }
                 CatalogType::registered_domain(
                     self.postgres_major,
                     &registration.qualified_name,
                     &base,
-                    crate::DomainDefinition {
-                        base_type: base.id.clone(),
-                        base_typmod,
-                        not_null,
-                        default,
-                        collation_policy: collation,
-                        collation: None,
-                        constraints,
-                    },
                 )
             }
             TypeRegistrationKind::Array { element_type } => {
@@ -468,21 +419,6 @@ impl CatalogSnapshot {
             return Err(CatalogError::EmptyTableResult {
                 qualified_name: signature.qualified_name,
             });
-        }
-        let mut output_names = BTreeSet::new();
-        for column in &signature.columns {
-            if !valid_identifier(&column.name) {
-                return Err(CatalogError::InvalidOutputColumnName {
-                    qualified_name: signature.qualified_name,
-                    column: column.name.clone(),
-                });
-            }
-            if !output_names.insert(column.name.as_str()) {
-                return Err(CatalogError::DuplicateOutputColumnName {
-                    qualified_name: signature.qualified_name,
-                    column: column.name.clone(),
-                });
-            }
         }
         self.validate_type_ids(signature.arguments.iter())?;
         self.validate_type_ids(signature.columns.iter().map(|column| &column.type_id))?;
@@ -563,10 +499,6 @@ impl CatalogSnapshot {
         let mut snapshot = Self {
             postgres_major: POSTGRES_MAJOR,
             schema_fingerprint: empty_fingerprint(),
-            collations: vec![CollationId::new(format!(
-                "pg{}:collation:pg_catalog.default",
-                POSTGRES_MAJOR
-            ))],
             types: Vec::new(),
             callables: Vec::new(),
             operators: Vec::new(),
@@ -926,6 +858,9 @@ impl CatalogSnapshot {
     }
 
     fn insert_callable(&mut self, callable: CatalogCallable) -> Result<CallableId, CatalogError> {
+        if self.callable_by_id(&callable.id).is_some() {
+            return Err(CatalogError::DuplicateCallable { id: callable.id });
+        }
         if self.callables.iter().any(|existing| {
             existing.qualified_name == callable.qualified_name
                 && existing.arguments == callable.arguments
@@ -1093,42 +1028,11 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
             "type-element",
             ty.element_type.as_ref().map(TypeId::as_str),
         );
-        if let Some(domain) = &ty.domain {
-            write_value(
-                &mut canonical,
-                "type-domain-base",
-                domain.base_type.as_str(),
-            );
-            write_optional(
-                &mut canonical,
-                "type-domain-typmod",
-                domain.base_typmod.as_deref(),
-            );
-            let _ = writeln!(canonical, "type-domain-not-null:{}", domain.not_null);
-            write_optional(
-                &mut canonical,
-                "type-domain-default",
-                domain.default.as_deref(),
-            );
-            let _ = writeln!(
-                canonical,
-                "type-domain-collation-policy:{:?}",
-                domain.collation_policy
-            );
-            write_optional(
-                &mut canonical,
-                "type-domain-collation",
-                domain.collation.as_ref().map(crate::CollationId::as_str),
-            );
-            for constraint in &domain.constraints {
-                write_value(&mut canonical, "type-domain-check-name", &constraint.name);
-                write_value(
-                    &mut canonical,
-                    "type-domain-check-expression",
-                    &constraint.expression,
-                );
-            }
-        }
+        write_optional(
+            &mut canonical,
+            "type-base",
+            ty.base_type.as_ref().map(TypeId::as_str),
+        );
         for variant in &ty.enum_variants {
             write_value(&mut canonical, "type-enum", variant);
         }

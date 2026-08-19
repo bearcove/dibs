@@ -2,14 +2,12 @@
 #![warn(missing_docs)]
 //! Versioned PostgreSQL catalog identities and lossless Dibs codec mappings.
 
-mod array;
 mod callable;
 mod codec;
 mod id;
 mod snapshot;
 mod type_system;
 
-pub use array::{PgArray, PgArrayDimension, PgArrayError};
 pub use callable::{
     CallableKind, CatalogCallable, ScalarSignature, TableOutputColumn, TableSignature,
 };
@@ -22,10 +20,7 @@ pub use snapshot::{
     CatalogIndexColumn, CatalogOperator, CatalogSnapshot, CatalogTable, Nullability, PrimaryKey,
     SchemaFingerprint, UniqueConstraint,
 };
-pub use type_system::{
-    CatalogType, DomainCollation, DomainConstraint, DomainDefinition, PgTypeKind, TypeRegistration,
-    TypeRegistrationKind,
-};
+pub use type_system::{CatalogType, PgTypeKind, TypeRegistration, TypeRegistrationKind};
 
 /// Catalog construction or exact-registration failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -76,6 +71,12 @@ pub enum CatalogError {
         /// SQL-qualified type name.
         qualified_name: String,
     },
+    /// A callable with this exact stable signature already exists.
+    #[error("callable '{id}' is already registered")]
+    DuplicateCallable {
+        /// Stable logical callable identity.
+        id: CallableId,
+    },
     /// PostgreSQL already has a function with this name and ordered input types.
     #[error("callable '{qualified_name}' with input types {arguments:?} is already registered")]
     DuplicateCallableSignature {
@@ -107,43 +108,5 @@ pub enum CatalogError {
     EmptyTableResult {
         /// SQL-qualified function name.
         qualified_name: String,
-    },
-    /// A table-function output column is not a canonical unquoted identifier.
-    #[error("table function '{qualified_name}' has invalid output column '{column}'")]
-    InvalidOutputColumnName {
-        /// SQL-qualified function name.
-        qualified_name: String,
-        /// Invalid output column spelling.
-        column: String,
-    },
-    /// A table function repeated an output column name.
-    #[error("table function '{qualified_name}' repeats output column '{column}'")]
-    DuplicateOutputColumnName {
-        /// SQL-qualified function name.
-        qualified_name: String,
-        /// Repeated output column name.
-        column: String,
-    },
-    /// A domain repeated a named CHECK constraint.
-    #[error("domain '{qualified_name}' repeats constraint '{constraint}'")]
-    DuplicateDomainConstraintName {
-        /// SQL-qualified domain name.
-        qualified_name: String,
-        /// Repeated constraint name.
-        constraint: String,
-    },
-    /// A domain references a collation absent from this versioned snapshot.
-    #[error("unknown collation '{id}'")]
-    UnknownCollation {
-        /// Stable collation identity.
-        id: CollationId,
-    },
-    /// A domain collation policy is incompatible with its base type.
-    #[error("domain '{qualified_name}' has invalid collation for base type '{base_type}'")]
-    InvalidDomainCollation {
-        /// SQL-qualified domain name.
-        qualified_name: String,
-        /// SQL-qualified base type name.
-        base_type: String,
     },
 }
