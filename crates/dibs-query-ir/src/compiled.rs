@@ -658,9 +658,7 @@ fn collect_expression_catalog_identities(
             operator_id,
             operands,
         } => {
-            if !is_structural_syntax_operator(operator_id) {
-                output.insert(operator_id.as_str().to_string());
-            }
+            output.insert(operator_id.as_str().to_string());
             for operand in operands {
                 collect_expression_catalog_identities(&operand.expression, output);
                 if let Some(coercion) = &operand.coercion {
@@ -709,10 +707,6 @@ fn collect_expression_catalog_identities(
         }
         crate::TypedExpressionKind::CteColumn { .. } => {}
     }
-}
-
-fn is_structural_syntax_operator(operator_id: &dibs_pg_catalog::OperatorId) -> bool {
-    operator_id.as_str().starts_with("pg18:operator:syntax:")
 }
 
 fn collect_coercion_catalog_identities(
