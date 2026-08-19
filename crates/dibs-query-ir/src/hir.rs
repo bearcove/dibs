@@ -561,8 +561,6 @@ pub struct HirInsert {
     pub ctes: Vec<HirCte>,
     /// Stable target table identity.
     pub target: TableId,
-    /// Revision-local binding for target-column expressions, conflict actions, and RETURNING.
-    pub target_binding: RelationId,
     /// Ordered target columns.
     pub columns: Vec<ColumnId>,
     /// Insert source.

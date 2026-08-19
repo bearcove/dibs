@@ -2,19 +2,18 @@ use dibs_pg_catalog::{
     ApiTypeId, ColumnId, PgCodecId, SchemaFingerprint, TableId, TypeId, WireCodecId,
 };
 use dibs_query_ir::{
-    ApiFieldName, ApiOperationName, ApiResultTypeName, ApiTypeMapping, ArtifactHashes, BindFormat,
-    Cardinality, CardinalityEvidence, CatalogRenderName, CatalogRenderNames, CompiledQuery,
-    CompilerVersions, ExecutionIdentity, ExecutionIdentityInput, ExpressionId, FieldId,
-    GeneratedContractMember, GeneratedMemberKind, HirExpression, HirExpressionKind, HirInsert,
-    HirInsertSource, HirProjection, HirQuery, HirRelation, HirRelationKind, HirSelect,
-    HirStatement, LineageEdge, LineageGraph, LineageNode, LineageNodeId, ManifestIdentity,
-    Nullability, NullabilityEvidence, OrderedBind, OutputField, Parameter, ParameterApiContract,
-    ParameterBindAdapter, ParameterId, ParameterPassing, PublicContractIdentity,
-    PublicIdentityInput, QueryId, QueryManifest, ReadWriteLockManifest, ReferenceAccess,
-    ReferenceId, ReferenceIndex, ReferenceRole, ReferenceTarget, ResolvedReference, ResultMode,
-    RuntimeAssertion, Sensitivity, SourceMap, SourceMapEntry, SourceOrigin, SourceSpan, Span,
-    SqlByteRange, SqlNodeId, SqlProvenance, StatementId, TargetLanguage, TypedExpression,
-    TypedExpressionKind, TypedInsert, TypedInsertSource, TypedNodeId, TypedRelation, TypedSelect,
+    ApiFieldName, ApiOperationName, ApiTypeMapping, ArtifactHashes, BindFormat, Cardinality,
+    CardinalityEvidence, CatalogRenderName, CatalogRenderNames, CompiledQuery, CompilerVersions,
+    ExecutionIdentity, ExecutionIdentityInput, ExpressionId, FieldId, GeneratedContractMember,
+    GeneratedMemberKind, HirExpression, HirExpressionKind, HirProjection, HirQuery, HirRelation,
+    HirRelationKind, HirSelect, HirStatement, LineageEdge, LineageGraph, LineageNode,
+    LineageNodeId, ManifestIdentity, Nullability, NullabilityEvidence, OrderedBind, OutputField,
+    Parameter, ParameterApiContract, ParameterBindAdapter, ParameterId, ParameterPassing,
+    PublicContractIdentity, PublicIdentityInput, QueryId, QueryManifest, ReadWriteLockManifest,
+    ReferenceAccess, ReferenceId, ReferenceIndex, ReferenceRole, ReferenceTarget,
+    ResolvedReference, ResultMode, RuntimeAssertion, Sensitivity, SourceMap, SourceMapEntry,
+    SourceOrigin, SourceSpan, Span, SqlByteRange, SqlNodeId, SqlProvenance, StatementId,
+    TargetLanguage, TypedExpression, TypedExpressionKind, TypedNodeId, TypedRelation, TypedSelect,
     TypedStatement, Typmod, Volatility, canonical_manifest_json, execution_identity,
     public_contract_identity,
 };
@@ -307,10 +306,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
             language: TargetLanguage::Rust,
             name: "find_job".to_string(),
         }],
-        result_type_names: vec![ApiResultTypeName {
-            language: TargetLanguage::Rust,
-            name: "FindJobResult".to_string(),
-        }],
         query_name: "FindJob".to_string(),
         parameters: vec![parameter.clone()],
         output_fields: vec![output.clone()],
@@ -323,10 +318,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         operation_names: vec![ApiOperationName {
             language: TargetLanguage::Rust,
             name: "find_job".to_string(),
-        }],
-        result_type_names: vec![ApiResultTypeName {
-            language: TargetLanguage::Rust,
-            name: "FindJobResult".to_string(),
         }],
         manifest_format_version: 1,
         query_id,
@@ -624,27 +615,6 @@ fn manifests_serialize_deterministically_without_map_iteration_order() {
     b.lineage.reverse_unordered_for_test();
     b.read_write_lock_manifest.reads.reverse();
     b.generated_output_hashes.reverse();
-    b.result_type_names.extend([
-        ApiResultTypeName {
-            language: TargetLanguage::TypeScript,
-            name: "FindJobResult".to_string(),
-        },
-        ApiResultTypeName {
-            language: TargetLanguage::Swift,
-            name: "FindJobResult".to_string(),
-        },
-    ]);
-    let mut a = a;
-    a.result_type_names.extend([
-        ApiResultTypeName {
-            language: TargetLanguage::Swift,
-            name: "FindJobResult".to_string(),
-        },
-        ApiResultTypeName {
-            language: TargetLanguage::TypeScript,
-            name: "FindJobResult".to_string(),
-        },
-    ]);
 
     let a_json = canonical_manifest_json(&a).unwrap();
     let b_json = canonical_manifest_json(&b).unwrap();
@@ -653,117 +623,6 @@ fn manifests_serialize_deterministically_without_map_iteration_order() {
         ManifestIdentity::from_manifest(&a).unwrap(),
         ManifestIdentity::from_manifest(&b).unwrap()
     );
-}
-
-#[test]
-fn insert_target_binding_is_explicit_and_execution_relevant() {
-    let target = TableId::new("pg18:table:public.job");
-    let hir = HirInsert {
-        ctes: Vec::new(),
-        target: target.clone(),
-        target_binding: dibs_query_ir::RelationId::new(7),
-        columns: Vec::new(),
-        source: HirInsertSource::DefaultValues,
-        conflict: None,
-        returning: Vec::new(),
-    };
-    let typed = TypedInsert {
-        ctes: Vec::new(),
-        target,
-        target_binding: dibs_query_ir::RelationId::new(7),
-        columns: Vec::new(),
-        source: TypedInsertSource::DefaultValues,
-        conflict: None,
-        returning: Vec::new(),
-    };
-    assert!(matches!(
-        (&hir.target_binding, &typed.target_binding),
-        (left, right) if left == right
-    ));
-
-    let mut base = fixture_query("job", origin(1, 21, 24)).execution_identity_input();
-    base.statement.kind = dibs_query_ir::TypedStatementKind::Insert(Box::new(typed.clone()));
-    let mut rebound = base.clone();
-    let dibs_query_ir::TypedStatementKind::Insert(insert) = &mut rebound.statement.kind else {
-        unreachable!()
-    };
-    insert.target_binding = dibs_query_ir::RelationId::new(8);
-    assert_ne!(execution_identity(&base), execution_identity(&rebound));
-
-    let hir_statement = HirStatement {
-        id: base.statement.id,
-        origin: base.statement.origin.clone(),
-        kind: dibs_query_ir::HirStatementKind::Insert(Box::new(hir)),
-    };
-    assert!(base.statement.corresponds_to_hir(&hir_statement));
-
-    let mut wrong_target = typed;
-    wrong_target.target = TableId::new("pg18:table:public.other_job");
-    let wrong_target = TypedStatement {
-        id: base.statement.id,
-        origin: base.statement.origin,
-        cardinality: base.statement.cardinality,
-        kind: dibs_query_ir::TypedStatementKind::Insert(Box::new(wrong_target)),
-    };
-    assert!(!wrong_target.corresponds_to_hir(&hir_statement));
-}
-
-#[test]
-fn target_owned_result_type_name_is_public_identity_and_facet_contract() {
-    let query = fixture_query("job", origin(1, 21, 24));
-    let mut public = query.public_identity_input();
-    assert_eq!(
-        public.result_type_names,
-        vec![ApiResultTypeName {
-            language: TargetLanguage::Rust,
-            name: "FindJobResult".to_string(),
-        }]
-    );
-    let base = public_contract_identity(&public);
-    public.result_type_names[0].name = "LoadedJob".to_string();
-    assert_ne!(base, public_contract_identity(&public));
-
-    let mut reordered = query.public_identity_input();
-    reordered.result_type_names.extend([
-        ApiResultTypeName {
-            language: TargetLanguage::TypeScript,
-            name: "FindJobResult".to_string(),
-        },
-        ApiResultTypeName {
-            language: TargetLanguage::Swift,
-            name: "FindJobResult".to_string(),
-        },
-    ]);
-    let ordered_identity = public_contract_identity(&reordered);
-    reordered.result_type_names.reverse();
-    assert_eq!(ordered_identity, public_contract_identity(&reordered));
-
-    assert!(ApiResultTypeName::try_new(TargetLanguage::Rust, "type").is_err());
-    let invalid = r#"{"language":"Rust","name":"type"}"#;
-    assert!(facet_json::from_str::<ApiResultTypeName>(invalid).is_err());
-}
-
-#[test]
-fn compiled_query_rejects_duplicate_or_unpaired_target_names() {
-    let mut duplicate_operation = fixture_query("job", origin(1, 21, 24));
-    duplicate_operation
-        .manifest
-        .operation_names
-        .push(ApiOperationName {
-            language: TargetLanguage::Rust,
-            name: "load_job".to_string(),
-        });
-    assert!(matches!(
-        duplicate_operation.validate(),
-        Err(dibs_query_ir::CompiledQueryError::PublicApiNameMismatch)
-    ));
-
-    let mut missing_result = fixture_query("job", origin(1, 21, 24));
-    missing_result.manifest.result_type_names.clear();
-    assert!(matches!(
-        missing_result.validate(),
-        Err(dibs_query_ir::CompiledQueryError::PublicApiNameMismatch)
-    ));
 }
 
 #[test]
