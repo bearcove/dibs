@@ -18,9 +18,7 @@ mod generated_ast {
 
 /// Typed source AST for strict Dibs query compilation.
 pub mod ast {
-    pub use crate::generated_ast::{
-        Expression, PgTypeName, Relation, Statement, TypedAstLowerError,
-    };
+    pub use crate::generated_ast::{PgTypeName, Statement, StatementNode, TypedAstLowerError};
 
     /// Raw generated source file before public contract normalization.
     pub(crate) type GeneratedSourceFile = crate::generated_ast::SourceFile;
@@ -51,8 +49,6 @@ pub mod ast {
         pub result_mode: crate::ResultMode,
         /// Exactly one statement body.
         pub statement: Statement,
-        /// Named bind tokens in authored source order.
-        pub(crate) binds: Vec<crate::Spanned<String>>,
     }
 
     /// Public ordered parameter declaration.
@@ -81,7 +77,7 @@ use snark::{
     validated::ValidatedGrammar,
 };
 
-pub use ast::{Expression, ParameterDecl, PgTypeName, QueryDecl, Relation, SourceFile, Statement};
+pub use ast::{ParameterDecl, PgTypeName, QueryDecl, SourceFile, Statement, StatementNode};
 pub use diagnostic::{
     Diagnostic, DiagnosticCode, MarginDiagnosticConversionError, Repair, to_margin_diagnostics,
 };
@@ -136,15 +132,6 @@ impl LanguageVersion {
     };
 }
 
-/// Prepared parser-machine size facts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ParserFacts {
-    /// LR/GLR parse states.
-    pub states: usize,
-    /// Retained parser-table conflicts.
-    pub conflicts: usize,
-}
-
 /// Prepared Dibs query parser artifacts reusable across documents and edits.
 pub struct DibsParser {
     parser: ParserGrammar,
@@ -166,22 +153,14 @@ impl DibsParser {
         let raw = RawGrammarJson::from_tree_sitter_json_str(GRAMMAR_JSON)
             .map_err(|error| error.to_string())?;
         let validated = ValidatedGrammar::from_raw(&raw).map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: grammar validated");
         let lexical = LexicalFacts::from_grammar(&validated);
         let parser = ParserGrammar::normalize_from_validated(&validated, &lexical)
             .map_err(|error| error.to_string())?
             .prepare_productions_for_items()
             .map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: productions prepared");
         let table = ParseTable::from_grammar(&parser).map_err(|error| error.to_string())?;
-        eprintln!(
-            "dibs parser: table built states={} conflicts={}",
-            table.states().len(),
-            table.conflicts().len()
-        );
         let plan =
             WeavyParsePlan::new(&validated, &parser, &table).map_err(|error| error.to_string())?;
-        eprintln!("dibs parser: plan built");
         Ok(Self {
             parser,
             table,
@@ -194,15 +173,6 @@ impl DibsParser {
     /// Returns the language and PostgreSQL lexical version prepared by this parser.
     pub const fn language_version(&self) -> LanguageVersion {
         self.language_version
-    }
-
-    /// Returns prepared parser-machine size facts for qualification budgets.
-    #[must_use]
-    pub fn parser_facts(&self) -> ParserFacts {
-        ParserFacts {
-            states: self.table.states().len(),
-            conflicts: self.table.conflicts().len(),
-        }
     }
 
     /// Strictly parses and lowers one source document.
@@ -296,28 +266,17 @@ fn strict_lower(
     };
     let generated = generated_ast::try_lower_source_file(&root)
         .map_err(|error| vec![Diagnostic::lowering(source_id, error)])?;
-    lower_public_ast(source_id, tree, generated)
+    lower_public_ast(source_id, generated)
 }
 
 fn lower_public_ast(
     source_id: SourceId,
-    tree: &ResolvedCstTree,
     generated: ast::GeneratedSourceFile,
 ) -> Result<ast::SourceFile, Vec<Diagnostic>> {
-    let binds_by_query = tree
-        .root()
-        .map(|root| {
-            root.children()
-                .filter(|child| child.kind() == "query_decl")
-                .map(collect_query_binds)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
     generated
         .queries
         .into_iter()
-        .zip(binds_by_query)
-        .map(|(query, binds)| lower_query(source_id, query, binds))
+        .map(|query| lower_query(source_id, query))
         .collect::<Result<Vec<_>, _>>()
         .map(|queries| ast::SourceFile {
             span: generated.span,
@@ -328,7 +287,6 @@ fn lower_public_ast(
 fn lower_query(
     source_id: SourceId,
     query: ast::GeneratedQueryDecl,
-    binds: Vec<Spanned<String>>,
 ) -> Result<ast::QueryDecl, Vec<Diagnostic>> {
     let result_mode = ResultMode::parse(&query.result_mode.value).ok_or_else(|| {
         vec![Diagnostic::parse_failure(
@@ -353,7 +311,6 @@ fn lower_query(
             .collect(),
         result_mode,
         statement: query.statement,
-        binds,
     })
 }
 
@@ -429,31 +386,9 @@ impl DibsDocumentSession<'_> {
 impl ast::QueryDecl {
     /// Iterates named bind tokens in statement source order.
     pub fn bind_occurrences(&self) -> impl Iterator<Item = &Spanned<String>> {
-        self.binds.iter()
-    }
-}
-
-fn collect_query_binds(node: snark::parser::ResolvedCstTreeNode<'_>) -> Vec<Spanned<String>> {
-    let mut binds = Vec::new();
-    collect_bind_descendants(node, &mut binds);
-    binds.sort_by_key(|bind| bind.span.start);
-    binds
-}
-
-fn collect_bind_descendants(
-    node: snark::parser::ResolvedCstTreeNode<'_>,
-    output: &mut Vec<Spanned<String>>,
-) {
-    if node.kind() == "named_bind"
-        && let Some(value) = node.text()
-    {
-        let bytes = node.bytes();
-        output.push(Spanned {
-            value: value.to_owned(),
-            span: Span::new(bytes.start().get(), bytes.end().get()),
-        });
-    }
-    for child in node.children() {
-        collect_bind_descendants(child, output);
+        self.statement.items.iter().filter_map(|item| match item {
+            ast::StatementNode::NamedBind(bind) => Some(bind),
+            _ => None,
+        })
     }
 }

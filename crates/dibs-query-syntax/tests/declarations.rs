@@ -1,4 +1,6 @@
-use dibs_query_syntax::{DiagnosticCode, DibsParser, ParserInputEdit, ResultMode, SourceId};
+use dibs_query_syntax::{
+    DiagnosticCode, DibsParser, ParserInputEdit, ResultMode, SourceId, StatementNode,
+};
 
 fn parse(source: &str) -> dibs_query_syntax::SourceFile {
     DibsParser::new()
@@ -63,7 +65,7 @@ query Q(amount: pg_catalog.numeric(20, 6)?, ids: uuid[][]) -> many {
             .collect::<Vec<_>>(),
         ["20", "6"]
     );
-    assert_eq!(query.parameters[1].type_name.arraies.len(), 2);
+    assert_eq!(query.parameters[1].type_name.arrays.len(), 2);
     assert_eq!(query.result_mode, ResultMode::Many);
 }
 
@@ -86,19 +88,27 @@ fn lexical_negative_fixture_preserves_only_real_binds() {
             .collect::<Vec<_>>(),
         [":real"]
     );
-    let parser = DibsParser::new();
-    let recovered = parser.parse_recovering(SourceId::test(), source).unwrap();
-    let kinds = recovered
-        .tree
-        .descendants()
-        .map(|node| node.kind().to_owned())
-        .collect::<Vec<_>>();
-    assert!(kinds.iter().any(|kind| kind == "dollar_quoted_literal"));
-    assert!(kinds.iter().any(|kind| kind == "escaped_string_literal"));
-    assert!(kinds.iter().any(|kind| kind == "unicode_string_literal"));
-    assert!(kinds.iter().any(|kind| kind == "quoted_identifier"));
-    assert!(kinds.iter().any(|kind| kind == "cast_expr"));
-    assert!(kinds.iter().any(|kind| kind == "function_argument"));
+    assert!(query.statement.items.iter().any(
+        |item| matches!(item, StatementNode::DollarQuotedLiteral(value) if value.value.starts_with("$tag$"))
+    ));
+    assert!(query.statement.items.iter().any(
+        |item| matches!(item, StatementNode::EscapedStringLiteral(value) if value.value.starts_with("E'"))
+    ));
+    assert!(query.statement.items.iter().any(
+        |item| matches!(item, StatementNode::UnicodeStringLiteral(value) if value.value.starts_with("U&'"))
+    ));
+    assert!(query.statement.items.iter().any(
+        |item| matches!(item, StatementNode::QuotedIdentifier(value) if value.value == "\"quoted:identifier\"")
+    ));
+    assert_eq!(
+        query
+            .statement
+            .items
+            .iter()
+            .filter(|item| matches!(item, StatementNode::ColonOperator(_)))
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -205,107 +215,4 @@ fn recovering_edit_preserves_surrounding_query_nodes() {
         .filter(|node| node.kind() == "query_decl")
         .count();
     assert_eq!(query_count, 3, "recovered tree: {:#?}", recovered.tree);
-}
-
-#[test]
-fn parses_expression_precedence_and_postgresql_special_forms() {
-    let file = parse(include_str!("fixtures/expressions.dibs"));
-    let query = &file.queries[0];
-    assert_eq!(query.name.value, "ExpressionForms");
-    assert_eq!(query.bind_occurrences().count(), 12);
-}
-
-#[test]
-fn parses_joins_lateral_derived_tables_and_registered_table_functions() {
-    let file = parse(include_str!("fixtures/relations.dibs"));
-    assert_eq!(file.queries[0].name.value, "RelationForms");
-    assert_eq!(file.queries[0].bind_occurrences().count(), 2);
-}
-
-#[test]
-fn parses_grouping_having_filters_and_within_group_aggregates() {
-    let file = parse(include_str!("fixtures/aggregates.dibs"));
-    assert_eq!(file.queries[0].name.value, "AggregateForms");
-}
-
-#[test]
-fn parses_named_windows_and_every_frame_family_absent_from_trials() {
-    let file = parse(include_str!("fixtures/windows.dibs"));
-    assert_eq!(file.queries[0].name.value, "WindowForms");
-}
-
-#[test]
-fn parses_set_operations_attached_order_limit_offset_and_values() {
-    let file = parse(include_str!("fixtures/sets-values.dibs"));
-    assert_eq!(file.queries[0].name.value, "SetAndValues");
-    assert_eq!(file.queries[0].bind_occurrences().count(), 1);
-}
-
-#[test]
-fn parses_insert_update_delete_returning_and_on_conflict() {
-    let file = parse(include_str!("fixtures/mutations.dibs"));
-    assert_eq!(file.queries.len(), 4);
-    assert_eq!(file.queries[0].name.value, "InsertForms");
-    assert_eq!(file.queries[1].name.value, "InsertSelect");
-    assert_eq!(file.queries[2].name.value, "UpdateForms");
-    assert_eq!(file.queries[3].name.value, "DeleteForms");
-}
-
-#[test]
-fn parses_recursive_and_data_modifying_ctes_with_all_lock_forms() {
-    let file = parse(include_str!("fixtures/ctes-locks.dibs"));
-    assert_eq!(file.queries[0].name.value, "RecursiveAndLocks");
-}
-
-#[test]
-fn parses_qualified_registered_function_calls_and_lock_targets() {
-    let file = parse(include_str!("fixtures/functions-locks.dibs"));
-    assert_eq!(file.queries[0].name.value, "RegisteredFunction");
-    assert_eq!(file.queries[0].bind_occurrences().count(), 3);
-}
-
-#[test]
-fn full_language_cst_contains_explicit_structural_nodes() {
-    let parser = DibsParser::new();
-    let fixtures = [
-        include_str!("fixtures/expressions.dibs"),
-        include_str!("fixtures/relations.dibs"),
-        include_str!("fixtures/aggregates.dibs"),
-        include_str!("fixtures/windows.dibs"),
-        include_str!("fixtures/sets-values.dibs"),
-        include_str!("fixtures/mutations.dibs"),
-        include_str!("fixtures/ctes-locks.dibs"),
-        include_str!("fixtures/functions-locks.dibs"),
-    ];
-    let required = [
-        "binary_expr",
-        "case_expr",
-        "joined_relation",
-        "derived_relation",
-        "function_relation",
-        "aggregate_call",
-        "filter_clause",
-        "within_group_clause",
-        "window_expr",
-        "window_frame_clause",
-        "set_operation",
-        "values_statement",
-        "insert_statement",
-        "update_statement",
-        "delete_statement",
-        "conflict_clause",
-        "with_clause",
-        "locking_clause",
-    ];
-    let mut seen = std::collections::BTreeSet::new();
-    for source in fixtures {
-        let parsed = parser.parse_recovering(SourceId::test(), source).unwrap();
-        assert!(parsed.diagnostics.is_empty(), "{:#?}", parsed.diagnostics);
-        for node in parsed.tree.descendants() {
-            if required.contains(&node.kind()) {
-                seen.insert(node.kind().to_owned());
-            }
-        }
-    }
-    assert_eq!(seen, required.into_iter().map(str::to_owned).collect());
 }

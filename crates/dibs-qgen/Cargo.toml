@@ -13,7 +13,6 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [dependencies]
 dibs-db-schema = { version = "0.2.0-rc.5", path = "../dibs-db-schema" }
-facet.workspace = true
 dibs-query-schema.workspace = true
 dibs-sql = { version = "0.2.0-rc.5", path = "../dibs-sql" }
 facet-styx = { workspace = true, features = ["tracing"] }
@@ -23,7 +22,6 @@ camino = "1.2.2"
 indexmap.workspace = true
 
 [dev-dependencies]
-dibs-query-syntax = { path = "../dibs-query-syntax", version = "0.1.0" }
 tracing.workspace = true
 facet-testhelpers.workspace = true
 dockside.workspace = true

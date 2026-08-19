@@ -20,7 +20,8 @@ dibs-jsonb = { version = "0.2.0-rc.5", path = "../dibs-jsonb" }
 jiff.workspace = true
 uuid.workspace = true
 rust_decimal.workspace = true
-# Structured completion and failure events for generated queries. Runtime
-# tracing carries query identity, duration, row/affected counts, and preserved
-# PostgreSQL diagnostics, but never SQL bind values.
+# Structured logging for query failures. Every generated query function
+# wraps its body in `.trace_err(query_name)` so postgres-side SQLSTATE,
+# severity, table/column/constraint, etc. land in tracing whether the
+# caller checks the Result or drops it on the floor.
 tracing.workspace = true
