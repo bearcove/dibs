@@ -2,20 +2,18 @@ use dibs_pg_catalog::{
     ApiTypeId, ColumnId, PgCodecId, SchemaFingerprint, TableId, TypeId, WireCodecId,
 };
 use dibs_query_ir::{
-    ApiFieldName, ApiOperationName, ApiTypeMapping, ArtifactHashes, BindFormat, Cardinality,
-    CardinalityEvidence, CatalogRenderName, CatalogRenderNames, CompiledQuery, CompilerVersions,
-    ExecutionIdentity, ExecutionIdentityInput, ExpressionId, FieldId, GeneratedContractMember,
-    GeneratedMemberKind, HirExpression, HirExpressionKind, HirProjection, HirQuery, HirRelation,
-    HirRelationKind, HirSelect, HirStatement, LineageEdge, LineageGraph, LineageNode,
-    LineageNodeId, ManifestIdentity, Nullability, NullabilityEvidence, OrderedBind, OutputField,
-    Parameter, ParameterApiContract, ParameterBindAdapter, ParameterId, ParameterPassing,
-    PublicContractIdentity, PublicIdentityInput, QueryId, QueryManifest, ReadWriteLockManifest,
-    ReferenceAccess, ReferenceId, ReferenceIndex, ReferenceRole, ReferenceTarget,
-    ResolvedReference, ResultMode, RuntimeAssertion, Sensitivity, SourceMap, SourceMapEntry,
-    SourceOrigin, SourceSpan, Span, SqlByteRange, SqlNodeId, SqlProvenance, StatementId,
-    TargetLanguage, TypedExpression, TypedExpressionKind, TypedNodeId, TypedRelation, TypedSelect,
-    TypedStatement, Typmod, Volatility, canonical_manifest_json, execution_identity,
-    public_contract_identity,
+    ApiFieldName, ApiTypeMapping, ArtifactHashes, BindFormat, Cardinality, CardinalityEvidence,
+    CompiledQuery, CompilerVersions, ExecutionIdentity, ExecutionIdentityInput, ExpressionId,
+    FieldId, GeneratedContractMember, GeneratedMemberKind, HirExpression, HirExpressionKind,
+    HirProjection, HirQuery, HirRelation, HirRelationKind, HirSelect, HirStatement, LineageEdge,
+    LineageGraph, LineageNode, LineageNodeId, ManifestIdentity, Nullability, NullabilityEvidence,
+    OrderedBind, OutputField, Parameter, ParameterId, PublicContractIdentity, PublicIdentityInput,
+    QueryId, QueryManifest, ReadWriteLockManifest, ReferenceAccess, ReferenceId, ReferenceIndex,
+    ReferenceRole, ReferenceTarget, ResolvedReference, ResultMode, RuntimeAssertion, Sensitivity,
+    SourceMap, SourceMapEntry, SourceOrigin, SourceSpan, Span, SqlByteRange, SqlNodeId,
+    SqlProvenance, StatementId, TargetLanguage, TypedExpression, TypedExpressionKind, TypedNodeId,
+    TypedRelation, TypedSelect, TypedStatement, Typmod, Volatility, canonical_manifest_json,
+    execution_identity, public_contract_identity,
 };
 use dibs_query_syntax::SourceId;
 
@@ -71,9 +69,7 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
             id: statement_id,
             origin: origin(1, 8, 40),
             kind: dibs_query_ir::HirStatementKind::Select(Box::new(HirSelect {
-                recursive: false,
                 ctes: Vec::new(),
-                distinct: dibs_query_ir::SelectDistinct::AllRows,
                 projections: vec![HirProjection {
                     field_id,
                     alias: alias.to_string(),
@@ -90,10 +86,7 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
                 from: vec![HirRelation {
                     id: relation_id,
                     origin: origin(1, 17, 25),
-                    alias: Some(dibs_query_ir::RelationAlias {
-                        name: alias.to_string(),
-                        column_names: Vec::new(),
-                    }),
+                    alias: Some(alias.to_string()),
                     kind: HirRelationKind::Table {
                         table_id: table_id.clone(),
                     },
@@ -101,7 +94,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
                 predicate: None,
                 group_by: Vec::new(),
                 having: None,
-                windows: Vec::new(),
                 order_by: Vec::new(),
                 limit: Some(HirExpression {
                     id: ExpressionId::new(2),
@@ -134,21 +126,14 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         origin: origin(1, 8, 40),
         cardinality: Cardinality::at_most_one_with(CardinalityEvidence::Limit { limit: 1 }),
         kind: dibs_query_ir::TypedStatementKind::Select(Box::new(TypedSelect {
-            recursive: false,
             ctes: Vec::new(),
-            distinct: dibs_query_ir::SelectDistinct::AllRows,
             projections: vec![dibs_query_ir::TypedProjection {
-                sql_label: alias.to_string(),
                 field_id,
                 expression: typed_expression.clone(),
             }],
             from: vec![TypedRelation {
                 id: relation_id,
                 origin: origin(1, 17, 25),
-                alias: Some(dibs_query_ir::RelationAlias {
-                    name: alias.to_string(),
-                    column_names: Vec::new(),
-                }),
                 cardinality: Cardinality::many(),
                 kind: dibs_query_ir::TypedRelationKind::Table {
                     table_id: table_id.clone(),
@@ -156,7 +141,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
             }],
             predicate: None,
             group_by: Vec::new(),
-            windows: Vec::new(),
             having: None,
             order_by: Vec::new(),
             limit: Some(dibs_query_ir::TypedLimit::Constant(1)),
@@ -222,13 +206,7 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
         pg_codec_id: PgCodecId::new("pg18:codec:int8"),
         wire_codec_id: WireCodecId::new("wire:signed-int64"),
         bind_format: BindFormat::Binary,
-        api_contracts: vec![ParameterApiContract {
-            language: TargetLanguage::Rust,
-            name: "id".to_string(),
-            api_type: ApiTypeId::new("i64"),
-            passing: ParameterPassing::SharedReference,
-            bind_adapter: ParameterBindAdapter::Direct,
-        }],
+        api_types: api_types(),
         sensitivity: Sensitivity::Public,
     };
     let output = OutputField {
@@ -302,10 +280,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
     };
     let public_input = PublicIdentityInput {
         version: compiler_versions.public_identity_format_version,
-        operation_names: vec![ApiOperationName {
-            language: TargetLanguage::Rust,
-            name: "find_job".to_string(),
-        }],
         query_name: "FindJob".to_string(),
         parameters: vec![parameter.clone()],
         output_fields: vec![output.clone()],
@@ -315,10 +289,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
     let execution_semantics_id = execution_identity(&execution_input);
     let public_contract_id = public_contract_identity(&public_input);
     let manifest = QueryManifest {
-        operation_names: vec![ApiOperationName {
-            language: TargetLanguage::Rust,
-            name: "find_job".to_string(),
-        }],
         manifest_format_version: 1,
         query_id,
         execution_semantics_id: execution_semantics_id.clone(),
@@ -363,21 +333,6 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
             position: 1,
             parameter_id,
         }],
-        catalog_render_names: CatalogRenderNames::try_new(vec![
-            CatalogRenderName::Table {
-                id: table_id.clone(),
-                qualified_name: vec!["public".to_string(), "job".to_string()],
-            },
-            CatalogRenderName::Column {
-                id: column_id.clone(),
-                name: "id".to_string(),
-            },
-            CatalogRenderName::Type {
-                id: type_id(),
-                qualified_name: vec!["pg_catalog".to_string(), "bigint".to_string()],
-            },
-        ])
-        .unwrap(),
         ordered_parameters: vec![parameter],
         ordered_output_fields: vec![output],
         resolved_hir: hir,
@@ -520,30 +475,12 @@ fn unordered_inputs_are_canonical_but_semantic_order_is_preserved() {
         pg_codec_id: PgCodecId::new("pg18:codec:numeric"),
         wire_codec_id: WireCodecId::new("wire:numeric-decimal"),
         bind_format: BindFormat::Text,
-        api_contracts: vec![ParameterApiContract {
-            language: TargetLanguage::Rust,
-            name: "other".to_string(),
-            api_type: ApiTypeId::new("i64"),
-            passing: ParameterPassing::SharedReference,
-            bind_adapter: ParameterBindAdapter::Direct,
-        }],
+        api_types: api_types(),
         sensitivity: Sensitivity::Confidential,
     });
     assert_ne!(
         public_contract_identity(&a.public_identity_input()),
         public_contract_identity(&reordered_parameters)
-    );
-
-    let mut assertions_a = a.execution_identity_input();
-    assertions_a.runtime_assertions = vec![
-        RuntimeAssertion::AtMostRows { maximum: 1 },
-        RuntimeAssertion::AtLeastRows { minimum: 0 },
-    ];
-    let mut assertions_b = assertions_a.clone();
-    assertions_b.runtime_assertions.reverse();
-    assert_eq!(
-        execution_identity(&assertions_a),
-        execution_identity(&assertions_b)
     );
 }
 
@@ -641,10 +578,7 @@ fn hir_relation_topology_covers_every_typed_relation_form() {
     let table = HirRelation {
         id: dibs_query_ir::RelationId::new(1),
         origin: origin(1, 0, 1),
-        alias: Some(dibs_query_ir::RelationAlias {
-            name: "job".to_string(),
-            column_names: Vec::new(),
-        }),
+        alias: Some("job".to_string()),
         kind: HirRelationKind::Table {
             table_id: TableId::new("pg18:table:public.job"),
         },
@@ -740,17 +674,11 @@ fn typed_arguments_and_values_cannot_desynchronize() {
         expression: typed_integer("1"),
         coercion: None,
     };
-    let call = TypedExpressionKind::Call(Box::new(dibs_query_ir::TypedCall {
+    let call = TypedExpressionKind::Call {
         callable_id: dibs_pg_catalog::CallableId::new("pg18:callable:app.identity"),
         arguments: vec![argument],
-        distinct: false,
-        star: false,
-        order_by: Vec::new(),
-        filter: None,
-        within_group: Vec::new(),
-        over: None,
-    }));
-    assert!(matches!(call, TypedExpressionKind::Call(call) if call.arguments.len() == 1));
+    };
+    assert!(matches!(call, TypedExpressionKind::Call { arguments, .. } if arguments.len() == 1));
 
     assert!(dibs_query_ir::TypedValues::try_new(Vec::new()).is_err());
     assert!(
@@ -769,19 +697,15 @@ fn cte_output_fields_must_match_statement_projections() {
         origin: origin(1, 0, 1),
         cardinality: Cardinality::many(),
         kind: dibs_query_ir::TypedStatementKind::Select(Box::new(TypedSelect {
-            recursive: false,
             ctes: Vec::new(),
-            distinct: dibs_query_ir::SelectDistinct::AllRows,
             projections: vec![dibs_query_ir::TypedProjection {
                 field_id: FieldId::new(20),
-                sql_label: "value".to_string(),
                 expression: typed_integer("1"),
             }],
             from: Vec::new(),
             predicate: None,
             group_by: Vec::new(),
             having: None,
-            windows: Vec::new(),
             order_by: Vec::new(),
             limit: None,
             offset: None,
@@ -791,11 +715,9 @@ fn cte_output_fields_must_match_statement_projections() {
     assert!(
         dibs_query_ir::TypedCte::try_new(
             dibs_query_ir::CteId::new(20),
-            "example".to_string(),
             dibs_query_ir::CteMaterialization::Default,
             statement,
             vec![FieldId::new(99)],
-            vec!["value".to_string()],
         )
         .is_err()
     );
@@ -853,16 +775,6 @@ fn checked_compiled_query_rejects_cross_surface_mismatches() {
     assert!(matches!(
         invalid_manifest_identity.validate(),
         Err(dibs_query_ir::CompiledQueryError::ManifestIdentityMismatch)
-    ));
-
-    let mut missing_parameter_type = fixture_query("job", origin(1, 21, 24));
-    missing_parameter_type.ordered_parameters[0].type_id =
-        TypeId::new("pg18:type:base:pg_catalog.integer");
-    missing_parameter_type.resolved_hir.parameters[0].type_id =
-        missing_parameter_type.ordered_parameters[0].type_id.clone();
-    assert!(matches!(
-        missing_parameter_type.validate(),
-        Err(dibs_query_ir::CompiledQueryError::MissingCatalogRenderName)
     ));
 
     let mut invalid_manifest_version = fixture_query("job", origin(1, 21, 24));
@@ -1006,15 +918,12 @@ fn relation_statement_fixture() -> HirStatement {
         id: StatementId::new(10),
         origin: origin(1, 0, 1),
         kind: dibs_query_ir::HirStatementKind::Select(Box::new(HirSelect {
-            recursive: false,
             ctes: Vec::new(),
-            distinct: dibs_query_ir::SelectDistinct::AllRows,
             projections: Vec::new(),
             from: Vec::new(),
             predicate: None,
             group_by: Vec::new(),
             having: None,
-            windows: Vec::new(),
             order_by: Vec::new(),
             limit: None,
             offset: None,

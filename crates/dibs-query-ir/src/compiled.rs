@@ -3,12 +3,12 @@ use std::collections::BTreeSet;
 use dibs_pg_catalog::SchemaFingerprint;
 
 use crate::{
-    ArtifactHashes, Cardinality, CatalogRenderNames, CompilerVersions, ContentHash,
-    ExecutionIdentity, ExecutionIdentityInput, ExecutionParameter, HirQuery, LineageGraph,
-    ManifestIdentity, OrderedBind, OutputField, Parameter, ParameterId, PublicContractIdentity,
-    PublicIdentityInput, QueryId, QueryManifest, ReadWriteLockManifest, ReferenceIndex, ResultMode,
-    RuntimeAssertion, SourceMap, SourceOrigin, TypedStatement, TypedStatementKind,
-    execution_identity, public_contract_identity,
+    ArtifactHashes, Cardinality, CompilerVersions, ContentHash, ExecutionIdentity,
+    ExecutionIdentityInput, ExecutionParameter, HirQuery, LineageGraph, ManifestIdentity,
+    OrderedBind, OutputField, Parameter, ParameterId, PublicContractIdentity, PublicIdentityInput,
+    QueryId, QueryManifest, ReadWriteLockManifest, ReferenceIndex, ResultMode, RuntimeAssertion,
+    SourceMap, SourceOrigin, TypedStatement, TypedStatementKind, execution_identity,
+    public_contract_identity,
 };
 
 /// Complete immutable checked query artifact consumed by all backends and runtimes.
@@ -45,8 +45,6 @@ pub struct CompiledQuery {
     pub ordered_parameters: Vec<Parameter>,
     /// Ordered flat PostgreSQL output-row contract.
     pub ordered_output_fields: Vec<OutputField>,
-    /// Canonical SQL names for every catalog identity needed by typed SQL rendering.
-    pub catalog_render_names: CatalogRenderNames,
     /// Complete resolved HIR retained for tools and semantic review.
     pub resolved_hir: HirQuery,
     /// Complete typed PostgreSQL IR used by SQL and API backends.
@@ -83,7 +81,6 @@ impl CompiledQuery {
         validate_hir_parameters(&self.resolved_hir, &self.ordered_parameters)?;
         validate_binds(&self.ordered_bind_map, &self.ordered_parameters)?;
         validate_outputs(&self.typed_statement, &self.ordered_output_fields)?;
-        validate_catalog_render_names(self)?;
         if !self
             .typed_statement
             .corresponds_to_hir(&self.resolved_hir.statement)
@@ -171,7 +168,6 @@ impl CompiledQuery {
             output_fields: self.ordered_output_fields.clone(),
             result_mode: self.declared_result_mode,
             transport_envelope: None,
-            operation_names: self.manifest.operation_names.clone(),
         }
     }
 }
@@ -215,8 +211,6 @@ pub enum CompiledQueryError {
     UnknownBindParameter(ParameterId),
     /// Typed statement output fields differ from the ordered output contract.
     OutputContractMismatch,
-    /// Catalog rendering vocabulary is missing an identity used by typed IR.
-    MissingCatalogRenderName,
     /// Resolved HIR and typed IR do not describe the same statement topology.
     HirTypedMismatch,
     /// Result mode, proof, runtime assertions, and output shape disagree.
@@ -413,7 +407,6 @@ fn validate_manifest(query: &CompiledQuery) -> Result<(), CompiledQueryError> {
         && manifest.source_map_hash == query.artifact_hashes.source_map
         && canonical_manifest.generated_output_hashes == generated_outputs
         && manifest.parameters == query.ordered_parameters
-        && manifest.operation_names == canonical_manifest.operation_names
         && manifest.output_fields == query.ordered_output_fields
         && manifest.inferred_cardinality == query.inferred_cardinality
         && manifest.runtime_assertions == query.runtime_assertions
@@ -422,456 +415,4 @@ fn validate_manifest(query: &CompiledQuery) -> Result<(), CompiledQueryError> {
     matches
         .then_some(())
         .ok_or(CompiledQueryError::ManifestMismatch)
-}
-
-fn validate_catalog_render_names(query: &CompiledQuery) -> Result<(), CompiledQueryError> {
-    let mut required = BTreeSet::new();
-    collect_statement_catalog_identities(&query.typed_statement, &mut required);
-    for parameter in &query.ordered_parameters {
-        required.insert(parameter.type_id.as_str().to_string());
-    }
-    for output in &query.ordered_output_fields {
-        required.insert(output.type_id.as_str().to_string());
-        collect_nullability_catalog_identities(&output.nullability, &mut required);
-    }
-    for reference in &query.resolved_references.references {
-        collect_reference_target_catalog_identity(&reference.target, &mut required);
-    }
-    required
-        .iter()
-        .all(|id| {
-            query
-                .catalog_render_names
-                .entries()
-                .iter()
-                .any(|entry| render_name_has_id(entry, id))
-        })
-        .then_some(())
-        .ok_or(CompiledQueryError::MissingCatalogRenderName)
-}
-
-fn collect_reference_target_catalog_identity(
-    target: &crate::ReferenceTarget,
-    output: &mut BTreeSet<String>,
-) {
-    let id = match target {
-        crate::ReferenceTarget::Table(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Column(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Constraint(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Index(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Type(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Callable(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Operator(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Collation(id) => Some(id.as_str()),
-        crate::ReferenceTarget::Parameter(_)
-        | crate::ReferenceTarget::Cast(_)
-        | crate::ReferenceTarget::RelationBinding(_)
-        | crate::ReferenceTarget::Cte(_)
-        | crate::ReferenceTarget::OutputField(_) => None,
-    };
-    if let Some(id) = id {
-        output.insert(id.to_string());
-    }
-}
-
-fn render_name_has_id(entry: &crate::CatalogRenderName, required: &str) -> bool {
-    match entry {
-        crate::CatalogRenderName::Table { id, .. } => id.as_str() == required,
-        crate::CatalogRenderName::Column { id, .. } => id.as_str() == required,
-        crate::CatalogRenderName::Callable { id, .. } => id.as_str() == required,
-        crate::CatalogRenderName::Operator { id, .. } => id.as_str() == required,
-        crate::CatalogRenderName::Type { id, .. } => id.as_str() == required,
-        crate::CatalogRenderName::Collation { id, .. } => id.as_str() == required,
-        crate::CatalogRenderName::Constraint { id, .. } => id.as_str() == required,
-        crate::CatalogRenderName::Index { id, .. } => id.as_str() == required,
-    }
-}
-
-fn collect_statement_catalog_identities(statement: &TypedStatement, output: &mut BTreeSet<String>) {
-    collect_cardinality_catalog_identities(&statement.cardinality, output);
-    match &statement.kind {
-        TypedStatementKind::Select(select) => {
-            for cte in &select.ctes {
-                collect_statement_catalog_identities(&cte.statement, output);
-            }
-            collect_distinct_catalog_identities(&select.distinct, output);
-            collect_projections_catalog_identities(&select.projections, output);
-            for relation in &select.from {
-                collect_relation_catalog_identities(relation, output);
-            }
-            collect_expression_option_catalog_identities(select.predicate.as_ref(), output);
-            collect_expressions_catalog_identities(&select.group_by, output);
-            collect_expression_option_catalog_identities(select.having.as_ref(), output);
-            for window in &select.windows {
-                collect_window_spec_catalog_identities(&window.specification, output);
-            }
-            collect_ordering_catalog_identities(&select.order_by, output);
-        }
-        TypedStatementKind::Insert(insert) => {
-            output.insert(insert.target.as_str().to_string());
-            output.extend(insert.columns.iter().map(|id| id.as_str().to_string()));
-            for cte in &insert.ctes {
-                collect_statement_catalog_identities(&cte.statement, output);
-            }
-            match &insert.source {
-                crate::TypedInsertSource::Values(values) => {
-                    for row in values.rows() {
-                        collect_expressions_catalog_identities(row, output);
-                    }
-                }
-                crate::TypedInsertSource::Select(statement) => {
-                    collect_statement_catalog_identities(statement, output);
-                }
-                crate::TypedInsertSource::DefaultValues => {}
-            }
-            if let Some(conflict) = &insert.conflict {
-                collect_conflict_catalog_identities(conflict, output);
-            }
-            collect_projections_catalog_identities(&insert.returning, output);
-        }
-        TypedStatementKind::Update(update) => {
-            output.insert(update.target.as_str().to_string());
-            for cte in &update.ctes {
-                collect_statement_catalog_identities(&cte.statement, output);
-            }
-            collect_assignments_catalog_identities(&update.assignments, output);
-            for relation in &update.from {
-                collect_relation_catalog_identities(relation, output);
-            }
-            collect_expression_option_catalog_identities(update.predicate.as_ref(), output);
-            collect_projections_catalog_identities(&update.returning, output);
-        }
-        TypedStatementKind::Delete(delete) => {
-            output.insert(delete.target.as_str().to_string());
-            for cte in &delete.ctes {
-                collect_statement_catalog_identities(&cte.statement, output);
-            }
-            for relation in &delete.using_relations {
-                collect_relation_catalog_identities(relation, output);
-            }
-            collect_expression_option_catalog_identities(delete.predicate.as_ref(), output);
-            collect_projections_catalog_identities(&delete.returning, output);
-        }
-    }
-}
-
-fn collect_relation_catalog_identities(
-    relation: &crate::TypedRelation,
-    output: &mut BTreeSet<String>,
-) {
-    collect_cardinality_catalog_identities(&relation.cardinality, output);
-    match &relation.kind {
-        crate::TypedRelationKind::Table { table_id } => {
-            output.insert(table_id.as_str().to_string());
-        }
-        crate::TypedRelationKind::Cte { .. } => {}
-        crate::TypedRelationKind::Subquery(statement) => {
-            collect_statement_catalog_identities(statement, output);
-        }
-        crate::TypedRelationKind::Function {
-            callable_id,
-            arguments,
-        } => {
-            output.insert(callable_id.as_str().to_string());
-            collect_expressions_catalog_identities(arguments, output);
-        }
-        crate::TypedRelationKind::Join {
-            left,
-            right,
-            predicate,
-            ..
-        } => {
-            collect_relation_catalog_identities(left, output);
-            collect_relation_catalog_identities(right, output);
-            collect_expression_option_catalog_identities(predicate.as_deref(), output);
-        }
-        crate::TypedRelationKind::Values { rows } => {
-            for row in rows.rows() {
-                collect_expressions_catalog_identities(row, output);
-            }
-        }
-        crate::TypedRelationKind::SetOperation { left, right, .. } => {
-            collect_statement_catalog_identities(left, output);
-            collect_statement_catalog_identities(right, output);
-        }
-    }
-}
-
-fn collect_expression_catalog_identities(
-    expression: &crate::TypedExpression,
-    output: &mut BTreeSet<String>,
-) {
-    output.insert(expression.type_id.as_str().to_string());
-    collect_nullability_catalog_identities(&expression.nullability, output);
-    match &expression.kind {
-        crate::TypedExpressionKind::Literal(_) | crate::TypedExpressionKind::Parameter(_) => {}
-        crate::TypedExpressionKind::Column { column_id, .. } => {
-            output.insert(column_id.as_str().to_string());
-        }
-        crate::TypedExpressionKind::Call(call) => {
-            output.insert(call.callable_id.as_str().to_string());
-            for argument in &call.arguments {
-                collect_expression_catalog_identities(&argument.expression, output);
-                if let Some(coercion) = &argument.coercion {
-                    collect_coercion_catalog_identities(coercion, output);
-                }
-            }
-            collect_ordering_catalog_identities(&call.order_by, output);
-            collect_expression_option_catalog_identities(call.filter.as_deref(), output);
-            collect_ordering_catalog_identities(&call.within_group, output);
-            if let Some(window) = &call.over {
-                collect_window_reference_catalog_identities(window, output);
-            }
-        }
-        crate::TypedExpressionKind::Operator {
-            operator_id,
-            operands,
-        } => {
-            output.insert(operator_id.as_str().to_string());
-            for operand in operands {
-                collect_expression_catalog_identities(&operand.expression, output);
-                if let Some(coercion) = &operand.coercion {
-                    collect_coercion_catalog_identities(coercion, output);
-                }
-            }
-        }
-        crate::TypedExpressionKind::Cast {
-            expression,
-            coercion,
-            ..
-        } => {
-            collect_expression_catalog_identities(expression, output);
-            collect_coercion_catalog_identities(coercion, output);
-        }
-        crate::TypedExpressionKind::Collate {
-            collation_id,
-            expression,
-        } => {
-            output.insert(collation_id.as_str().to_string());
-            collect_expression_catalog_identities(expression, output);
-        }
-        crate::TypedExpressionKind::Case {
-            operand,
-            branches,
-            else_expression,
-            result_coercion,
-        } => {
-            collect_expression_option_catalog_identities(operand.as_deref(), output);
-            for branch in branches {
-                collect_expression_catalog_identities(&branch.when, output);
-                collect_expression_catalog_identities(&branch.then, output);
-            }
-            collect_expression_option_catalog_identities(else_expression.as_deref(), output);
-            collect_coercion_evidence_catalog_identities(result_coercion, output);
-        }
-        crate::TypedExpressionKind::ScalarSubquery(statement) => {
-            collect_statement_catalog_identities(statement, output);
-        }
-        crate::TypedExpressionKind::Row(values) => {
-            collect_expressions_catalog_identities(values, output);
-        }
-        crate::TypedExpressionKind::Array { elements, coercion } => {
-            collect_expressions_catalog_identities(elements, output);
-            collect_coercion_evidence_catalog_identities(coercion, output);
-        }
-        crate::TypedExpressionKind::CteColumn { .. } => {}
-    }
-}
-
-fn collect_coercion_catalog_identities(
-    coercion: &crate::TypedCoercion,
-    output: &mut BTreeSet<String>,
-) {
-    output.insert(coercion.source_type.as_str().to_string());
-    output.insert(coercion.target_type.as_str().to_string());
-    collect_coercion_evidence_catalog_identities(&coercion.evidence, output);
-}
-
-fn collect_coercion_evidence_catalog_identities(
-    evidence: &crate::CoercionEvidence,
-    output: &mut BTreeSet<String>,
-) {
-    match evidence {
-        crate::CoercionEvidence::Exact => {}
-        crate::CoercionEvidence::CatalogCast { .. } => {}
-        crate::CoercionEvidence::DomainBase { domain, base } => {
-            output.insert(domain.as_str().to_string());
-            output.insert(base.as_str().to_string());
-        }
-        crate::CoercionEvidence::UnknownLiteral { resolved } => {
-            output.insert(resolved.as_str().to_string());
-        }
-        crate::CoercionEvidence::CommonType { resolved, inputs } => {
-            output.insert(resolved.as_str().to_string());
-            output.extend(inputs.iter().map(|id| id.as_str().to_string()));
-        }
-        crate::CoercionEvidence::Polymorphic {
-            callable_id,
-            bound_types,
-        } => {
-            output.insert(callable_id.as_str().to_string());
-            output.extend(bound_types.iter().map(|id| id.as_str().to_string()));
-        }
-    }
-}
-
-fn collect_conflict_catalog_identities(
-    conflict: &crate::TypedConflictClause,
-    output: &mut BTreeSet<String>,
-) {
-    match &conflict.target {
-        crate::ConflictTarget::Constraint(constraint) => {
-            output.insert(constraint.as_str().to_string());
-        }
-        crate::ConflictTarget::Inference {
-            expressions,
-            predicate,
-        } => {
-            collect_expressions_catalog_identities(expressions, output);
-            collect_expression_option_catalog_identities(predicate.as_deref(), output);
-        }
-        crate::ConflictTarget::Unspecified => {}
-    }
-    if let crate::TypedConflictAction::Update {
-        assignments,
-        predicate,
-    } = &conflict.action
-    {
-        collect_assignments_catalog_identities(assignments, output);
-        collect_expression_option_catalog_identities(predicate.as_deref(), output);
-    }
-}
-
-fn collect_assignments_catalog_identities(
-    assignments: &[crate::TypedAssignment],
-    output: &mut BTreeSet<String>,
-) {
-    for assignment in assignments {
-        output.insert(assignment.target.as_str().to_string());
-        collect_expression_catalog_identities(&assignment.value, output);
-        if let Some(coercion) = &assignment.coercion {
-            collect_coercion_catalog_identities(coercion, output);
-        }
-    }
-}
-
-fn collect_cardinality_catalog_identities(
-    cardinality: &Cardinality,
-    output: &mut BTreeSet<String>,
-) {
-    for evidence in cardinality.proof() {
-        match evidence {
-            crate::CardinalityEvidence::UniquePredicate {
-                constraint_id,
-                columns,
-            } => {
-                output.insert(constraint_id.as_str().to_string());
-                output.extend(columns.iter().map(|id| id.as_str().to_string()));
-            }
-            crate::CardinalityEvidence::RegisteredFunction { callable_id } => {
-                output.insert(callable_id.as_str().to_string());
-            }
-            _ => {}
-        }
-    }
-}
-
-fn collect_nullability_catalog_identities(
-    nullability: &crate::Nullability,
-    output: &mut BTreeSet<String>,
-) {
-    for evidence in nullability.evidence() {
-        match evidence {
-            crate::NullabilityEvidence::BaseColumnNotNull { column_id }
-            | crate::NullabilityEvidence::BaseColumnNullable { column_id } => {
-                output.insert(column_id.as_str().to_string());
-            }
-            crate::NullabilityEvidence::CallableContract { callable_id, .. } => {
-                output.insert(callable_id.as_str().to_string());
-            }
-            _ => {}
-        }
-    }
-}
-
-fn collect_distinct_catalog_identities(
-    distinct: &crate::SelectDistinct<crate::TypedExpression>,
-    output: &mut BTreeSet<String>,
-) {
-    if let crate::SelectDistinct::On(expressions) = distinct {
-        collect_expressions_catalog_identities(expressions, output);
-    }
-}
-
-fn collect_projections_catalog_identities(
-    projections: &[crate::TypedProjection],
-    output: &mut BTreeSet<String>,
-) {
-    for projection in projections {
-        collect_expression_catalog_identities(&projection.expression, output);
-    }
-}
-
-fn collect_expressions_catalog_identities(
-    expressions: &[crate::TypedExpression],
-    output: &mut BTreeSet<String>,
-) {
-    for expression in expressions {
-        collect_expression_catalog_identities(expression, output);
-    }
-}
-
-fn collect_expression_option_catalog_identities(
-    expression: Option<&crate::TypedExpression>,
-    output: &mut BTreeSet<String>,
-) {
-    if let Some(expression) = expression {
-        collect_expression_catalog_identities(expression, output);
-    }
-}
-
-fn collect_ordering_catalog_identities(
-    ordering: &[crate::TypedOrderBy],
-    output: &mut BTreeSet<String>,
-) {
-    for order in ordering {
-        collect_expression_catalog_identities(&order.expression, output);
-    }
-}
-
-fn collect_window_reference_catalog_identities(
-    window: &crate::WindowReference<crate::TypedExpression>,
-    output: &mut BTreeSet<String>,
-) {
-    if let crate::WindowReference::Inline(specification) = window {
-        collect_window_spec_catalog_identities(specification, output);
-    }
-}
-
-fn collect_window_spec_catalog_identities(
-    specification: &crate::WindowSpec<crate::TypedExpression>,
-    output: &mut BTreeSet<String>,
-) {
-    collect_expressions_catalog_identities(&specification.partition_by, output);
-    collect_ordering_catalog_identities(&specification.order_by, output);
-    if let Some(frame) = &specification.frame {
-        collect_frame_bound_catalog_identities(&frame.start, output);
-        if let Some(end) = &frame.end {
-            collect_frame_bound_catalog_identities(end, output);
-        }
-    }
-}
-
-fn collect_frame_bound_catalog_identities(
-    bound: &crate::FrameBound<crate::TypedExpression>,
-    output: &mut BTreeSet<String>,
-) {
-    match bound {
-        crate::FrameBound::Preceding(expression) | crate::FrameBound::Following(expression) => {
-            collect_expression_catalog_identities(expression, output);
-        }
-        crate::FrameBound::UnboundedPreceding
-        | crate::FrameBound::CurrentRow
-        | crate::FrameBound::UnboundedFollowing => {}
-    }
 }

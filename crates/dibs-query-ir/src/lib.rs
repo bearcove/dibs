@@ -9,7 +9,6 @@ mod id;
 mod identity;
 mod manifest;
 mod reference;
-mod render;
 mod source_map;
 mod typed;
 
@@ -20,7 +19,6 @@ pub use id::*;
 pub use identity::*;
 pub use manifest::*;
 pub use reference::*;
-pub use render::*;
 pub use source_map::*;
 pub use typed::*;
 
