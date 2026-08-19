@@ -1,3 +1,0 @@
-query First() -> one { select 1 }
-query Middle(middle: text) -> one { select :middle }
-query Last() -> one { select 3 }
