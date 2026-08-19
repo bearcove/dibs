@@ -47,6 +47,9 @@ impl args::ConfigFormat for StyxFormat {
 styx_embed::embed_outdir_file!("dibs-config.styx");
 styx_embed::embed_outdir_file!("dibs-queries.styx");
 
+const AGENT_GUIDE: &str = include_str!("agent_guide.md");
+const AGENT_SKILL: &str = include_str!("agent_skill.md");
+
 /// Postgres toolkit for Rust, powered by facet reflection.
 #[derive(Facet, Debug)]
 struct Args {
@@ -93,6 +96,27 @@ impl Config {
     }
 }
 
+/// Agent guide arguments
+#[derive(Facet, Debug)]
+struct AgentArgs {
+    #[facet(args::subcommand)]
+    command: Option<AgentCommand>,
+}
+
+#[derive(Facet, Debug)]
+#[repr(u8)]
+enum AgentCommand {
+    /// Install or refresh the bundled dibs agent skill
+    Install(AgentInstallArgs),
+}
+
+#[derive(Facet, Debug)]
+struct AgentInstallArgs {
+    /// Directory to write SKILL.md into (defaults to .agents/skills/dibs)
+    #[facet(args::named, default)]
+    dir: Option<String>,
+}
+
 /// Available commands
 #[derive(Facet, Debug)]
 #[repr(u8)]
@@ -127,6 +151,8 @@ enum Commands {
     },
     /// Run as LSP extension (invoked by Styx LSP)
     LspExtension,
+    /// Print the bundled guide for agents working on dibs projects
+    Agent(AgentArgs),
 }
 
 fn main() {
@@ -223,6 +249,7 @@ fn run(args: Args) {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
             rt.block_on(lsp_extension::run());
         }
+        Some(Commands::Agent(args)) => run_agent(args),
         None => {
             // No subcommand: launch unified TUI (the default human interface)
             if stdout().is_terminal() {
@@ -240,6 +267,29 @@ fn run(args: Args) {
             }
         }
     }
+}
+
+fn run_agent(args: AgentArgs) {
+    if let Some(AgentCommand::Install(args)) = args.command {
+        install_agent_skill(args);
+        return;
+    }
+
+    print!("{AGENT_GUIDE}");
+    if !AGENT_GUIDE.ends_with('\n') {
+        println!();
+    }
+}
+
+fn install_agent_skill(args: AgentInstallArgs) {
+    let dir = args
+        .dir
+        .unwrap_or_else(|| ".agents/skills/dibs".to_string());
+    fs::create_dir_all(&dir).expect("failed to create skill directory");
+    let skill_path = std::path::Path::new(&dir).join("SKILL.md");
+    fs::write(&skill_path, AGENT_SKILL).expect("failed to write SKILL.md");
+    println!("Installed dibs agent skill: {}", skill_path.display());
+    println!("The installed skill delegates to `dibs agent` for current guidance.");
 }
 
 /// Parse PgType from SQL type string
