@@ -79,3 +79,11 @@ testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[patch."https://github.com/bearcove/phon-next"]
+phon = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-codegen = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-engine = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-ir = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-jit = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-schema = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
