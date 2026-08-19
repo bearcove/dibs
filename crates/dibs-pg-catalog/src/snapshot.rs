@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use dibs_db_schema::{
@@ -328,12 +328,6 @@ impl CatalogSnapshot {
         self.callables.iter().find(|callable| &callable.id == id)
     }
 
-    /// Resolves a cast by stable logical identity.
-    #[must_use]
-    pub fn cast_by_id(&self, id: &CastId) -> Option<&CatalogCast> {
-        self.casts.iter().find(|cast| &cast.id == id)
-    }
-
     /// Finds callable candidates by qualified or unqualified name and exact arity.
     pub fn callable_candidates<'a>(
         &'a self,
@@ -359,56 +353,19 @@ impl CatalogSnapshot {
         })
     }
 
-    /// Finds the shortest cast path permitted in the requested PostgreSQL coercion context.
-    ///
-    /// Equal source and target identities produce an empty path. Competing shortest paths are
-    /// resolved by the lexicographic sequence of stable cast identities.
+    /// Finds a cast permitted in the requested PostgreSQL coercion context.
     #[must_use]
-    pub fn cast_path<'a>(
-        &'a self,
+    pub fn cast_path(
+        &self,
         source: &TypeId,
         target: &TypeId,
         context: CastContext,
-    ) -> Option<Vec<&'a CatalogCast>> {
-        if source == target {
-            return Some(Vec::new());
-        }
-
-        let mut eligible_casts: Vec<_> = self
-            .casts
-            .iter()
-            .filter(|cast| cast_context_allows(cast.context, context))
-            .collect();
-        eligible_casts.sort_by(|left, right| left.id.cmp(&right.id));
-
-        let mut frontier = VecDeque::from([source.clone()]);
-        let mut visited = BTreeSet::from([source.clone()]);
-        let mut predecessor = BTreeMap::<TypeId, &CatalogCast>::new();
-        while let Some(current) = frontier.pop_front() {
-            for cast in eligible_casts
-                .iter()
-                .copied()
-                .filter(|cast| cast.source == current)
-            {
-                if !visited.insert(cast.target.clone()) {
-                    continue;
-                }
-                predecessor.insert(cast.target.clone(), cast);
-                if &cast.target == target {
-                    let mut path = Vec::new();
-                    let mut cursor = target;
-                    while cursor != source {
-                        let edge = predecessor.get(cursor)?;
-                        path.push(*edge);
-                        cursor = &edge.source;
-                    }
-                    path.reverse();
-                    return Some(path);
-                }
-                frontier.push_back(cast.target.clone());
-            }
-        }
-        None
+    ) -> Option<&CatalogCast> {
+        self.casts.iter().find(|cast| {
+            &cast.source == source
+                && &cast.target == target
+                && cast_context_allows(cast.context, context)
+        })
     }
 
     /// Resolves an application table by exact qualified name.

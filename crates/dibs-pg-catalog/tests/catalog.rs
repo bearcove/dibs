@@ -974,120 +974,36 @@ fn curated_callable_and_operator_semantics_are_explicit() {
 }
 
 #[test]
-fn cast_path_is_shortest_deterministic_and_context_aware() {
+fn cast_path_respects_postgres_context_strength() {
     let catalog = CatalogSnapshot::postgres_18_fixture();
-    let int2 = catalog.resolve_type("pg_catalog.smallint").unwrap();
     let int4 = catalog.resolve_type("pg_catalog.integer").unwrap();
     let int8 = catalog.resolve_type("pg_catalog.bigint").unwrap();
     let numeric = catalog.resolve_type("pg_catalog.numeric").unwrap();
 
-    let empty = catalog
-        .cast_path(&int4.id, &int4.id, CastContext::Implicit)
-        .unwrap();
-    assert!(empty.is_empty());
-
-    let direct = catalog
-        .cast_path(&int4.id, &int8.id, CastContext::Implicit)
-        .unwrap();
-    assert_eq!(direct.len(), 1);
-    assert_eq!(direct[0].source, int4.id);
-    assert_eq!(direct[0].target, int8.id);
-
-    let transitive = catalog
-        .cast_path(&int4.id, &numeric.id, CastContext::Implicit)
-        .unwrap();
-    assert_eq!(transitive.len(), 2);
-    assert_eq!(transitive[0].source, int4.id);
-    assert_eq!(transitive[0].target, int8.id);
-    assert_eq!(transitive[1].source, int8.id);
-    assert_eq!(transitive[1].target, numeric.id);
-
-    let longer = catalog
-        .cast_path(&int2.id, &numeric.id, CastContext::Implicit)
-        .unwrap();
-    assert_eq!(longer.len(), 3);
     assert!(
-        longer
-            .windows(2)
-            .all(|edges| edges[0].target == edges[1].source)
+        catalog
+            .cast_path(&int4.id, &int8.id, CastContext::Implicit)
+            .is_some()
     );
-
+    assert!(
+        catalog
+            .cast_path(&int4.id, &int8.id, CastContext::Assignment)
+            .is_some()
+    );
     assert!(
         catalog
             .cast_path(&int8.id, &int4.id, CastContext::Implicit)
             .is_none()
     );
-    let assignment = catalog
-        .cast_path(&int8.id, &int4.id, CastContext::Assignment)
-        .unwrap();
-    assert_eq!(assignment.len(), 1);
-    assert_eq!(assignment[0].context, CastContext::Assignment);
-}
-
-#[test]
-fn cast_path_uses_lexicographic_cast_id_tie_break() {
-    let mut catalog = CatalogSnapshot::postgres_18_fixture();
-    let int2 = catalog
-        .resolve_type("pg_catalog.smallint")
-        .unwrap()
-        .id
-        .clone();
-    let int4 = catalog
-        .resolve_type("pg_catalog.integer")
-        .unwrap()
-        .id
-        .clone();
-    let int8 = catalog
-        .resolve_type("pg_catalog.bigint")
-        .unwrap()
-        .id
-        .clone();
-    let numeric = catalog
-        .resolve_type("pg_catalog.numeric")
-        .unwrap()
-        .id
-        .clone();
-    let method = catalog.casts[0].method;
-    catalog.casts.push(dibs_pg_catalog::CatalogCast {
-        id: dibs_pg_catalog::CastId::new("pg18:cast:a-first-route"),
-        source: int2.clone(),
-        target: int8.clone(),
-        context: CastContext::Implicit,
-        method,
-        builtin: false,
-    });
-    catalog.casts.push(dibs_pg_catalog::CatalogCast {
-        id: dibs_pg_catalog::CastId::new("pg18:cast:z-second-route"),
-        source: int4.clone(),
-        target: numeric.clone(),
-        context: CastContext::Implicit,
-        method,
-        builtin: false,
-    });
-
-    let path = catalog
-        .cast_path(&int2, &numeric, CastContext::Implicit)
-        .unwrap();
-    assert_eq!(path.len(), 2);
-    assert_eq!(path[0].id.as_str(), "pg18:cast:a-first-route");
-    assert_eq!(path[0].target, int8);
-}
-
-#[test]
-fn cast_by_id_resolves_the_exact_catalog_fact() {
-    let catalog = CatalogSnapshot::postgres_18_fixture();
-    let int4 = catalog.resolve_type("pg_catalog.integer").unwrap();
-    let int8 = catalog.resolve_type("pg_catalog.bigint").unwrap();
-    let path = catalog
-        .cast_path(&int4.id, &int8.id, CastContext::Implicit)
-        .unwrap();
-    let cast = path[0];
-
-    assert_eq!(catalog.cast_by_id(&cast.id), Some(cast));
     assert!(
         catalog
-            .cast_by_id(&dibs_pg_catalog::CastId::new("pg18:cast:missing"))
-            .is_none()
+            .cast_path(&int8.id, &int4.id, CastContext::Assignment)
+            .is_some()
+    );
+    assert!(
+        catalog
+            .cast_path(&int8.id, &numeric.id, CastContext::Implicit)
+            .is_some()
     );
 }
 
