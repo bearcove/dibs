@@ -99,7 +99,7 @@ fn first_upsert_many(file: &QueryFile) -> &dibs_qgen::UpsertMany {
 
 /// Set up a PostgreSQL container and return a connected client.
 async fn setup_postgres() -> (Container, Client) {
-    let container = Container::run(containers::postgres("18-alpine", "test"))
+    let container = Container::run(containers::postgres("16-alpine", "test"))
         .expect("failed to start postgres container");
 
     // Wait for postgres to be ready - it prints this message twice, so we wait for port instead
