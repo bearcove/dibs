@@ -157,21 +157,6 @@ fn strict_mode_rejects_recovery_diagnostics_before_lowering() {
 }
 
 #[test]
-fn strict_parse_failure_preserves_parser_byte_position() {
-    let parser = DibsParser::new();
-    let source = "query Broken() -> one { select ; 1 }";
-    let expected = 33;
-    let diagnostics = parser.parse_strict(SourceId::test(), source).unwrap_err();
-
-    assert_eq!(diagnostics.len(), 1);
-    assert_eq!(
-        diagnostics[0].primary,
-        dibs_query_syntax::Span::empty(expected)
-    );
-    assert!(diagnostics[0].message.contains(&format!("byte {expected}")));
-}
-
-#[test]
 fn recovering_session_uses_dollar_quote_scanner() {
     let parser = DibsParser::new();
     let mut session = parser.session(SourceId::test());

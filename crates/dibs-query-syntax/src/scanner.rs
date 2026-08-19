@@ -43,11 +43,11 @@ fn is_valid_tag(tag: &str) -> bool {
 }
 
 fn is_identifier_start(ch: char) -> bool {
-    ch == '_' || ch.is_ascii_alphabetic() || !ch.is_ascii()
+    ch == '_' || ch.is_ascii_alphabetic()
 }
 
 fn is_identifier_continue(ch: char) -> bool {
-    ch == '_' || ch == '$' || ch.is_ascii_alphanumeric() || !ch.is_ascii()
+    ch == '_' || ch.is_ascii_alphanumeric()
 }
 
 #[cfg(test)]
@@ -58,7 +58,6 @@ mod tests {
     fn scans_empty_and_tagged_dollar_quotes() {
         assert_eq!(scan_dollar_quote("$$:x$$", 0), Some(6));
         assert_eq!(scan_dollar_quote("$tag$:x$tag$", 0), Some(12));
-        assert_eq!(scan_dollar_quote("$é$:x$é$", 0), Some(10));
         assert_eq!(scan_dollar_quote("$bad-tag$x$bad-tag$", 0), None);
     }
 }

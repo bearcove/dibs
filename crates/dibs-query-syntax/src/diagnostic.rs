@@ -62,22 +62,6 @@ impl Diagnostic {
         }
     }
 
-    pub(crate) fn parse_error(
-        source_id: SourceId,
-        source_len: usize,
-        error: &snark::lower::weavy::WeavyParseError,
-    ) -> Self {
-        let offset = match error {
-            snark::lower::weavy::WeavyParseError::NoToken { byte_position, .. }
-            | snark::lower::weavy::WeavyParseError::NoAction { byte_position, .. }
-            | snark::lower::weavy::WeavyParseError::TrailingInput { byte_position } => {
-                *byte_position
-            }
-            _ => source_len,
-        };
-        Self::parse_failure(source_id, offset, error.to_string())
-    }
-
     pub(crate) fn recovered(source_id: SourceId, diagnostic: &ParseDiagnostic) -> Self {
         let code = match diagnostic.code {
             ParseDiagnosticCode::UnexpectedToken => DiagnosticCode::UnexpectedToken,
