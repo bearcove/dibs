@@ -159,15 +159,6 @@ pub(crate) fn builtin_codec(canonical_name: &str) -> Result<CodecBinding, Catalo
     Ok(codec)
 }
 
-pub(crate) fn pseudo_codec(canonical_name: &str) -> CodecBinding {
-    CodecBinding::new(
-        format!("pg18:pg-codec:non-bindable-pseudo:{canonical_name}"),
-        format!("wire:postgres:non-bindable-pseudo:{canonical_name}"),
-        format!("PgPseudo<{canonical_name}>"),
-        format!("PgPseudo<{canonical_name}>"),
-    )
-}
-
 pub(crate) fn enum_codec(qualified_name: &str) -> CodecBinding {
     CodecBinding::new(
         "pg18:pg-codec:enum-text",

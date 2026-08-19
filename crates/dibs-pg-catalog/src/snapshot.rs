@@ -7,12 +7,11 @@ use dibs_db_schema::{
 };
 
 use crate::{
-    AggregateEmptyBehavior, ApiLanguage, ApiTypeId, CallableCardinality, CallableId, CallableKind,
-    CastId, CatalogCallable, CatalogError, CatalogType, CollationId, ColumnId, ConstraintId,
-    IndexId, OperatorId, PgTypeCategory, PgTypeKind, PolymorphicType, ScalarCallableFacts,
-    ScalarSignature, TableCallableFacts, TableId, TableOutputColumn, TableSignature, TypeId,
-    TypeRegistration, TypeRegistrationKind, Volatility, callable::CallableFacts,
+    ApiLanguage, ApiTypeId, CallableId, CastId, CatalogCallable, CatalogError, CatalogType,
+    CollationId, ColumnId, ConstraintId, IndexId, OperatorId, PgTypeKind, ScalarSignature, TableId,
+    TableOutputColumn, TableSignature, TypeId, TypeRegistration, TypeRegistrationKind,
 };
+
 const POSTGRES_MAJOR: u16 = 18;
 
 /// Deterministic fingerprint of Dibs schema truth.
@@ -195,10 +194,6 @@ pub struct CatalogOperator {
     pub right: Option<TypeId>,
     /// Result type.
     pub result: TypeId,
-    /// Whether SQL NULL in either operand forces SQL NULL output.
-    pub strict: bool,
-    /// Volatility of the implementing PostgreSQL function.
-    pub volatility: crate::Volatility,
     /// Whether this belongs to the PostgreSQL fixture.
     pub builtin: bool,
 }
@@ -328,46 +323,6 @@ impl CatalogSnapshot {
         self.callables.iter().find(|callable| &callable.id == id)
     }
 
-    /// Finds callable candidates by qualified or unqualified name and exact arity.
-    pub fn callable_candidates<'a>(
-        &'a self,
-        name: &'a str,
-        arity: usize,
-    ) -> impl Iterator<Item = &'a CatalogCallable> + 'a {
-        self.callables.iter().filter(move |callable| {
-            callable.arguments.len() == arity
-                && catalog_name_matches(&callable.qualified_name, name)
-        })
-    }
-
-    /// Finds operator candidates by qualified or unqualified name and exact arity.
-    pub fn operator_candidates<'a>(
-        &'a self,
-        name: &'a str,
-        arity: usize,
-    ) -> impl Iterator<Item = &'a CatalogOperator> + 'a {
-        self.operators.iter().filter(move |operator| {
-            let candidate_arity =
-                usize::from(operator.left.is_some()) + usize::from(operator.right.is_some());
-            candidate_arity == arity && catalog_name_matches(&operator.qualified_name, name)
-        })
-    }
-
-    /// Finds a cast permitted in the requested PostgreSQL coercion context.
-    #[must_use]
-    pub fn cast_path(
-        &self,
-        source: &TypeId,
-        target: &TypeId,
-        context: CastContext,
-    ) -> Option<&CatalogCast> {
-        self.casts.iter().find(|cast| {
-            &cast.source == source
-                && &cast.target == target
-                && cast_context_allows(cast.context, context)
-        })
-    }
-
     /// Resolves an application table by exact qualified name.
     pub fn resolve_table(&self, qualified_name: &str) -> Result<&CatalogTable, CatalogError> {
         self.tables
@@ -391,12 +346,9 @@ impl CatalogSnapshot {
         api_type: impl Into<ApiTypeId>,
     ) -> Result<&CatalogType, CatalogError> {
         let api_type = api_type.into();
-        let mut matches = self.types.iter().filter(|ty| {
-            ty.bindable
-                && match language {
-                    ApiLanguage::Rust => ty.rust_api_type == api_type,
-                    ApiLanguage::TypeScript => ty.typescript_api_type == api_type,
-                }
+        let mut matches = self.types.iter().filter(|ty| match language {
+            ApiLanguage::Rust => ty.rust_api_type == api_type,
+            ApiLanguage::TypeScript => ty.typescript_api_type == api_type,
         });
         let first = matches
             .next()
@@ -453,7 +405,6 @@ impl CatalogSnapshot {
                 constraints,
             } => {
                 let base = self.resolve_type(&base_type)?.clone();
-                self.validate_bindable_type(&base.id, "domain base")?;
                 let mut constraints = constraints;
                 constraints.sort_by(|left, right| left.name.cmp(&right.name));
                 for duplicate in constraints.windows(2) {
@@ -497,7 +448,6 @@ impl CatalogSnapshot {
             }
             TypeRegistrationKind::Array { element_type } => {
                 let element = self.resolve_type(&element_type)?.clone();
-                self.validate_bindable_type(&element.id, "array element")?;
                 CatalogType::registered_array(
                     self.postgres_major,
                     &registration.qualified_name,
@@ -517,21 +467,14 @@ impl CatalogSnapshot {
     pub fn register_scalar(
         &mut self,
         signature: ScalarSignature,
-        facts: ScalarCallableFacts,
     ) -> Result<CallableId, CatalogError> {
         validate_qualified_name(&signature.qualified_name)?;
         self.validate_type_ids(signature.arguments.iter())?;
-        self.validate_bindable_type(&signature.result, "scalar result")?;
+        self.validate_type_ids(std::iter::once(&signature.result))?;
         let arguments = render_identity_arguments(self, &signature.arguments)?;
         let result = render_type_id(self, &signature.result)?;
-        let callable = CatalogCallable::scalar(
-            self.postgres_major,
-            signature,
-            arguments,
-            result,
-            facts,
-            false,
-        );
+        let callable =
+            CatalogCallable::scalar(self.postgres_major, signature, arguments, result, false);
         self.insert_callable(callable)
     }
 
@@ -539,7 +482,6 @@ impl CatalogSnapshot {
     pub fn register_table(
         &mut self,
         signature: TableSignature,
-        facts: TableCallableFacts,
     ) -> Result<CallableId, CatalogError> {
         validate_qualified_name(&signature.qualified_name)?;
         if signature.columns.is_empty() {
@@ -563,16 +505,13 @@ impl CatalogSnapshot {
             }
         }
         self.validate_type_ids(signature.arguments.iter())?;
-        for column in &signature.columns {
-            self.validate_bindable_type(&column.type_id, "table output")?;
-        }
+        self.validate_type_ids(signature.columns.iter().map(|column| &column.type_id))?;
         let arguments = render_identity_arguments(self, &signature.arguments)?;
         let callable = CatalogCallable::table(
             self.postgres_major,
             signature,
             arguments,
             "record".to_string(),
-            facts,
             false,
         );
         self.insert_callable(callable)
@@ -663,47 +602,29 @@ impl CatalogSnapshot {
     }
 
     fn install_builtin_types(&mut self) -> Result<(), CatalogError> {
-        const BASE_TYPES: &[(&str, &str, PgTypeCategory, bool)] = &[
-            ("boolean", "bool", PgTypeCategory::Boolean, true),
-            ("smallint", "int2", PgTypeCategory::Numeric, false),
-            ("integer", "int4", PgTypeCategory::Numeric, false),
-            ("bigint", "int8", PgTypeCategory::Numeric, false),
-            ("real", "float4", PgTypeCategory::Numeric, false),
-            ("double precision", "float8", PgTypeCategory::Numeric, true),
-            ("numeric", "numeric", PgTypeCategory::Numeric, false),
-            ("text", "text", PgTypeCategory::String, true),
-            ("bytea", "bytea", PgTypeCategory::UserDefined, false),
-            ("uuid", "uuid", PgTypeCategory::UserDefined, false),
-            ("date", "date", PgTypeCategory::DateTime, false),
-            (
-                "time without time zone",
-                "time",
-                PgTypeCategory::DateTime,
-                false,
-            ),
-            (
-                "timestamp without time zone",
-                "timestamp",
-                PgTypeCategory::DateTime,
-                false,
-            ),
-            (
-                "timestamp with time zone",
-                "timestamptz",
-                PgTypeCategory::DateTime,
-                true,
-            ),
-            ("jsonb", "jsonb", PgTypeCategory::UserDefined, false),
+        const BASE_TYPES: &[(&str, &str)] = &[
+            ("boolean", "bool"),
+            ("smallint", "int2"),
+            ("integer", "int4"),
+            ("bigint", "int8"),
+            ("real", "float4"),
+            ("double precision", "float8"),
+            ("numeric", "numeric"),
+            ("text", "text"),
+            ("bytea", "bytea"),
+            ("uuid", "uuid"),
+            ("date", "date"),
+            ("time without time zone", "time"),
+            ("timestamp without time zone", "timestamp"),
+            ("timestamp with time zone", "timestamptz"),
+            ("jsonb", "jsonb"),
         ];
-        for (canonical, internal, category, preferred) in BASE_TYPES {
+        for (canonical, internal) in BASE_TYPES {
             self.types.push(CatalogType::builtin(
                 self.postgres_major,
                 &format!("pg_catalog.{canonical}"),
                 &format!("pg_catalog.{internal}"),
                 PgTypeKind::Base,
-                None,
-                *category,
-                *preferred,
                 None,
             )?);
         }
@@ -745,57 +666,7 @@ impl CatalogSnapshot {
                 &format!("pg_catalog.{internal}"),
                 PgTypeKind::Array,
                 Some(element),
-                crate::PgTypeCategory::Array,
-                false,
-                None,
             )?);
-        }
-        const PSEUDO_TYPES: &[(&str, PgTypeCategory, Option<PolymorphicType>)] = &[
-            ("unknown", PgTypeCategory::Unknown, None),
-            ("any", PgTypeCategory::Pseudo, Some(PolymorphicType::Any)),
-            (
-                "anyarray",
-                PgTypeCategory::Pseudo,
-                Some(PolymorphicType::AnyArray),
-            ),
-            (
-                "anyelement",
-                PgTypeCategory::Pseudo,
-                Some(PolymorphicType::AnyElement),
-            ),
-            (
-                "anynonarray",
-                PgTypeCategory::Pseudo,
-                Some(PolymorphicType::AnyNonArray),
-            ),
-            (
-                "anyenum",
-                PgTypeCategory::Pseudo,
-                Some(PolymorphicType::AnyEnum),
-            ),
-            (
-                "anycompatible",
-                PgTypeCategory::Pseudo,
-                Some(PolymorphicType::AnyCompatible),
-            ),
-            (
-                "anycompatiblearray",
-                PgTypeCategory::Pseudo,
-                Some(PolymorphicType::AnyCompatibleArray),
-            ),
-            (
-                "anycompatiblenonarray",
-                PgTypeCategory::Pseudo,
-                Some(PolymorphicType::AnyCompatibleNonArray),
-            ),
-        ];
-        for (name, category, polymorphic) in PSEUDO_TYPES {
-            self.types.push(CatalogType::builtin_pseudo(
-                self.postgres_major,
-                &format!("pg_catalog.{name}"),
-                *category,
-                *polymorphic,
-            ));
         }
         self.types
             .sort_by(|left, right| left.qualified_name.cmp(&right.qualified_name));
@@ -803,71 +674,10 @@ impl CatalogSnapshot {
     }
 
     fn install_builtin_callables(&mut self) -> Result<(), CatalogError> {
-        for type_name in [
-            "smallint",
-            "integer",
-            "bigint",
-            "real",
-            "double precision",
-            "numeric",
-        ] {
-            self.add_builtin_scalar("pg_catalog.abs", &[type_name], type_name)?;
-        }
+        self.add_builtin_scalar("pg_catalog.abs", &["bigint"], "bigint")?;
         self.add_builtin_scalar("pg_catalog.lower", &["text"], "text")?;
         self.add_builtin_scalar("pg_catalog.length", &["text"], "integer")?;
         self.add_builtin_scalar("pg_catalog.jsonb_array_length", &["jsonb"], "integer")?;
-        self.add_builtin_callable(
-            "pg_catalog.count",
-            &[],
-            "bigint",
-            CallableFacts {
-                kind: CallableKind::Aggregate,
-                volatility: Volatility::Immutable,
-                strict: false,
-                scalar_result_nullability: Some(Nullability::NotNull),
-                cardinality: CallableCardinality::ExactlyOne,
-                aggregate_empty: Some(AggregateEmptyBehavior::Identity),
-            },
-        )?;
-        self.add_builtin_callable(
-            "pg_catalog.count",
-            &["any"],
-            "bigint",
-            CallableFacts {
-                kind: CallableKind::Aggregate,
-                volatility: Volatility::Immutable,
-                strict: false,
-                scalar_result_nullability: Some(Nullability::NotNull),
-                cardinality: CallableCardinality::ExactlyOne,
-                aggregate_empty: Some(AggregateEmptyBehavior::Identity),
-            },
-        )?;
-        self.add_builtin_callable(
-            "pg_catalog.sum",
-            &["bigint"],
-            "numeric",
-            CallableFacts {
-                kind: CallableKind::Aggregate,
-                volatility: Volatility::Immutable,
-                strict: false,
-                scalar_result_nullability: Some(Nullability::Nullable),
-                cardinality: CallableCardinality::ExactlyOne,
-                aggregate_empty: Some(AggregateEmptyBehavior::Null),
-            },
-        )?;
-        self.add_builtin_callable(
-            "pg_catalog.row_number",
-            &[],
-            "bigint",
-            CallableFacts {
-                kind: CallableKind::Window,
-                volatility: Volatility::Immutable,
-                strict: false,
-                scalar_result_nullability: Some(Nullability::NotNull),
-                cardinality: CallableCardinality::OnePerInput,
-                aggregate_empty: None,
-            },
-        )?;
         self.add_builtin_table(
             "pg_catalog.generate_series",
             &["bigint", "bigint"],
@@ -904,44 +714,6 @@ impl CatalogSnapshot {
             signature,
             argument_names.join(", "),
             result_name.to_string(),
-            ScalarCallableFacts {
-                volatility: Volatility::Immutable,
-                strict: true,
-                result_nullability: Nullability::Nullable,
-            },
-            true,
-        ));
-        Ok(())
-    }
-
-    fn add_builtin_callable(
-        &mut self,
-        qualified_name: &str,
-        argument_names: &[&str],
-        result_name: &str,
-        facts: CallableFacts,
-    ) -> Result<(), CatalogError> {
-        let arguments = argument_names
-            .iter()
-            .map(|name| {
-                self.resolve_type(&format!("pg_catalog.{name}"))
-                    .map(|ty| ty.id.clone())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let result = self
-            .resolve_type(&format!("pg_catalog.{result_name}"))?
-            .id
-            .clone();
-        self.callables.push(CatalogCallable::scalar_with_facts(
-            self.postgres_major,
-            ScalarSignature {
-                qualified_name: qualified_name.to_string(),
-                arguments,
-                result,
-            },
-            render_identity_argument_names(argument_names),
-            result_name.to_string(),
-            facts,
             true,
         ));
         Ok(())
@@ -979,38 +751,14 @@ impl CatalogSnapshot {
             signature,
             argument_names.join(", "),
             postgres_result.to_string(),
-            TableCallableFacts {
-                volatility: Volatility::Immutable,
-                strict: true,
-                cardinality: CallableCardinality::SetOfUnknown,
-            },
             true,
         ));
         Ok(())
     }
 
     fn install_builtin_operators(&mut self) -> Result<(), CatalogError> {
-        const NUMERIC_PLUS: &[(&str, &str, &str)] = &[
-            ("smallint", "smallint", "smallint"),
-            ("smallint", "integer", "integer"),
-            ("smallint", "bigint", "bigint"),
-            ("integer", "smallint", "integer"),
-            ("integer", "integer", "integer"),
-            ("integer", "bigint", "bigint"),
-            ("bigint", "smallint", "bigint"),
-            ("bigint", "integer", "bigint"),
-            ("bigint", "bigint", "bigint"),
-            ("real", "real", "real"),
-            ("real", "double precision", "double precision"),
-            ("double precision", "real", "double precision"),
-            ("double precision", "double precision", "double precision"),
-            ("numeric", "numeric", "numeric"),
-        ];
-        for (left, right, result) in NUMERIC_PLUS {
-            self.add_operator("+", left, right, result)?;
-        }
         self.add_operator("=", "bigint", "bigint", "boolean")?;
-        self.add_operator("=", "text", "text", "boolean")?;
+        self.add_operator("+", "bigint", "bigint", "bigint")?;
         self.add_operator("||", "text", "text", "text")?;
         self.add_operator("@>", "jsonb", "jsonb", "boolean")?;
         Ok(())
@@ -1050,8 +798,6 @@ impl CatalogSnapshot {
             right: Some(right),
             result,
             builtin: true,
-            strict: true,
-            volatility: crate::Volatility::Immutable,
         });
         Ok(())
     }
@@ -1223,25 +969,6 @@ impl CatalogSnapshot {
         Ok(())
     }
 
-    fn validate_bindable_type(
-        &self,
-        type_id: &TypeId,
-        position: &'static str,
-    ) -> Result<(), CatalogError> {
-        let ty = self
-            .type_by_id(type_id)
-            .ok_or_else(|| CatalogError::UnknownTypeId {
-                id: type_id.clone(),
-            })?;
-        if !ty.bindable {
-            return Err(CatalogError::NonBindablePseudoType {
-                id: type_id.clone(),
-                position,
-            });
-        }
-        Ok(())
-    }
-
     fn insert_callable(&mut self, callable: CatalogCallable) -> Result<CallableId, CatalogError> {
         if self.callables.iter().any(|existing| {
             existing.qualified_name == callable.qualified_name
@@ -1343,14 +1070,6 @@ fn valid_identifier(identifier: &str) -> bool {
         })
 }
 
-fn render_identity_argument_names(argument_names: &[&str]) -> String {
-    argument_names
-        .iter()
-        .map(|name| if *name == "any" { "\"any\"" } else { name })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 fn render_identity_arguments(
     catalog: &CatalogSnapshot,
     arguments: &[TypeId],
@@ -1375,24 +1094,6 @@ fn postgres_display_name(qualified_name: &str) -> &str {
     qualified_name
         .strip_prefix("pg_catalog.")
         .unwrap_or(qualified_name)
-}
-
-fn catalog_name_matches(qualified_name: &str, requested: &str) -> bool {
-    if requested.contains('.') {
-        qualified_name == requested
-    } else {
-        unqualified_name(qualified_name) == requested
-    }
-}
-
-const fn cast_context_allows(available: CastContext, requested: CastContext) -> bool {
-    match requested {
-        CastContext::Implicit => matches!(available, CastContext::Implicit),
-        CastContext::Assignment => {
-            matches!(available, CastContext::Implicit | CastContext::Assignment)
-        }
-        CastContext::Explicit => true,
-    }
 }
 
 fn unqualified_name(qualified_name: &str) -> &str {
@@ -1434,10 +1135,6 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
         write_value(&mut canonical, "type-id", ty.id.as_str());
         write_value(&mut canonical, "type-name", &ty.qualified_name);
         let _ = writeln!(canonical, "type-kind:{:?}", ty.kind);
-        let _ = writeln!(canonical, "type-category:{:?}", ty.category);
-        let _ = writeln!(canonical, "type-preferred:{}", ty.preferred);
-        let _ = writeln!(canonical, "type-polymorphic:{:?}", ty.polymorphic);
-        let _ = writeln!(canonical, "type-bindable:{}", ty.bindable);
         write_optional(&mut canonical, "type-typmod", ty.typmod.as_deref());
         write_optional(
             &mut canonical,
@@ -1503,19 +1200,6 @@ fn fingerprint_snapshot(snapshot: &CatalogSnapshot) -> SchemaFingerprint {
         write_value(&mut canonical, "callable-id", callable.id.as_str());
         write_value(&mut canonical, "callable-name", &callable.qualified_name);
         let _ = writeln!(canonical, "callable-kind:{:?}", callable.kind);
-        let _ = writeln!(canonical, "callable-volatility:{:?}", callable.volatility);
-        let _ = writeln!(canonical, "callable-strict:{}", callable.strict);
-        let _ = writeln!(
-            canonical,
-            "callable-scalar-nullability:{:?}",
-            callable.scalar_result_nullability
-        );
-        let _ = writeln!(canonical, "callable-cardinality:{:?}", callable.cardinality);
-        let _ = writeln!(
-            canonical,
-            "callable-aggregate-empty:{:?}",
-            callable.aggregate_empty
-        );
         for argument in &callable.arguments {
             write_value(&mut canonical, "callable-argument", argument.as_str());
         }
@@ -1668,18 +1352,11 @@ mod tests {
         let mut first = CatalogSnapshot::postgres_18_fixture();
         let bigint = first.resolve_type("pg_catalog.bigint").unwrap().id.clone();
         let callable_id = first
-            .register_scalar(
-                ScalarSignature {
-                    qualified_name: "app.identity".to_string(),
-                    arguments: vec![bigint.clone()],
-                    result: bigint,
-                },
-                ScalarCallableFacts {
-                    volatility: Volatility::Immutable,
-                    strict: true,
-                    result_nullability: Nullability::NotNull,
-                },
-            )
+            .register_scalar(ScalarSignature {
+                qualified_name: "app.identity".to_string(),
+                arguments: vec![bigint.clone()],
+                result: bigint,
+            })
             .unwrap();
         let mut second = first.clone();
         second
@@ -1688,36 +1365,6 @@ mod tests {
             .find(|callable| callable.id == callable_id)
             .unwrap()
             .postgres_result_type = "text".to_string();
-        second.refresh_fingerprint();
-
-        assert_ne!(first.fingerprint(), second.fingerprint());
-    }
-
-    #[test]
-    fn fingerprint_includes_callable_typing_facts() {
-        let mut first = CatalogSnapshot::postgres_18_fixture();
-        let bigint = first.resolve_type("pg_catalog.bigint").unwrap().id.clone();
-        let callable_id = first
-            .register_scalar(
-                ScalarSignature {
-                    qualified_name: "app.typed_identity".to_string(),
-                    arguments: vec![bigint.clone()],
-                    result: bigint,
-                },
-                ScalarCallableFacts {
-                    volatility: Volatility::Immutable,
-                    strict: true,
-                    result_nullability: Nullability::NotNull,
-                },
-            )
-            .unwrap();
-        let mut second = first.clone();
-        second
-            .callables
-            .iter_mut()
-            .find(|callable| callable.id == callable_id)
-            .unwrap()
-            .volatility = Volatility::Volatile;
         second.refresh_fingerprint();
 
         assert_ne!(first.fingerprint(), second.fingerprint());

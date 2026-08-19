@@ -3,25 +3,11 @@ use dibs_db_schema::{
     SourceLocation, Table, TriggerCheckConstraint,
 };
 use dibs_pg_catalog::{
-    AggregateEmptyBehavior, ApiLanguage, ApiTypeId, CallableCardinality, CallableKind, CastContext,
-    CatalogError, CatalogSnapshot, DomainCollation, DomainConstraint, Nullability, PgArray,
-    PgArrayDimension, PgArrayError, PgTypeCategory, PgTypeKind, PolymorphicType,
-    ScalarCallableFacts, ScalarSignature, TableCallableFacts, TableOutputColumn, TableSignature,
-    TypeRegistration, TypeRegistrationKind, Volatility,
+    ApiLanguage, ApiTypeId, CallableKind, CatalogError, CatalogSnapshot, DomainCollation,
+    DomainConstraint, Nullability, PgArray, PgArrayDimension, PgArrayError, PgTypeKind,
+    ScalarSignature, TableOutputColumn, TableSignature, TypeRegistration, TypeRegistrationKind,
 };
 use indexmap::IndexMap;
-
-const SCALAR_FACTS: ScalarCallableFacts = ScalarCallableFacts {
-    volatility: Volatility::Immutable,
-    strict: true,
-    result_nullability: Nullability::Nullable,
-};
-
-const TABLE_FACTS: TableCallableFacts = TableCallableFacts {
-    volatility: Volatility::Immutable,
-    strict: true,
-    cardinality: CallableCardinality::SetOfUnknown,
-};
 
 fn column(name: &str, pg_type: PgType, nullable: bool) -> Column {
     Column {
@@ -549,14 +535,7 @@ fn scalar_and_table_registration_are_exact_and_duplicate_safe() {
         arguments: vec![bigint.clone()],
         result: bigint.clone(),
     };
-    let scalar_facts = ScalarCallableFacts {
-        volatility: Volatility::Stable,
-        strict: false,
-        result_nullability: Nullability::Nullable,
-    };
-    let scalar_id = catalog
-        .register_scalar(scalar.clone(), scalar_facts)
-        .unwrap();
+    let scalar_id = catalog.register_scalar(scalar.clone()).unwrap();
     assert_eq!(
         scalar_id.as_str(),
         "pg18:callable:function:app.add_one(pg18:type:base:pg_catalog.bigint)"
@@ -566,7 +545,7 @@ fn scalar_and_table_registration_are_exact_and_duplicate_safe() {
         CallableKind::Scalar
     );
     assert_eq!(
-        catalog.register_scalar(scalar, scalar_facts),
+        catalog.register_scalar(scalar),
         Err(CatalogError::DuplicateCallableSignature {
             qualified_name: "app.add_one".to_string(),
             arguments: vec![bigint.clone()],
@@ -589,16 +568,7 @@ fn scalar_and_table_registration_are_exact_and_duplicate_safe() {
             },
         ],
     };
-    let table_id = catalog
-        .register_table(
-            table,
-            TableCallableFacts {
-                volatility: Volatility::Volatile,
-                strict: false,
-                cardinality: CallableCardinality::SetOfUnknown,
-            },
-        )
-        .unwrap();
+    let table_id = catalog.register_table(table).unwrap();
     let registered = catalog.callable_by_id(&table_id).unwrap();
     assert_eq!(registered.kind, CallableKind::Table);
     assert_eq!(registered.table_columns.len(), 2);
@@ -615,25 +585,19 @@ fn registration_rejects_postgres_overload_collisions_by_name_and_inputs() {
     let text = catalog.resolve_type("pg_catalog.text").unwrap().id.clone();
 
     catalog
-        .register_scalar(
-            ScalarSignature {
-                qualified_name: "app.same_inputs".to_string(),
-                arguments: vec![bigint.clone()],
-                result: bigint.clone(),
-            },
-            SCALAR_FACTS,
-        )
+        .register_scalar(ScalarSignature {
+            qualified_name: "app.same_inputs".to_string(),
+            arguments: vec![bigint.clone()],
+            result: bigint.clone(),
+        })
         .unwrap();
 
     assert_eq!(
-        catalog.register_scalar(
-            ScalarSignature {
-                qualified_name: "app.same_inputs".to_string(),
-                arguments: vec![bigint.clone()],
-                result: text.clone(),
-            },
-            SCALAR_FACTS,
-        ),
+        catalog.register_scalar(ScalarSignature {
+            qualified_name: "app.same_inputs".to_string(),
+            arguments: vec![bigint.clone()],
+            result: text.clone(),
+        }),
         Err(CatalogError::DuplicateCallableSignature {
             qualified_name: "app.same_inputs".to_string(),
             arguments: vec![bigint.clone()],
@@ -641,18 +605,15 @@ fn registration_rejects_postgres_overload_collisions_by_name_and_inputs() {
     );
 
     assert_eq!(
-        catalog.register_table(
-            TableSignature {
-                qualified_name: "app.same_inputs".to_string(),
-                arguments: vec![bigint.clone()],
-                columns: vec![TableOutputColumn {
-                    name: "value".to_string(),
-                    type_id: text,
-                    nullability: Nullability::NotNull,
-                }],
-            },
-            TABLE_FACTS,
-        ),
+        catalog.register_table(TableSignature {
+            qualified_name: "app.same_inputs".to_string(),
+            arguments: vec![bigint.clone()],
+            columns: vec![TableOutputColumn {
+                name: "value".to_string(),
+                type_id: text,
+                nullability: Nullability::NotNull,
+            }],
+        }),
         Err(CatalogError::DuplicateCallableSignature {
             qualified_name: "app.same_inputs".to_string(),
             arguments: vec![bigint],
@@ -682,12 +643,10 @@ fn return_only_callable_changes_keep_identity_and_collide_in_postgres() {
 
     let expected_id = text_result.postgres_18_id();
     assert_eq!(bigint_result.postgres_18_id(), expected_id);
-    let id = catalog
-        .register_scalar(bigint_result, SCALAR_FACTS)
-        .unwrap();
+    let id = catalog.register_scalar(bigint_result).unwrap();
     assert_eq!(id, expected_id);
     assert_eq!(
-        catalog.register_scalar(text_result, SCALAR_FACTS),
+        catalog.register_scalar(text_result),
         Err(CatalogError::DuplicateCallableSignature {
             qualified_name: "app.same_identity".to_string(),
             arguments: vec![bigint],
@@ -701,18 +660,15 @@ fn table_output_columns_require_canonical_unquoted_identifiers() {
     let text = catalog.resolve_type("pg_catalog.text").unwrap().id.clone();
 
     assert_eq!(
-        catalog.register_table(
-            TableSignature {
-                qualified_name: "app.bad_output".to_string(),
-                arguments: Vec::new(),
-                columns: vec![TableOutputColumn {
-                    name: "bad output".to_string(),
-                    type_id: text,
-                    nullability: Nullability::NotNull,
-                }],
-            },
-            TABLE_FACTS,
-        ),
+        catalog.register_table(TableSignature {
+            qualified_name: "app.bad_output".to_string(),
+            arguments: Vec::new(),
+            columns: vec![TableOutputColumn {
+                name: "bad output".to_string(),
+                type_id: text,
+                nullability: Nullability::NotNull,
+            }],
+        }),
         Err(CatalogError::InvalidOutputColumnName {
             qualified_name: "app.bad_output".to_string(),
             column: "bad output".to_string(),
@@ -726,25 +682,22 @@ fn table_output_columns_must_be_unique() {
     let text = catalog.resolve_type("pg_catalog.text").unwrap().id.clone();
 
     assert_eq!(
-        catalog.register_table(
-            TableSignature {
-                qualified_name: "app.duplicate_output".to_string(),
-                arguments: Vec::new(),
-                columns: vec![
-                    TableOutputColumn {
-                        name: "value".to_string(),
-                        type_id: text.clone(),
-                        nullability: Nullability::NotNull,
-                    },
-                    TableOutputColumn {
-                        name: "value".to_string(),
-                        type_id: text,
-                        nullability: Nullability::Nullable,
-                    },
-                ],
-            },
-            TABLE_FACTS,
-        ),
+        catalog.register_table(TableSignature {
+            qualified_name: "app.duplicate_output".to_string(),
+            arguments: Vec::new(),
+            columns: vec![
+                TableOutputColumn {
+                    name: "value".to_string(),
+                    type_id: text.clone(),
+                    nullability: Nullability::NotNull,
+                },
+                TableOutputColumn {
+                    name: "value".to_string(),
+                    type_id: text,
+                    nullability: Nullability::Nullable,
+                },
+            ],
+        }),
         Err(CatalogError::DuplicateOutputColumnName {
             qualified_name: "app.duplicate_output".to_string(),
             column: "value".to_string(),
@@ -757,32 +710,26 @@ fn registration_rejects_unknown_argument_result_and_column_types() {
     let unknown = dibs_pg_catalog::TypeId::new("pg18:type:base:app.missing");
 
     let error = catalog
-        .register_scalar(
-            ScalarSignature {
-                qualified_name: "app.bad".to_string(),
-                arguments: vec![unknown.clone()],
-                result: unknown.clone(),
-            },
-            SCALAR_FACTS,
-        )
+        .register_scalar(ScalarSignature {
+            qualified_name: "app.bad".to_string(),
+            arguments: vec![unknown.clone()],
+            result: unknown.clone(),
+        })
         .unwrap_err();
     assert_eq!(error, CatalogError::UnknownTypeId { id: unknown });
 
     let text = catalog.resolve_type("pg_catalog.text").unwrap().id.clone();
     let unknown = dibs_pg_catalog::TypeId::new("pg18:type:base:app.missing_output");
     let error = catalog
-        .register_table(
-            TableSignature {
-                qualified_name: "app.bad_table".to_string(),
-                arguments: vec![text],
-                columns: vec![TableOutputColumn {
-                    name: "value".to_string(),
-                    type_id: unknown.clone(),
-                    nullability: Nullability::Nullable,
-                }],
-            },
-            TABLE_FACTS,
-        )
+        .register_table(TableSignature {
+            qualified_name: "app.bad_table".to_string(),
+            arguments: vec![text],
+            columns: vec![TableOutputColumn {
+                name: "value".to_string(),
+                type_id: unknown.clone(),
+                nullability: Nullability::Nullable,
+            }],
+        })
         .unwrap_err();
     assert_eq!(error, CatalogError::UnknownTypeId { id: unknown });
 }
@@ -797,14 +744,11 @@ fn registration_rejects_invalid_unquoted_qualified_names() {
         .clone();
 
     assert_eq!(
-        catalog.register_scalar(
-            ScalarSignature {
-                qualified_name: "app bad.function".to_string(),
-                arguments: Vec::new(),
-                result: bigint,
-            },
-            SCALAR_FACTS,
-        ),
+        catalog.register_scalar(ScalarSignature {
+            qualified_name: "app bad.function".to_string(),
+            arguments: Vec::new(),
+            result: bigint,
+        }),
         Err(CatalogError::UnqualifiedName {
             name: "app bad.function".to_string(),
         })
@@ -821,190 +765,6 @@ fn every_curated_type_has_distinct_codec_and_api_identity_namespaces() {
         assert!(!ty.rust_api_type.as_str().starts_with("wire:"));
         assert!(!ty.typescript_api_type.as_str().starts_with("wire:"));
     }
-}
-
-#[test]
-fn pseudo_types_are_not_bindable_value_or_storage_types() {
-    let mut catalog = CatalogSnapshot::postgres_18_fixture();
-    let unknown = catalog
-        .resolve_type("pg_catalog.unknown")
-        .unwrap()
-        .id
-        .clone();
-    let anyelement = catalog
-        .resolve_type("pg_catalog.anyelement")
-        .unwrap()
-        .id
-        .clone();
-
-    assert!(matches!(
-        catalog.resolve_api_type(ApiLanguage::Rust, "PgPseudo<unknown>"),
-        Err(CatalogError::UnsupportedApiType { .. })
-    ));
-    assert_eq!(
-        catalog.register_scalar(
-            ScalarSignature {
-                qualified_name: "app.bad_pseudo_result".to_string(),
-                arguments: Vec::new(),
-                result: unknown.clone(),
-            },
-            SCALAR_FACTS,
-        ),
-        Err(CatalogError::NonBindablePseudoType {
-            id: unknown.clone(),
-            position: "scalar result",
-        })
-    );
-    assert_eq!(
-        catalog.register_type(TypeRegistration {
-            qualified_name: "app.bad_pseudo_domain".to_string(),
-            kind: TypeRegistrationKind::Domain {
-                base_type: "pg_catalog.anyelement".to_string(),
-                base_typmod: None,
-                not_null: false,
-                default: None,
-                collation: DomainCollation::None,
-                constraints: Vec::new(),
-            },
-        }),
-        Err(CatalogError::NonBindablePseudoType {
-            id: anyelement.clone(),
-            position: "domain base",
-        })
-    );
-    assert_eq!(
-        catalog.register_type(TypeRegistration {
-            qualified_name: "app.bad_pseudo_array".to_string(),
-            kind: TypeRegistrationKind::Array {
-                element_type: "pg_catalog.anyelement".to_string(),
-            },
-        }),
-        Err(CatalogError::NonBindablePseudoType {
-            id: anyelement,
-            position: "array element",
-        })
-    );
-}
-#[test]
-fn pg18_type_resolution_facts_cover_categories_preferences_and_pseudo_types() {
-    let catalog = CatalogSnapshot::postgres_18_fixture();
-    let boolean = catalog.resolve_type("pg_catalog.boolean").unwrap();
-    let float8 = catalog.resolve_type("pg_catalog.double precision").unwrap();
-    let text = catalog.resolve_type("pg_catalog.text").unwrap();
-    let unknown = catalog.resolve_type("pg_catalog.unknown").unwrap();
-    let anyelement = catalog.resolve_type("pg_catalog.anyelement").unwrap();
-
-    assert_eq!(boolean.category, PgTypeCategory::Boolean);
-    assert!(boolean.preferred);
-    assert_eq!(float8.category, PgTypeCategory::Numeric);
-    assert!(float8.preferred);
-    assert_eq!(text.category, PgTypeCategory::String);
-    assert!(text.preferred);
-    assert_eq!(unknown.category, PgTypeCategory::Unknown);
-    assert_eq!(unknown.kind, PgTypeKind::Pseudo);
-    assert_eq!(unknown.polymorphic, None);
-    assert_eq!(anyelement.kind, PgTypeKind::Pseudo);
-    assert_eq!(anyelement.polymorphic, Some(PolymorphicType::AnyElement));
-}
-
-#[test]
-fn candidate_lookup_accepts_qualified_or_unqualified_name_and_exact_arity() {
-    let catalog = CatalogSnapshot::postgres_18_fixture();
-    let qualified: Vec<_> = catalog.callable_candidates("pg_catalog.abs", 1).collect();
-    let unqualified: Vec<_> = catalog.callable_candidates("abs", 1).collect();
-    assert_eq!(qualified, unqualified);
-    assert!(
-        qualified.len() > 1,
-        "abs must expose PG18 numeric overloads"
-    );
-    assert!(catalog.callable_candidates("abs", 2).next().is_none());
-
-    let qualified: Vec<_> = catalog.operator_candidates("pg_catalog.+", 2).collect();
-    let unqualified: Vec<_> = catalog.operator_candidates("+", 2).collect();
-    assert_eq!(qualified, unqualified);
-    assert!(qualified.len() > 1, "+ must expose PG18 numeric overloads");
-    assert!(catalog.operator_candidates("+", 1).next().is_none());
-}
-
-#[test]
-fn curated_callable_and_operator_semantics_are_explicit() {
-    let catalog = CatalogSnapshot::postgres_18_fixture();
-    let count = catalog
-        .callable_candidates("count", 0)
-        .find(|callable| callable.postgres_identity_arguments.is_empty())
-        .unwrap();
-    assert_eq!(count.kind, CallableKind::Aggregate);
-    assert_eq!(count.volatility, Volatility::Immutable);
-    assert!(!count.strict);
-    assert_eq!(count.scalar_result_nullability, Some(Nullability::NotNull));
-    assert_eq!(count.cardinality, CallableCardinality::ExactlyOne);
-    assert_eq!(
-        count.aggregate_empty,
-        Some(AggregateEmptyBehavior::Identity)
-    );
-
-    let text = catalog.resolve_type("pg_catalog.text").unwrap();
-    assert!(catalog.operator_candidates("=", 2).any(|operator| {
-        operator.left.as_ref() == Some(&text.id)
-            && operator.right.as_ref() == Some(&text.id)
-            && operator.strict
-    }));
-
-    let sum = catalog
-        .callable_candidates("sum", 1)
-        .find(|callable| callable.postgres_identity_arguments == "bigint")
-        .unwrap();
-    assert_eq!(sum.kind, CallableKind::Aggregate);
-    assert_eq!(sum.scalar_result_nullability, Some(Nullability::Nullable));
-    assert_eq!(sum.aggregate_empty, Some(AggregateEmptyBehavior::Null));
-
-    let row_number = catalog.callable_candidates("row_number", 0).next().unwrap();
-    assert_eq!(row_number.kind, CallableKind::Window);
-    assert_eq!(row_number.cardinality, CallableCardinality::OnePerInput);
-    assert_eq!(
-        row_number.scalar_result_nullability,
-        Some(Nullability::NotNull)
-    );
-
-    assert!(
-        catalog
-            .operator_candidates("+", 2)
-            .all(|operator| operator.strict)
-    );
-}
-
-#[test]
-fn cast_path_respects_postgres_context_strength() {
-    let catalog = CatalogSnapshot::postgres_18_fixture();
-    let int4 = catalog.resolve_type("pg_catalog.integer").unwrap();
-    let int8 = catalog.resolve_type("pg_catalog.bigint").unwrap();
-    let numeric = catalog.resolve_type("pg_catalog.numeric").unwrap();
-
-    assert!(
-        catalog
-            .cast_path(&int4.id, &int8.id, CastContext::Implicit)
-            .is_some()
-    );
-    assert!(
-        catalog
-            .cast_path(&int4.id, &int8.id, CastContext::Assignment)
-            .is_some()
-    );
-    assert!(
-        catalog
-            .cast_path(&int8.id, &int4.id, CastContext::Implicit)
-            .is_none()
-    );
-    assert!(
-        catalog
-            .cast_path(&int8.id, &int4.id, CastContext::Assignment)
-            .is_some()
-    );
-    assert!(
-        catalog
-            .cast_path(&int8.id, &numeric.id, CastContext::Implicit)
-            .is_some()
-    );
 }
 
 #[test]
