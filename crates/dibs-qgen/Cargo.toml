@@ -26,7 +26,6 @@ indexmap.workspace = true
 
 [dev-dependencies]
 dibs-query-syntax = { path = "../dibs-query-syntax", version = "0.1.0" }
-dibs-qgen-generated-api-fixture = { path = "tests/fixtures/generated-api" }
 tracing.workspace = true
 facet-testhelpers.workspace = true
 dockside.workspace = true

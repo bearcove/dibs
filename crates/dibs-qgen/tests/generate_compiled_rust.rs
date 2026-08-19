@@ -3,14 +3,14 @@ mod rust_backend;
 
 use dibs_pg_catalog::{ApiTypeId, PgCodecId, TableId, WireCodecId};
 use dibs_query_ir::{
-    ApiFieldName, ApiOperationName, ApiResultTypeName, ApiTypeMapping, BindFormat, Cardinality,
-    CatalogRenderName, CatalogRenderNames, CompiledQuery, ExpressionId, FieldId, HirDelete,
-    HirExpression, HirExpressionKind, HirLiteral, HirParameter, HirProjection, HirQuery, HirSelect,
-    HirStatement, HirStatementKind, Nullability, NullabilityEvidence, OrderedBind, OutputField,
-    Parameter, ParameterApiContract, ParameterBindAdapter, ParameterId, ParameterPassing, QueryId,
-    ResultMode, RuntimeAssertion, SelectDistinct, Sensitivity, SourceOrigin, SourceSpan, Span,
-    StatementId, TargetLanguage, TypedDelete, TypedExpression, TypedExpressionKind, TypedLimit,
-    TypedProjection, TypedSelect, TypedStatement, TypedStatementKind, Volatility,
+    ApiFieldName, ApiOperationName, ApiTypeMapping, BindFormat, Cardinality, CatalogRenderName,
+    CatalogRenderNames, CompiledQuery, ExpressionId, FieldId, HirDelete, HirExpression,
+    HirExpressionKind, HirLiteral, HirParameter, HirProjection, HirQuery, HirSelect, HirStatement,
+    HirStatementKind, Nullability, NullabilityEvidence, OrderedBind, OutputField, Parameter,
+    ParameterApiContract, ParameterBindAdapter, ParameterId, ParameterPassing, QueryId, ResultMode,
+    RuntimeAssertion, SelectDistinct, Sensitivity, SourceOrigin, SourceSpan, Span, StatementId,
+    TargetLanguage, TypedDelete, TypedExpression, TypedExpressionKind, TypedLimit, TypedProjection,
+    TypedSelect, TypedStatement, TypedStatementKind, Volatility,
 };
 use dibs_query_syntax::SourceId;
 use rust_backend::{GeneratedRust, RustGenerationError, generate_compiled_rust};
@@ -373,10 +373,6 @@ fn generation_fails_closed_when_rust_contract_facts_are_absent() {
     missing_operation
         .manifest
         .operation_names
-        .retain(|name| name.language != TargetLanguage::Rust);
-    missing_operation
-        .manifest
-        .result_type_names
         .retain(|name| name.language != TargetLanguage::Rust);
     finalize_query(&mut missing_operation);
     assert_eq!(
@@ -795,17 +791,11 @@ fn base_query(
             catalog_schema_fingerprint: catalog_schema_fingerprint.clone(),
         });
     let operation_names = vec![rust_operation("load_widget")];
-    let result_type_names = if mode == ResultMode::Exec {
-        Vec::new()
-    } else {
-        vec![ApiResultTypeName::try_new(TargetLanguage::Rust, "LoadWidgetResult").unwrap()]
-    };
     let public_contract_id =
         dibs_query_ir::public_contract_identity(&dibs_query_ir::PublicIdentityInput {
             version: compiler_versions.public_identity_format_version,
             query_name: "LoadWidget".to_string(),
             operation_names: operation_names.clone(),
-            result_type_names: result_type_names.clone(),
             parameters: ordered_parameters.clone(),
             output_fields: ordered_output_fields.clone(),
             result_mode: mode,
@@ -819,7 +809,6 @@ fn base_query(
         compiler_versions: compiler_versions.clone(),
         catalog_schema_fingerprint: catalog_schema_fingerprint.clone(),
         operation_names,
-        result_type_names,
         normalized_sql_hash: dibs_query_ir::ContentHash::of_bytes(deterministic_sql.as_bytes()),
         source_hash: dibs_query_ir::ContentHash::of_bytes(b"fixture"),
         source_map_hash: dibs_query_ir::ContentHash::of_json(&source_map).unwrap(),
