@@ -14,7 +14,6 @@ dibs-proto = { path = "crates/dibs-proto", version = "0.2.0-rc.5" }
 dibs-qgen = { path = "crates/dibs-qgen", version = "0.2.0-rc.5" }
 dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.2.0-rc.5" }
 dibs-db-schema = { path = "crates/dibs-db-schema", version = "0.2.0-rc.5" }
-dibs-pg-catalog = { path = "crates/dibs-pg-catalog", version = "0.1.0" }
 dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.5" }
 dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.5" }
 dockside = { path = "crates/dockside" }
