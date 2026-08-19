@@ -15,8 +15,7 @@ pub use callable::{
 };
 pub use codec::{ApiLanguage, CodecBinding};
 pub use id::{
-    ApiTypeId, CallableId, CastId, CollationId, ColumnId, ConstraintId, IndexId, OperatorId,
-    PgCodecId, TableId, TypeId, WireCodecId,
+    ApiTypeId, CallableId, CastId, CollationId, OperatorId, PgCodecId, TypeId, WireCodecId,
 };
 pub use snapshot::{
     CastContext, CastMethod, CatalogCast, CatalogColumn, CatalogForeignKey, CatalogIndex,

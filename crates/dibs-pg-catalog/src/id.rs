@@ -3,8 +3,7 @@ use std::fmt;
 macro_rules! string_id {
     ($name:ident, $docs:literal) => {
         #[doc = $docs]
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
-        #[repr(transparent)]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name(String);
 
         impl $name {
@@ -41,13 +40,6 @@ macro_rules! string_id {
     };
 }
 
-string_id!(TableId, "Stable logical application table identity.");
-string_id!(ColumnId, "Stable logical application column identity.");
-string_id!(
-    ConstraintId,
-    "Stable logical application constraint identity."
-);
-string_id!(IndexId, "Stable logical application index identity.");
 string_id!(TypeId, "Stable logical PostgreSQL type identity.");
 string_id!(CallableId, "Stable logical function identity.");
 string_id!(OperatorId, "Stable logical operator identity.");

@@ -6,12 +6,7 @@ mod diagnostic;
 mod scanner;
 mod support;
 
-#[allow(
-    clippy::needless_question_mark,
-    dead_code,
-    missing_docs,
-    unused_imports
-)]
+#[allow(dead_code, missing_docs, unused_imports)]
 mod generated_ast {
     include!(concat!(env!("OUT_DIR"), "/dibs_query_ast.rs"));
 }
@@ -83,7 +78,7 @@ pub use diagnostic::{
 };
 /// Tree-sitter-style byte edit descriptor for incremental reparsing.
 pub use snark::parser::ParserInputEdit;
-pub use support::{SourceId, SourceSpan, Span, Spanned};
+pub use support::{SourceId, Span, Spanned};
 /// Source identifier spelling preserved with its byte range.
 pub type Identifier = Spanned<String>;
 
