@@ -36,7 +36,7 @@ impl SemanticChecker<'_> {
                 let column = context
                     .relations
                     .get(binding)
-                    .and_then(|columns| columns.get(&RelationField::Catalog(column_id.clone())))
+                    .and_then(|columns| columns.get(column_id))
                     .ok_or_else(|| CheckError::UnknownColumn {
                         binding: *binding,
                         column_id: column_id.clone(),
@@ -65,38 +65,6 @@ impl SemanticChecker<'_> {
                     kind: TypedExpressionKind::Column {
                         binding: *binding,
                         column_id: column_id.clone(),
-                    },
-                })
-            }
-            HirExpressionKind::DerivedColumn { binding, field_id } => {
-                let column = context
-                    .relations
-                    .get(binding)
-                    .and_then(|columns| columns.get(&RelationField::Derived(*field_id)))
-                    .ok_or_else(|| CheckError::UnknownColumn {
-                        binding: *binding,
-                        column_id: synthetic_field_column(*binding, *field_id),
-                        origin: expression.origin.clone(),
-                    })?;
-                let null_extended = context.null_extended.contains(binding);
-                Ok(TypedExpression {
-                    id: expression.id,
-                    origin: expression.origin.clone(),
-                    type_id: column.type_id.clone(),
-                    typmod: column.typmod.clone(),
-                    nullability: if null_extended || column.nullable {
-                        Nullability::nullable(if null_extended {
-                            NullabilityEvidence::OuterJoinNullExtension { binding: *binding }
-                        } else {
-                            NullabilityEvidence::Conservative
-                        })
-                    } else {
-                        synthetic_not_null("derived-output")
-                    },
-                    volatility: column.volatility,
-                    kind: TypedExpressionKind::DerivedColumn {
-                        binding: *binding,
-                        field_id: *field_id,
                     },
                 })
             }
@@ -156,10 +124,7 @@ impl SemanticChecker<'_> {
                         right: projections.len(),
                     });
                 }
-                if !matches!(
-                    statement.cardinality.upper(),
-                    UpperBound::Zero | UpperBound::One | UpperBound::Finite(0 | 1)
-                ) {
+                if !matches!(statement.cardinality.upper(), UpperBound::Finite(0 | 1)) {
                     return Err(CheckError::UnboundedScalarSubquery {
                         origin: expression.origin.clone(),
                         cardinality: statement.cardinality.clone(),
@@ -458,11 +423,7 @@ impl SemanticChecker<'_> {
             origin: expression.origin.clone(),
             type_id: self.types.boolean.clone(),
             typmod: None,
-            nullability: if nullable {
-                Nullability::nullable(NullabilityEvidence::Conservative)
-            } else {
-                synthetic_not_null("structural-operator")
-            },
+            nullability: callable_nullability(authored_id.as_str(), nullable),
             volatility: max_volatility(
                 arguments
                     .iter()
@@ -1076,7 +1037,7 @@ fn callable_nullability(identity: &str, nullable: bool) -> Nullability {
     }
 }
 
-pub(super) fn catalog_volatility(volatility: CatalogVolatility) -> Volatility {
+fn catalog_volatility(volatility: CatalogVolatility) -> Volatility {
     match volatility {
         CatalogVolatility::Immutable => Volatility::Immutable,
         CatalogVolatility::Stable => Volatility::Stable,
@@ -1100,9 +1061,7 @@ fn callable_result_nullability(
 }
 
 fn synthetic_not_null(kind: &str) -> Nullability {
-    Nullability::not_null(NullabilityEvidence::SyntheticNonNull {
-        kind: kind.to_owned(),
-    })
+    callable_nullability(&format!("pg18:callable:synthetic:{kind}"), false)
 }
 
 fn synthetic_row_type(values: &[TypedExpression]) -> TypeId {
@@ -1116,7 +1075,7 @@ fn synthetic_row_type(values: &[TypedExpression]) -> TypeId {
     ))
 }
 
-pub(super) fn max_volatility(values: impl IntoIterator<Item = Volatility>) -> Volatility {
+fn max_volatility(values: impl IntoIterator<Item = Volatility>) -> Volatility {
     values.into_iter().max().unwrap_or(Volatility::Immutable)
 }
 
@@ -1164,23 +1123,15 @@ pub(super) fn expression_has_scalar_aggregate(
         TypedExpressionKind::Literal(_)
         | TypedExpressionKind::Parameter(_)
         | TypedExpressionKind::Column { .. }
-        | TypedExpressionKind::DerivedColumn { .. }
         | TypedExpressionKind::ScalarSubquery(_)
         | TypedExpressionKind::CteColumn { .. } => false,
     }
 }
 
-pub(super) fn expression_is_group_legal(
+pub(super) fn expression_is_aggregate_legal(
     expression: &TypedExpression,
-    group_by: &[TypedExpression],
     catalog: &CatalogSnapshot,
 ) -> bool {
-    if group_by
-        .iter()
-        .any(|group| expression_same_value(expression, group))
-    {
-        return true;
-    }
     match &expression.kind {
         TypedExpressionKind::Call(call) => {
             if call.over.is_none()
@@ -1190,17 +1141,17 @@ pub(super) fn expression_is_group_legal(
             {
                 true
             } else {
-                call.arguments.iter().all(|argument| {
-                    expression_is_group_legal(&argument.expression, group_by, catalog)
-                })
+                call.arguments
+                    .iter()
+                    .all(|argument| expression_is_aggregate_legal(&argument.expression, catalog))
             }
         }
         TypedExpressionKind::Operator { operands, .. } => operands
             .iter()
-            .all(|argument| expression_is_group_legal(&argument.expression, group_by, catalog)),
+            .all(|argument| expression_is_aggregate_legal(&argument.expression, catalog)),
         TypedExpressionKind::Cast { expression, .. }
         | TypedExpressionKind::Collate { expression, .. } => {
-            expression_is_group_legal(expression, group_by, catalog)
+            expression_is_aggregate_legal(expression, catalog)
         }
         TypedExpressionKind::Case {
             operand,
@@ -1210,45 +1161,23 @@ pub(super) fn expression_is_group_legal(
         } => {
             operand
                 .as_deref()
-                .is_none_or(|value| expression_is_group_legal(value, group_by, catalog))
+                .is_none_or(|value| expression_is_aggregate_legal(value, catalog))
                 && branches.iter().all(|branch| {
-                    expression_is_group_legal(&branch.when, group_by, catalog)
-                        && expression_is_group_legal(&branch.then.expression, group_by, catalog)
+                    expression_is_aggregate_legal(&branch.when, catalog)
+                        && expression_is_aggregate_legal(&branch.then.expression, catalog)
                 })
-                && else_expression.as_deref().is_none_or(|value| {
-                    expression_is_group_legal(&value.expression, group_by, catalog)
-                })
+                && else_expression
+                    .as_deref()
+                    .is_none_or(|value| expression_is_aggregate_legal(&value.expression, catalog))
         }
         TypedExpressionKind::Row(values) => values
             .iter()
-            .all(|value| expression_is_group_legal(value, group_by, catalog)),
+            .all(|value| expression_is_aggregate_legal(value, catalog)),
         TypedExpressionKind::Array { elements, .. } => elements
             .iter()
-            .all(|value| expression_is_group_legal(&value.expression, group_by, catalog)),
+            .all(|value| expression_is_aggregate_legal(&value.expression, catalog)),
         TypedExpressionKind::Literal(_) | TypedExpressionKind::Parameter(_) => true,
-        TypedExpressionKind::Column { .. }
-        | TypedExpressionKind::DerivedColumn { .. }
-        | TypedExpressionKind::CteColumn { .. } => false,
+        TypedExpressionKind::Column { .. } | TypedExpressionKind::CteColumn { .. } => false,
         TypedExpressionKind::ScalarSubquery(_) => true,
-    }
-}
-
-pub(super) fn expression_same_value(left: &TypedExpression, right: &TypedExpression) -> bool {
-    match (&left.kind, &right.kind) {
-        (
-            TypedExpressionKind::Column {
-                binding: left_binding,
-                column_id: left_column,
-            },
-            TypedExpressionKind::Column {
-                binding: right_binding,
-                column_id: right_column,
-            },
-        ) => left_binding == right_binding && left_column == right_column,
-        (TypedExpressionKind::Parameter(left), TypedExpressionKind::Parameter(right)) => {
-            left == right
-        }
-        (TypedExpressionKind::Literal(left), TypedExpressionKind::Literal(right)) => left == right,
-        _ => false,
     }
 }

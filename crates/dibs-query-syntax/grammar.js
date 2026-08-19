@@ -3,21 +3,7 @@
 
 const commaSep = (rule) => optional(seq(rule, repeat(seq(",", rule)), optional(",")));
 const commaSep1 = (rule) => seq(rule, repeat(seq(",", rule)), optional(","));
-
-const attachedSelectClauses = ($) => [
-  optional(field("order_by", $.order_by_clause)),
-  repeat(field("lock", $.locking_clause)),
-  optional(field("limit", $.limit_clause)),
-  optional(field("offset", $.offset_clause)),
-  optional(field("fetch", $.fetch_clause)),
-  repeat(field("lock", $.locking_clause)),
-];
-// Keywords are case-insensitive whole words. The Weavy runtime does not honor
-// `word`/`reserved` keyword extraction, so reservation is expressed lexically:
-// `prec(1)` outranks the identifier pattern and the trailing `\b` word boundary
-// prevents stealing a longer identifier prefix (e.g. `row` in `row_number`).
-// Quoted identifiers remain unrestricted.
-const kw = (word) => alias(token(prec(1, new RegExp("(?:" + word.split("").map((char) => `[${char.toLowerCase()}${char.toUpperCase()}]`).join("") + ")\\b"))), word);
+const kw = (word) => alias(new RegExp(word.split("").map((char) => `[${char.toLowerCase()}${char.toUpperCase()}]`).join("")), word);
 
 const PREC = {
   or: 1,
@@ -43,6 +29,9 @@ module.exports = grammar({
 
   conflicts: ($) => [
     [$._expr, $.qualified_name],
+    [$.function_call, $.aggregate_call],
+    [$.parenthesized_expr, $.row_expr],
+    [$.parenthesized_query, $.scalar_subquery_expr],
     [$.relation_primary, $.joined_relation],
   ],
 
@@ -126,10 +115,14 @@ module.exports = grammar({
 
     select_statement: ($) => prec.left(seq(
       field("body", $.select_set_expression),
-      ...attachedSelectClauses($),
+      optional(field("order_by", $.order_by_clause)),
+      optional(field("limit", $.limit_clause)),
+      optional(field("offset", $.offset_clause)),
+      optional(field("fetch", $.fetch_clause)),
+      repeat(field("lock", $.locking_clause)),
     )),
 
-    select_set_expression: ($) => field("value", choice($.select_core, $.values_statement, $.table_statement, $.parenthesized_query, $.set_operation)),
+    select_set_expression: ($) => field("value", choice($.select_core, $.values_statement, $.parenthesized_query, $.set_operation)),
 
     set_operation: ($) => choice(
       prec.left(1, seq(
@@ -150,41 +143,22 @@ module.exports = grammar({
 
     parenthesized_query: ($) => seq("(", field("statement", $.statement_body), ")"),
 
-    table_statement: ($) => seq(
-      kw("table"),
-      optional(field("only", $.only_marker)),
-      field("name", $.qualified_name),
-      optional(field("descendants", "*")),
-    ),
-
     select_core: ($) => seq(
       kw("select"),
-      field("body", choice(
-        $.distinct_select,
-        $.ordinary_select,
-      )),
+      optional(field("quantifier", $.select_quantifier)),
+      commaSep1(field("target", $.select_target)),
       optional(field("from", $.from_clause)),
       optional(field("where", $.where_clause)),
       optional(field("group_by", $.group_by_clause)),
       optional(field("having", $.having_clause)),
       optional(field("window", $.window_clause)),
     ),
-    distinct_select: ($) => seq(
+
+    select_quantifier: ($) => choice(
+      kw("all"),
       kw("distinct"),
-      field("value", choice($.distinct_on_select, $.plain_distinct_select)),
+      seq(kw("distinct"), kw("on"), "(", commaSep1(field("expression", $._expr)), ")"),
     ),
-    distinct_on_select: ($) => seq(
-      kw("on"),
-      "(", commaSep1(field("expression", $._expr)), ")",
-      commaSep1(field("target", $.select_target)),
-    ),
-    plain_distinct_select: ($) => commaSep1(field("target", $.select_target)),
-    ordinary_select: ($) => field("value", choice(
-      $.all_select,
-      $.unqualified_select,
-    )),
-    all_select: ($) => seq(kw("all"), commaSep1(field("target", $.select_target))),
-    unqualified_select: ($) => commaSep1(field("target", $.select_target)),
 
     select_target: ($) => field("value", choice(
       $.wildcard_target,
@@ -225,7 +199,7 @@ module.exports = grammar({
 
     function_relation: ($) => seq(
       optional(field("lateral", $.lateral_marker)),
-      field("function", $.call_expr),
+      field("function", $.function_call),
       optional(field("ordinality", $.with_ordinality_clause)),
       optional(field("alias", $.relation_alias)),
     ),
@@ -240,7 +214,7 @@ module.exports = grammar({
     ),
 
     relation_alias: ($) => seq(
-      kw("as"),
+      optional(kw("as")),
       field("name", $.declaration_identifier),
       optional(field("columns", $.column_name_list)),
     ),
@@ -329,15 +303,11 @@ module.exports = grammar({
       seq(kw("current"), kw("row")),
       seq(field("offset", $._expr), field("direction", $.frame_direction)),
     ),
-    frame_exclusion: ($) => seq(
-      kw("exclude"),
-      field("kind", $.frame_exclusion_kind),
-    ),
-    frame_exclusion_kind: () => choice(
-      seq(kw("current"), kw("row")),
-      kw("group"),
-      kw("ties"),
-      seq(kw("no"), kw("others")),
+    frame_exclusion: () => choice(
+      seq(kw("exclude"), kw("current"), kw("row")),
+      seq(kw("exclude"), kw("group")),
+      seq(kw("exclude"), kw("ties")),
+      seq(kw("exclude"), kw("no"), kw("others")),
     ),
 
     order_by_clause: ($) => seq(kw("order"), kw("by"), commaSep1(field("item", $.order_by_item))),
@@ -399,26 +369,18 @@ module.exports = grammar({
 
     insert_statement: ($) => seq(
       kw("insert"), kw("into"),
-      field("target", $.insert_target),
+      field("target", $.qualified_name),
+      optional(field("alias", $.relation_alias)),
+      optional(field("columns", $.column_name_list)),
       field("source", $.insert_source),
       optional(field("conflict", $.conflict_clause)),
       optional(field("returning", $.returning_clause)),
     ),
-    insert_target: ($) => seq(
-      field("name", $.qualified_name),
-      optional(field("alias", $.insert_alias)),
-      optional(field("columns", $.column_name_list)),
-    ),
-    insert_alias: ($) => seq(kw("as"), field("name", $.declaration_identifier)),
     insert_source: ($) => field("value", choice(
-      $.default_values_clause,
       $.values_statement,
+      $.select_statement,
       $.with_statement,
-      $.insert_query_source,
-    )),
-    insert_query_source: ($) => prec.left(seq(
-      field("body", choice($.select_core, $.table_statement, $.parenthesized_query, $.set_operation)),
-      ...attachedSelectClauses($),
+      $.default_values_clause,
     )),
     default_values_clause: () => seq(kw("default"), kw("values")),
 
@@ -466,7 +428,7 @@ module.exports = grammar({
 
     assignment: ($) => choice(
       seq(field("target", $.assignment_target), "=", field("value", $.insert_value)),
-      seq(field("targets", $.assignment_target_list), "=", field("value", $.parenthesized_expr)),
+      seq(field("targets", $.assignment_target_list), "=", field("value", choice($.row_expr, $.scalar_subquery_expr))),
     ),
     assignment_target: ($) => seq(
       field("name", $.declaration_identifier),
@@ -485,38 +447,36 @@ module.exports = grammar({
     using_clause: ($) => seq(kw("using"), commaSep1(field("relation", $._relation))),
     returning_clause: ($) => seq(kw("returning"), commaSep1(field("target", $.select_target))),
 
-    _expr: ($) => choice($._or_expr),
-    _or_expr: ($) => choice(
+    _expr: ($) => choice(
       $.or_expr,
-      $._and_expr,
-    ),
-    _and_expr: ($) => choice(
       $.and_expr,
-      $._not_expr,
-    ),
-    _not_expr: ($) => choice(
       $.not_expr,
-      $._predicate_expr,
-    ),
-    _predicate_expr: ($) => choice(
-      $.is_predicate_expr,
+      $.is_test_expr,
+      $.distinct_test_expr,
       $.between_expr,
       $.in_expr,
       $.like_expr,
       $.quantified_comparison_expr,
-      $.comparison_expr,
-      $._generic_expr,
+      $.binary_expr,
+      $.unary_expr,
+      $.postfix_expr,
+      $._atom_expr,
     ),
-    _generic_expr: ($) => choice($.generic_expr, $._additive_expr),
-    _additive_expr: ($) => choice($.additive_expr, $._multiplicative_expr),
-    _multiplicative_expr: ($) => choice($.multiplicative_expr, $._exponent_expr),
-    _exponent_expr: ($) => choice($.exponent_expr, $._unary_expr),
-    _unary_expr: ($) => choice($.unary_expr, $._postfix_expr),
-    _postfix_expr: ($) => choice($.callable_window_expr, $.value_postfix_expr, $._atom_expr),
 
     _atom_expr: ($) => choice(
-      $._special_form_expr,
-      $.call_expr,
+      $.function_call,
+      $.case_expr,
+      $.coalesce_expr,
+      $.nullif_expr,
+      $.greatest_expr,
+      $.least_expr,
+      $.extract_expr,
+      $.position_expr,
+      $.substring_expr,
+      $.overlay_expr,
+      $.exists_expr,
+      $.scalar_subquery_expr,
+      $.array_expr,
       $.row_expr,
       $.parenthesized_expr,
       $.qualified_name_expr,
@@ -531,49 +491,33 @@ module.exports = grammar({
       $.numeric_literal,
       $.boolean_literal,
       $.null_literal,
-    ),
-
-    _special_form_expr: ($) => choice(
-      $.cast_expr,
-      $.case_expr,
-      $.coalesce_expr,
-      $.nullif_expr,
-      $.greatest_expr,
-      $.least_expr,
-      $.extract_expr,
-      $.position_expr,
-      $.substring_expr,
-      $.overlay_expr,
-      $.trim_expr,
-      $.exists_expr,
-      $.array_expr,
       $.current_value_expr,
     ),
 
-    _b_expr: ($) => choice($._generic_expr),
-    or_expr: ($) => prec.left(PREC.or, seq(field("left", $._or_expr), kw("or"), field("right", $._and_expr))),
-    and_expr: ($) => prec.left(PREC.and, seq(field("left", $._and_expr), kw("and"), field("right", $._not_expr))),
-    not_expr: ($) => prec.right(PREC.not, seq(kw("not"), field("expression", $._not_expr))),
+    or_expr: ($) => prec.left(PREC.or, seq(field("left", $._expr), kw("or"), field("right", $._expr))),
+    and_expr: ($) => prec.left(PREC.and, seq(field("left", $._expr), kw("and"), field("right", $._expr))),
+    not_expr: ($) => prec.right(PREC.not, seq(kw("not"), field("expression", $._expr))),
 
-    is_predicate_expr: ($) => prec.left(PREC.predicate, seq(
-      field("expression", $._generic_expr),
+    is_test_expr: ($) => prec.left(PREC.predicate, seq(
+      field("expression", $._expr),
       kw("is"), optional(field("negated", $.not_marker)),
-      field("test", choice($.is_value_test, $.is_distinct_test)),
+      field("test", $.is_test),
     )),
-    is_value_test: ($) => field("value", $.is_test),
-    is_distinct_test: ($) => seq(kw("distinct"), kw("from"), field("right", $._generic_expr)),
-
     normal_form: () => choice(kw("nfc"), kw("nfd"), kw("nfkc"), kw("nfkd")),
 
+    distinct_test_expr: ($) => prec.left(PREC.predicate, seq(
+      field("left", $._expr), kw("is"), optional(field("negated", $.not_marker)), kw("distinct"), kw("from"), field("right", $._expr),
+    )),
+
     between_expr: ($) => prec.left(PREC.predicate, seq(
-      field("expression", $._generic_expr),
+      field("expression", $._expr),
       optional(field("negated", $.not_marker)),
       kw("between"), optional(field("symmetric", $.symmetric_marker)),
-      field("lower", $._generic_expr), kw("and"), field("upper", $._generic_expr),
+      field("lower", $._expr), kw("and"), field("upper", $._expr),
     )),
 
     in_expr: ($) => prec.left(PREC.predicate, seq(
-      field("expression", $._generic_expr), optional(field("negated", $.not_marker)), kw("in"), field("values", $.in_rhs),
+      field("expression", $._expr), optional(field("negated", $.not_marker)), kw("in"), field("values", $.in_rhs),
     )),
     in_rhs: ($) => choice(
       seq("(", commaSep1(field("value", $._expr)), ")"),
@@ -581,39 +525,31 @@ module.exports = grammar({
     ),
 
     like_expr: ($) => prec.left(PREC.predicate, seq(
-      field("expression", $._generic_expr), optional(field("negated", $.not_marker)),
+      field("expression", $._expr), optional(field("negated", $.not_marker)),
       field("operator", $.pattern_operator),
       optional(kw("to")),
-      field("pattern", $._generic_expr),
-      optional(seq(kw("escape"), field("escape", $._generic_expr))),
+      field("pattern", $._expr),
+      optional(seq(kw("escape"), field("escape", $._expr))),
     )),
 
     quantified_comparison_expr: ($) => prec.left(PREC.compare, seq(
-      field("left", $._generic_expr), field("operator", $.comparison_operator),
+      field("left", $._expr), field("operator", $.comparison_operator),
       field("quantifier", $.comparison_quantifier),
       "(", field("right", choice($._expr, $.statement_body)), ")",
     )),
 
-    comparison_expr: ($) => prec.left(PREC.compare, seq(
-      field("left", $._generic_expr), field("operator", $.comparison_operator), field("right", $._generic_expr),
-    )),
-    generic_expr: ($) => prec.left(PREC.generic, seq(
-      field("left", $._generic_expr), field("operator", $.generic_operator), field("right", $._additive_expr),
-    )),
-    additive_expr: ($) => prec.left(PREC.additive, seq(
-      field("left", $._additive_expr), field("operator", $.additive_operator), field("right", $._multiplicative_expr),
-    )),
-    multiplicative_expr: ($) => prec.left(PREC.multiplicative, seq(
-      field("left", $._multiplicative_expr), field("operator", $.multiplicative_operator), field("right", $._exponent_expr),
-    )),
-    exponent_expr: ($) => prec.left(PREC.exponent, seq(
-      field("left", $._exponent_expr), field("operator", $.exponent_operator), field("right", $._unary_expr),
-    )),
+    binary_expr: ($) => choice(
+      prec.left(PREC.compare, seq(field("left", $._expr), field("operator", $.comparison_operator), field("right", $._expr))),
+      prec.left(PREC.generic, seq(field("left", $._expr), field("operator", $.generic_operator), field("right", $._expr))),
+      prec.left(PREC.additive, seq(field("left", $._expr), field("operator", $.additive_operator), field("right", $._expr))),
+      prec.left(PREC.multiplicative, seq(field("left", $._expr), field("operator", $.multiplicative_operator), field("right", $._expr))),
+      prec.left(PREC.exponent, seq(field("left", $._expr), field("operator", $.exponent_operator), field("right", $._expr))),
+    ),
 
     comparison_operator: () => choice("=", "<>", "!=", "<", ">", "<=", ">="),
     generic_operator: () => choice(
       "&&", "@>", "<@", "->", "->>", "#>", "#>>", "#-", "?", "?|", "?&",
-      "~", "!~", "~*", "!~*", "&", "|", "#", "<<", ">>", "<->", "<=>", "@@",
+      "~", "!~", "~*", "!~*", "&", "|", "#", "<<", ">>", "<->", "<=>",
     ),
     additive_operator: () => choice("+", "-", "||"),
     multiplicative_operator: () => choice("*", "/", "%"),
@@ -621,43 +557,44 @@ module.exports = grammar({
     unary_operator: () => choice("+", "-", "~", "@"),
     operator_name: ($) => choice($.comparison_operator, $.generic_operator, "+", "-", "*", "/", "%", "^", "||"),
 
-    unary_expr: ($) => prec.right(PREC.unary, seq(field("operator", $.unary_operator), field("expression", $._unary_expr))),
+    unary_expr: ($) => prec.right(PREC.unary, seq(field("operator", $.unary_operator), field("expression", $._expr))),
 
-    value_postfix_expr: ($) => prec.left(PREC.postfix, seq(
+    postfix_expr: ($) => prec.left(PREC.postfix, seq(
       field("base", $._atom_expr),
-      repeat1(field("operation", $.value_postfix_operation)),
+      repeat1(field("operation", $.postfix_operation)),
     )),
-    value_postfix_operation: ($) => field("value", choice(
+    postfix_operation: ($) => field("value", choice(
       $.cast_suffix,
       $.collate_suffix,
+      $.at_time_zone_suffix,
       $.indirection,
-    )),
-    callable_window_expr: ($) => prec.left(PREC.postfix, seq(
-      field("expression", $.call_expr),
-      field("window", $.window_suffix),
-      repeat(field("operation", $.value_postfix_operation)),
+      $.window_suffix,
     )),
     cast_suffix: ($) => seq("::", field("type_name", $.pg_type_name)),
     collate_suffix: ($) => field("collation", $.collate_clause),
     collate_clause: ($) => seq(kw("collate"), field("name", $.qualified_name)),
+    at_time_zone_suffix: ($) => seq(kw("at"), kw("time"), kw("zone"), field("zone", $._expr)),
     window_suffix: ($) => seq(kw("over"), field("window", choice($.declaration_identifier, $.window_specification))),
     indirection: ($) => choice(
-      seq("[", choice(
-        seq(field("lower", $._expr), optional(seq(":", optional(field("upper", $._expr))))),
-        seq(":", optional(field("upper", $._expr))),
-      ), "]"),
-      prec.dynamic(-1, seq(".", field("name", $.declaration_identifier))),
+      seq("[", optional(field("lower", $._expr)), optional(seq(":", optional(field("upper", $._expr)))), "]"),
+      seq(".", field("name", $.declaration_identifier)),
+      seq(".", "*"),
     ),
 
+    cast_expr: ($) => seq(kw("cast"), "(", field("expression", $._expr), kw("as"), field("type_name", $.pg_type_name), ")"),
 
-    cast_expr: ($) => prec(PREC.atom + 1, seq(
-      kw("cast"), "(", field("expression", $._expr), kw("as"), field("type_name", $.pg_type_name), ")",
+    function_call: ($) => prec(PREC.atom, seq(
+      field("name", $.qualified_name),
+      "(",
+      commaSep(field("argument", $.function_argument)),
+      ")",
     )),
+    function_argument: ($) => choice(
+      seq(field("name", $.declaration_identifier), field("notation", choice("=>", ":=")), field("value", $._expr)),
+      field("value", $._expr),
+    ),
 
-    at_time_zone_expr: ($) => prec.left(PREC.generic, seq(
-      field("expression", $._expr), kw("at"), kw("time"), kw("zone"), field("zone", $._expr),
-    )),
-    call_expr: ($) => prec(PREC.atom, seq(
+    aggregate_call: ($) => prec(PREC.atom, seq(
       field("name", $.qualified_name),
       "(",
       choice(
@@ -672,14 +609,14 @@ module.exports = grammar({
       optional(field("within_group", $.within_group_clause)),
       optional(field("filter", $.filter_clause)),
     )),
-    function_argument: ($) => choice(
-      seq(field("name", $.declaration_identifier), field("notation", choice("=>", ":=")), field("value", $._expr)),
-      field("value", $._expr),
-    ),
-
     within_group_clause: ($) => seq(kw("within"), kw("group"), "(", field("order_by", $.order_by_clause), ")"),
     filter_clause: ($) => seq(kw("filter"), "(", kw("where"), field("expression", $._expr), ")"),
 
+    window_expr: ($) => prec.left(PREC.postfix, seq(
+      field("expression", choice($.aggregate_call, $.function_call)),
+      kw("over"),
+      field("window", choice($.declaration_identifier, $.window_specification)),
+    )),
 
     case_expr: ($) => seq(
       kw("case"),
@@ -694,12 +631,13 @@ module.exports = grammar({
     nullif_expr: ($) => seq(kw("nullif"), "(", field("left", $._expr), ",", field("right", $._expr), ")"),
     greatest_expr: ($) => seq(kw("greatest"), "(", commaSep1(field("argument", $._expr)), ")"),
     least_expr: ($) => seq(kw("least"), "(", commaSep1(field("argument", $._expr)), ")"),
+
     extract_expr: ($) => seq(kw("extract"), "(", field("field", $.extract_field), kw("from"), field("source", $._expr), ")"),
     extract_field: () => choice(
       kw("century"), kw("day"), kw("decade"), kw("dow"), kw("doy"), kw("epoch"), kw("hour"), kw("isodow"), kw("isoyear"), kw("julian"), kw("microseconds"), kw("millennium"), kw("milliseconds"), kw("minute"), kw("month"), kw("quarter"), kw("second"), kw("timezone"), kw("timezone_hour"), kw("timezone_minute"), kw("week"), kw("year"),
     ),
 
-    position_expr: ($) => seq(kw("position"), "(", field("substring", $._b_expr), kw("in"), field("string", $._b_expr), ")"),
+    position_expr: ($) => seq(kw("position"), "(", field("substring", $._expr), kw("in"), field("string", $._expr), ")"),
     substring_expr: ($) => seq(
       kw("substring"), "(", field("string", $._expr),
       choice(
@@ -712,35 +650,19 @@ module.exports = grammar({
     overlay_expr: ($) => seq(
       kw("overlay"), "(", field("string", $._expr), kw("placing"), field("replacement", $._expr), kw("from"), field("start", $._expr), optional(seq(kw("for"), field("count", $._expr))), ")",
     ),
-    trim_expr: ($) => seq(
-      kw("trim"), "(",
-      optional(field("side", $.trim_side)),
-      choice(
-        seq(optional(field("characters", $._expr)), kw("from"), field("string", $._expr)),
-        seq(field("string", $._expr), optional(seq(",", field("characters", $._expr)))),
-      ),
-      ")",
-    ),
-    trim_side: () => choice(kw("leading"), kw("trailing"), kw("both")),
 
     exists_expr: ($) => seq(kw("exists"), "(", field("statement", $.statement_body), ")"),
+    scalar_subquery_expr: ($) => seq("(", field("statement", $.statement_body), ")"),
 
     array_expr: ($) => choice(
       seq(kw("array"), "[", commaSep(field("element", $._expr)), "]"),
       seq(kw("array"), "(", field("statement", $.statement_body), ")"),
     ),
-    row_expr: ($) => seq(kw("row"), "(", commaSep(field("element", $._expr)), ")"),
-
-    parenthesized_expr: ($) => seq("(", field("value", choice(
-      $.parenthesized_subquery,
-      $.parenthesized_row,
-      $.parenthesized_scalar,
-    )), ")"),
-    parenthesized_subquery: ($) => field("statement", $.statement_body),
-    parenthesized_scalar: ($) => field("expression", $._expr),
-    parenthesized_row: ($) => seq(
-      field("element", $._expr), ",", commaSep1(field("element", $._expr)),
+    row_expr: ($) => choice(
+      seq(kw("row"), "(", commaSep(field("element", $._expr)), ")"),
+      seq("(", field("element", $._expr), ",", commaSep(field("element", $._expr)), ")"),
     ),
+    parenthesized_expr: ($) => seq("(", field("expression", $._expr), ")"),
 
     current_value_expr: () => choice(
       kw("current_date"), kw("current_time"), kw("current_timestamp"), kw("localtime"), kw("localtimestamp"), kw("current_user"), kw("session_user"), kw("system_user"), kw("current_role"), kw("current_catalog"), kw("current_schema"),

@@ -684,10 +684,6 @@ enum SemanticExpressionKind {
         binding: crate::RelationId,
         column_id: dibs_pg_catalog::ColumnId,
     },
-    DerivedColumn {
-        binding: crate::RelationId,
-        field_id: crate::FieldId,
-    },
     Call {
         callable_id: dibs_pg_catalog::CallableId,
         arguments: Vec<SemanticExpression>,
@@ -741,12 +737,6 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
                 binding: *binding,
                 column_id: column_id.clone(),
             },
-            crate::TypedExpressionKind::DerivedColumn { binding, field_id } => {
-                Self::DerivedColumn {
-                    binding: *binding,
-                    field_id: *field_id,
-                }
-            }
             crate::TypedExpressionKind::Call(call) => Self::Call {
                 callable_id: call.callable_id.clone(),
                 arguments: call

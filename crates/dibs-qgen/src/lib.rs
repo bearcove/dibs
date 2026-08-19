@@ -15,10 +15,6 @@ pub use backend::{
     render_compiled_sql,
 };
 
-// Strict PostgreSQL source compiler
-mod compiler;
-pub use compiler::{CompileDiagnostic, CompileDiagnosticCode, DiagnosticSet, compile_query_source};
-
 // Parse
 mod parse;
 pub use parse::parse_query_file;

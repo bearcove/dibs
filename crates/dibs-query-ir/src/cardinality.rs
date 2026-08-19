@@ -253,11 +253,6 @@ pub enum NullabilityEvidence {
     },
     /// Typed SQL `NULL` literal.
     NullLiteral,
-    /// Intrinsic non-null value shape that is not owned by the PostgreSQL catalog.
-    SyntheticNonNull {
-        /// Stable compiler vocabulary for the value shape.
-        kind: String,
-    },
     /// Outer join null-extends one relation binding.
     OuterJoinNullExtension {
         /// Null-extended binding.
@@ -362,7 +357,6 @@ fn positive_non_null_evidence(evidence: &NullabilityEvidence) -> bool {
     matches!(
         evidence,
         NullabilityEvidence::BaseColumnNotNull { .. }
-            | NullabilityEvidence::SyntheticNonNull { .. }
             | NullabilityEvidence::CastPropagation
             | NullabilityEvidence::CtePropagation { .. }
             | NullabilityEvidence::SetOperationPropagation

@@ -1,14 +1,7 @@
 use dibs_query_syntax::{DiagnosticCode, DibsParser, ParserInputEdit, ResultMode, SourceId};
-use std::sync::LazyLock;
-
-static PARSER: LazyLock<DibsParser> = LazyLock::new(DibsParser::new);
-
-fn parser() -> &'static DibsParser {
-    &PARSER
-}
 
 fn parse(source: &str) -> dibs_query_syntax::SourceFile {
-    parser()
+    DibsParser::new()
         .parse_strict(SourceId::test(), source)
         .unwrap_or_else(|diagnostics| panic!("strict parse failed: {diagnostics:#?}"))
 }
@@ -230,34 +223,6 @@ fn parses_joins_lateral_derived_tables_and_registered_table_functions() {
 }
 
 #[test]
-fn parses_plain_distinct_distinct_on_wildcard_and_all_selects() {
-    let file = parse(include_str!("fixtures/select-quantifiers.dibs"));
-    assert_eq!(file.queries.len(), 5);
-    assert_eq!(file.queries[0].name.value, "DistinctTargets");
-    assert_eq!(file.queries[1].name.value, "DistinctWildcard");
-    assert_eq!(file.queries[2].name.value, "DistinctOnTargets");
-    assert_eq!(file.queries[3].name.value, "AllTargets");
-    assert_eq!(file.queries[4].name.value, "QualifiedWildcard");
-
-    let source = include_str!("fixtures/select-quantifiers.dibs");
-    let parsed = DibsParser::new()
-        .parse_recovering(SourceId::test(), source)
-        .unwrap();
-    assert!(parsed.diagnostics.is_empty(), "{:#?}", parsed.diagnostics);
-    let kinds = parsed
-        .tree
-        .descendants()
-        .map(|node| node.kind().to_owned())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert!(kinds.contains("distinct_select"));
-    assert!(kinds.contains("plain_distinct_select"));
-    assert!(kinds.contains("distinct_on_select"));
-    assert!(kinds.contains("wildcard_target"));
-    assert!(kinds.contains("all_select"));
-    assert!(kinds.contains("qualified_wildcard_target"));
-}
-
-#[test]
 fn parses_grouping_having_filters_and_within_group_aggregates() {
     let file = parse(include_str!("fixtures/aggregates.dibs"));
     assert_eq!(file.queries[0].name.value, "AggregateForms");
@@ -267,24 +232,6 @@ fn parses_grouping_having_filters_and_within_group_aggregates() {
 fn parses_named_windows_and_every_frame_family_absent_from_trials() {
     let file = parse(include_str!("fixtures/windows.dibs"));
     assert_eq!(file.queries[0].name.value, "WindowForms");
-}
-#[test]
-fn window_fixture_cst_contains_all_frame_exclusion_kinds() {
-    for (index, exclusion) in [
-        "exclude current row",
-        "exclude group",
-        "exclude ties",
-        "exclude no others",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let source = format!(
-            "query Window{index}() -> many {{ select sum(value) over (rows between unbounded preceding and current row {exclusion}) from sample }}"
-        );
-        let file = parse(&source);
-        assert_eq!(file.queries.len(), 1);
-    }
 }
 
 #[test]
@@ -296,42 +243,12 @@ fn parses_set_operations_attached_order_limit_offset_and_values() {
 
 #[test]
 fn parses_insert_update_delete_returning_and_on_conflict() {
-    let source = include_str!("fixtures/mutations.dibs");
-    let starts = source
-        .match_indices("query ")
-        .map(|(start, _)| start)
-        .chain(std::iter::once(source.len()))
-        .collect::<Vec<_>>();
-
-    for (index, bounds) in starts.windows(2).enumerate() {
-        let file = parse(&source[bounds[0]..bounds[1]]);
-        assert_eq!(file.queries.len(), 1, "mutation query {index}");
-    }
-
-    let recovered = DibsParser::new()
-        .parse_recovering(SourceId::test(), source)
-        .unwrap();
-    assert!(
-        recovered.diagnostics.is_empty(),
-        "{:#?}",
-        recovered.diagnostics
-    );
-    assert_eq!(
-        recovered
-            .tree
-            .descendants()
-            .filter(|node| node.kind() == "query_decl")
-            .count(),
-        4
-    );
-
-    let kinds = recovered
-        .tree
-        .descendants()
-        .map(|node| node.kind().to_owned())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert!(kinds.contains("insert_alias"));
-    assert!(kinds.contains("qualified_wildcard_target"));
+    let file = parse(include_str!("fixtures/mutations.dibs"));
+    assert_eq!(file.queries.len(), 4);
+    assert_eq!(file.queries[0].name.value, "InsertForms");
+    assert_eq!(file.queries[1].name.value, "InsertSelect");
+    assert_eq!(file.queries[2].name.value, "UpdateForms");
+    assert_eq!(file.queries[3].name.value, "DeleteForms");
 }
 
 #[test]
@@ -358,7 +275,6 @@ fn full_language_cst_contains_explicit_structural_nodes() {
         include_str!("fixtures/sets-values.dibs"),
         include_str!("fixtures/mutations.dibs"),
         include_str!("fixtures/ctes-locks.dibs"),
-        include_str!("fixtures/select-quantifiers.dibs"),
         include_str!("fixtures/functions-locks.dibs"),
     ];
     let required = [
@@ -366,17 +282,12 @@ fn full_language_cst_contains_explicit_structural_nodes() {
         "case_expr",
         "joined_relation",
         "derived_relation",
-        "distinct_select",
-        "distinct_on_select",
-        "plain_distinct_select",
         "function_relation",
-        "call_expr",
+        "aggregate_call",
         "filter_clause",
         "within_group_clause",
-        "callable_window_expr",
+        "window_expr",
         "window_frame_clause",
-        "frame_exclusion",
-        "frame_exclusion_kind",
         "set_operation",
         "values_statement",
         "insert_statement",
@@ -397,51 +308,4 @@ fn full_language_cst_contains_explicit_structural_nodes() {
         }
     }
     assert_eq!(seen, required.into_iter().map(str::to_owned).collect());
-}
-
-#[test]
-fn arithmetic_precedence_tree_is_layered() {
-    let parser = parser();
-    let source = "query Q() -> many { select 1 + 2 * 3 }";
-    let recovered = parser.parse_recovering(SourceId::test(), source).unwrap();
-    assert!(
-        recovered.diagnostics.is_empty(),
-        "{:#?}",
-        recovered.diagnostics
-    );
-    let additive = recovered
-        .tree
-        .descendants()
-        .find(|node| node.kind() == "additive_expr")
-        .expect("additive expression node");
-    assert!(
-        additive
-            .children()
-            .any(|child| child.kind() == "multiplicative_expr"),
-        "multiplication must be a direct operand of addition"
-    );
-}
-
-#[test]
-fn exponent_tree_is_left_associative() {
-    let parser = parser();
-    let source = "query Q() -> many { select 2 ^ 3 ^ 4 }";
-    let recovered = parser.parse_recovering(SourceId::test(), source).unwrap();
-    assert!(
-        recovered.diagnostics.is_empty(),
-        "{:#?}",
-        recovered.diagnostics
-    );
-    let exponents = recovered
-        .tree
-        .descendants()
-        .filter(|node| node.kind() == "exponent_expr")
-        .collect::<Vec<_>>();
-    assert_eq!(exponents.len(), 2);
-    assert!(
-        exponents[0]
-            .children()
-            .any(|child| child.kind() == "exponent_expr"),
-        "left-associated exponent must nest on the left"
-    );
 }

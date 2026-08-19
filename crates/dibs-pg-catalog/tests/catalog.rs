@@ -949,21 +949,6 @@ fn curated_callable_and_operator_semantics_are_explicit() {
             && operator.right.as_ref() == Some(&text.id)
             && operator.strict
     }));
-    let boolean = catalog.resolve_type("pg_catalog.boolean").unwrap();
-    assert!(catalog.operator_candidates("=", 2).any(|operator| {
-        operator.left.as_ref() == Some(&boolean.id)
-            && operator.right.as_ref() == Some(&boolean.id)
-            && operator.strict
-    }));
-    let bigint = catalog.resolve_type("pg_catalog.bigint").unwrap();
-    let integer = catalog.resolve_type("pg_catalog.integer").unwrap();
-    let boolean = catalog.resolve_type("pg_catalog.boolean").unwrap();
-    assert!(catalog.operator_candidates(">", 2).any(|operator| {
-        operator.left.as_ref() == Some(&bigint.id)
-            && operator.right.as_ref() == Some(&integer.id)
-            && operator.result == boolean.id
-            && operator.strict
-    }));
 
     let sum = catalog
         .callable_candidates("sum", 1)

@@ -296,12 +296,6 @@ pub enum CheckError {
         /// Exact projection origin.
         origin: SourceOrigin,
     },
-    /// DISTINCT ON expressions do not match the leading ORDER BY expressions.
-    #[error("DISTINCT ON expressions must match the leading ORDER BY expressions")]
-    DistinctOnOrderMismatch {
-        /// Exact DISTINCT ON expression origin.
-        origin: SourceOrigin,
-    },
     /// A numeric literal cannot be represented by the contextual PostgreSQL type.
     #[error("numeric literal {value} cannot be represented as {target}")]
     NumericLiteralOutOfRange {
@@ -326,7 +320,7 @@ impl From<dibs_query_ir::TypedShapeError> for CheckError {
 #[derive(Clone)]
 struct CheckContext<'hir> {
     parameters: BTreeMap<ParameterId, &'hir HirParameter>,
-    relations: BTreeMap<RelationId, BTreeMap<RelationField, BoundColumn>>,
+    relations: BTreeMap<RelationId, BTreeMap<ColumnId, BoundColumn>>,
     null_extended: BTreeSet<RelationId>,
     ctes: BTreeMap<CteId, BTreeMap<FieldId, TypedExpression>>,
 }
@@ -349,12 +343,11 @@ impl<'hir> CheckContext<'hir> {
                 .iter()
                 .map(|column| {
                     (
-                        RelationField::Catalog(column.id.clone()),
+                        column.id.clone(),
                         BoundColumn {
                             type_id: column.type_id.clone(),
                             typmod: None,
                             nullable: column.nullability == CatalogNullability::Nullable,
-                            volatility: Volatility::Immutable,
                         },
                     )
                 })
@@ -369,12 +362,11 @@ impl<'hir> CheckContext<'hir> {
                 .iter()
                 .map(|projection| {
                     (
-                        RelationField::Derived(projection.field_id),
+                        synthetic_field_column(binding, projection.field_id),
                         BoundColumn {
                             type_id: projection.output_type_id().clone(),
                             typmod: projection.output_typmod().cloned(),
                             nullable: projection.output_nullability().is_nullable(),
-                            volatility: projection.expression.volatility,
                         },
                     )
                 })
@@ -383,18 +375,11 @@ impl<'hir> CheckContext<'hir> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum RelationField {
-    Catalog(ColumnId),
-    Derived(FieldId),
-}
-
 #[derive(Clone)]
 struct BoundColumn {
     type_id: TypeId,
     typmod: Option<Typmod>,
     nullable: bool,
-    volatility: Volatility,
 }
 
 struct BuiltinTypes {

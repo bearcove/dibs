@@ -207,8 +207,8 @@ fn fixture_query(alias: &str, alias_origin: SourceOrigin) -> CompiledQuery {
             },
         ],
         vec![
-            LineageEdge::derived(LineageNodeId::new(3), LineageNodeId::new(2)),
-            LineageEdge::derived(LineageNodeId::new(2), LineageNodeId::new(1)),
+            LineageEdge::derived(LineageNodeId::new(1), LineageNodeId::new(2)),
+            LineageEdge::derived(LineageNodeId::new(2), LineageNodeId::new(3)),
             LineageEdge::generated(LineageNodeId::new(1), LineageNodeId::new(4)),
         ],
     );
@@ -1368,7 +1368,7 @@ fn checked_compiled_query_rejects_cross_surface_mismatches() {
         missing_parameter_type.ordered_parameters[0].type_id.clone();
     assert!(matches!(
         missing_parameter_type.validate(),
-        Err(dibs_query_ir::CompiledQueryError::MissingCatalogRenderName { .. })
+        Err(dibs_query_ir::CompiledQueryError::MissingCatalogRenderName)
     ));
 
     let mut invalid_manifest_version = fixture_query("job", origin(1, 21, 24));
@@ -1530,7 +1530,7 @@ fn structural_syntax_operators_do_not_require_catalog_render_names() {
     };
     assert!(matches!(
         nested_catalog_operand.validate(),
-        Err(dibs_query_ir::CompiledQueryError::MissingCatalogRenderName { .. })
+        Err(dibs_query_ir::CompiledQueryError::MissingCatalogRenderName)
     ));
 }
 

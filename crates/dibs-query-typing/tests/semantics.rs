@@ -1335,9 +1335,9 @@ fn set_projection_coercion_drives_checked_output_type_and_codec() {
     select.projections[0].expression = HirExpression {
         id: ExpressionId::new(132),
         origin: origin(),
-        kind: HirExpressionKind::DerivedColumn {
+        kind: HirExpressionKind::Column {
             binding: RelationId::new(90),
-            field_id: FieldId::new(1),
+            column_id: dibs_pg_catalog::ColumnId::new("pg18:column:derived:90:1"),
         },
     };
     let checked = SemanticChecker::new(&catalog).check_query(&set).unwrap();
@@ -1441,9 +1441,9 @@ fn cte_and_subquery_bindings_propagate_post_coercion_projection_facts() {
         select.projections[0].expression = HirExpression {
             id: ExpressionId::new(139),
             origin: origin(),
-            kind: HirExpressionKind::DerivedColumn {
+            kind: HirExpressionKind::Column {
                 binding: RelationId::new(90),
-                field_id: FieldId::new(1),
+                column_id: dibs_pg_catalog::ColumnId::new("pg18:column:derived:90:1"),
             },
         };
         set.statement
@@ -1493,9 +1493,9 @@ fn cte_and_subquery_bindings_propagate_post_coercion_projection_facts() {
     select.projections[0].expression = HirExpression {
         id: ExpressionId::new(136),
         origin: origin(),
-        kind: HirExpressionKind::DerivedColumn {
+        kind: HirExpressionKind::Column {
             binding: RelationId::new(91),
-            field_id: FieldId::new(90),
+            column_id: dibs_pg_catalog::ColumnId::new("pg18:column:derived:91:90"),
         },
     };
     let checked = SemanticChecker::new(&catalog)

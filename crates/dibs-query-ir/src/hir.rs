@@ -283,13 +283,6 @@ pub enum HirExpressionKind {
         /// Stable catalog column identity.
         column_id: ColumnId,
     },
-    /// Output field projected by a derived relation.
-    DerivedColumn {
-        /// Derived relation binding.
-        binding: RelationId,
-        /// Projected field identity.
-        field_id: FieldId,
-    },
     /// Resolved function call with all PostgreSQL call modifiers.
     Call(Box<HirCall>),
     /// Resolved unary/binary/postfix operator.
