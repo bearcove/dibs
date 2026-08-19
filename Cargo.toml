@@ -14,7 +14,6 @@ dibs-proto = { path = "crates/dibs-proto", version = "0.2.0-rc.5" }
 dibs-qgen = { path = "crates/dibs-qgen", version = "0.2.0-rc.5" }
 dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.2.0-rc.5" }
 dibs-db-schema = { path = "crates/dibs-db-schema", version = "0.2.0-rc.5" }
-dibs-pg-catalog = { path = "crates/dibs-pg-catalog", version = "0.1.0" }
 dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.5" }
 dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.5" }
 dockside = { path = "crates/dockside" }
@@ -28,10 +27,6 @@ facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
 figue = { git = "https://github.com/bearcove/figue", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
 strid = { git = "https://github.com/bearcove/strid", rev = "c48464a22b6511b0119be92ea2c86c1f61e06153" }
-snark = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-snark-dsl = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-margin = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
-margin-term = { git = "https://github.com/bearcove/snark", rev = "3f4a3481608c67cc1148ae0d3cd1cf230fcb6280" }
 
 facet-styx = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
 styx-embed = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
@@ -79,3 +74,11 @@ testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[patch."https://github.com/bearcove/phon-next"]
+phon = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-codegen = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-engine = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-ir = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-jit = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
+phon-schema = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }

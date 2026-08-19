@@ -1049,21 +1049,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dibs-pg-catalog"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "dibs-db-schema",
- "dockside",
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
- "indexmap 2.14.0",
- "thiserror 2.0.18",
- "tokio",
- "tokio-postgres",
- "tracing",
-]
-
-[[package]]
 name = "dibs-proto"
 version = "0.2.0-rc.5"
 dependencies = [
@@ -1079,45 +1064,16 @@ dependencies = [
  "camino",
  "codegen",
  "dibs-db-schema",
- "dibs-pg-catalog",
- "dibs-qgen-generated-api-fixture",
- "dibs-query-ir",
  "dibs-query-schema",
- "dibs-query-syntax",
- "dibs-query-typing",
  "dibs-sql",
  "dockside",
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-styx",
  "facet-testhelpers",
  "indexmap 2.14.0",
  "insta",
- "tempfile",
  "tokio",
  "tokio-postgres",
  "tracing",
-]
-
-[[package]]
-name = "dibs-qgen-generated-api-fixture"
-version = "0.0.0"
-dependencies = [
- "dibs-pg-catalog",
- "dibs-qgen",
- "dibs-query-ir",
- "dibs-runtime",
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
-]
-
-[[package]]
-name = "dibs-query-ir"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "dibs-pg-catalog",
- "dibs-query-syntax",
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
- "facet-json",
 ]
 
 [[package]]
@@ -1130,28 +1086,6 @@ dependencies = [
  "facet-styx",
  "facet-testhelpers",
  "indexmap 2.14.0",
-]
-
-[[package]]
-name = "dibs-query-syntax"
-version = "0.1.0"
-dependencies = [
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
- "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
- "margin-term 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
- "snark",
- "snark-dsl",
-]
-
-[[package]]
-name = "dibs-query-typing"
-version = "0.1.0"
-dependencies = [
- "dibs-db-schema",
- "dibs-pg-catalog",
- "dibs-query-ir",
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1242,7 +1176,7 @@ checksum = "ad5208a115eaba24916f7456929832e310a81518c641f93fee4f89aa93aa3675"
 dependencies = [
  "cfg-if",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1306,7 +1240,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1566,8 +1500,8 @@ dependencies = [
  "facet-core 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-format",
  "facet-reflect",
- "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
- "margin-term 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
+ "margin",
+ "margin-term",
  "serde_json",
  "styx-format",
  "styx-parse",
@@ -2437,7 +2371,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2473,7 +2407,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2664,31 +2598,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "margin"
-version = "0.10.0-rc.1"
-source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
-dependencies = [
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
- "unicode-width",
-]
-
-[[package]]
 name = "margin-term"
 version = "0.10.0-rc.1"
 source = "git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a#2dcfc039aa43e14fa004238d00bd9eeb16bf859a"
 dependencies = [
  "arborium-theme",
- "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=2dcfc039aa43e14fa004238d00bd9eeb16bf859a)",
- "unicode-width",
-]
-
-[[package]]
-name = "margin-term"
-version = "0.10.0-rc.1"
-source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
-dependencies = [
- "arborium-theme",
- "margin 0.10.0-rc.1 (git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280)",
+ "margin",
  "unicode-width",
 ]
 
@@ -3183,7 +3098,7 @@ dependencies = [
 [[package]]
 name = "phon"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
+source = "git+https://github.com/bearcove/phon?rev=79622e1459b3c6b3ede766abd1e02a505a204504#79622e1459b3c6b3ede766abd1e02a505a204504"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "facet-value",
@@ -3196,7 +3111,7 @@ dependencies = [
 [[package]]
 name = "phon-codegen"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
+source = "git+https://github.com/bearcove/phon?rev=79622e1459b3c6b3ede766abd1e02a505a204504#79622e1459b3c6b3ede766abd1e02a505a204504"
 dependencies = [
  "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
  "phon",
@@ -3206,7 +3121,7 @@ dependencies = [
 [[package]]
 name = "phon-engine"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
+source = "git+https://github.com/bearcove/phon?rev=79622e1459b3c6b3ede766abd1e02a505a204504#79622e1459b3c6b3ede766abd1e02a505a204504"
 dependencies = [
  "facet-value",
  "phon-ir",
@@ -3217,7 +3132,7 @@ dependencies = [
 [[package]]
 name = "phon-ir"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
+source = "git+https://github.com/bearcove/phon?rev=79622e1459b3c6b3ede766abd1e02a505a204504#79622e1459b3c6b3ede766abd1e02a505a204504"
 dependencies = [
  "phon-schema",
  "weavy",
@@ -3226,7 +3141,7 @@ dependencies = [
 [[package]]
 name = "phon-jit"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
+source = "git+https://github.com/bearcove/phon?rev=79622e1459b3c6b3ede766abd1e02a505a204504#79622e1459b3c6b3ede766abd1e02a505a204504"
 dependencies = [
  "copypatch",
  "phon-ir",
@@ -3237,7 +3152,7 @@ dependencies = [
 [[package]]
 name = "phon-schema"
 version = "0.2.0-rc.5"
-source = "git+https://github.com/bearcove/phon-next?rev=be6e6de5132c9eed3277e9345923117482028b65#be6e6de5132c9eed3277e9345923117482028b65"
+source = "git+https://github.com/bearcove/phon?rev=79622e1459b3c6b3ede766abd1e02a505a204504#79622e1459b3c6b3ede766abd1e02a505a204504"
 dependencies = [
  "blake3",
  "facet-value",
@@ -3690,9 +3605,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.12.4"
+version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1292b7759ae1cb9ec195452d1390a074f0cd8541ab7a5a8c31cd6db45d4a6ba"
+checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3713,9 +3628,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.11"
+version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "rend"
@@ -3836,7 +3751,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4233,33 +4148,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef784004ca8777809dcdad6ac37629f0a97caee4c685fcea805278d81dd8b857"
 
 [[package]]
-name = "snark"
-version = "0.0.1"
-source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
-dependencies = [
- "aho-corasick",
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
- "facet-json",
- "indexmap 2.14.0",
- "regex",
- "regex-automata",
- "smallvec 1.15.1",
- "weavy",
-]
-
-[[package]]
-name = "snark-dsl"
-version = "0.1.0"
-source = "git+https://github.com/bearcove/snark?rev=3f4a3481608c67cc1148ae0d3cd1cf230fcb6280#3f4a3481608c67cc1148ae0d3cd1cf230fcb6280"
-dependencies = [
- "facet 0.50.0-rc.5 (git+https://github.com/facet-rs/facet?rev=5705fa6c51289bea49f5729c52dc5e23cedce4f8)",
- "facet-json",
- "snark",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "socket2"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4591,10 +4479,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5873,7 +5761,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
