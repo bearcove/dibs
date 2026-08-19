@@ -7,9 +7,9 @@ use crate::{
     HirAssignment, HirCall, HirCaseBranch, HirConflictAction, HirConflictClause, HirConflictTarget,
     HirCte, HirDelete, HirExpression, HirExpressionKind, HirInsert, HirInsertSource, HirLiteral,
     HirLockClause, HirNamedWindow, HirOrderBy, HirProjection, HirRelation, HirRelationKind,
-    HirSelect, HirStatement, HirStatementKind, HirUpdate, Nullability, NullabilityEvidence,
-    OrderBy, ParameterId, RelationAlias, RelationId, SelectDistinct, SourceOrigin, StatementId,
-    WindowFrame, WindowReference, WindowSpec,
+    HirSelect, HirStatement, HirStatementKind, HirUpdate, Nullability, OrderBy, ParameterId,
+    RelationAlias, RelationId, SelectDistinct, SourceOrigin, StatementId, WindowFrame,
+    WindowReference, WindowSpec,
 };
 
 /// PostgreSQL typmod retained as canonical semantic spelling.
@@ -61,10 +61,12 @@ pub enum CoercionContext {
 pub enum CoercionEvidence {
     /// Source already has the exact target type.
     Exact,
-    /// Ordered catalog cast path selected for this exact coercion.
-    CatalogCastPath {
-        /// Self-contained catalog steps from source to target.
-        steps: Vec<TypedCastStep>,
+    /// Stable catalog cast was selected.
+    CatalogCast {
+        /// Resolved cast identity.
+        cast_id: CastId,
+        /// Resolution context.
+        context: CoercionContext,
     },
     /// Domain was flattened to its base during candidate selection.
     DomainBase {
@@ -94,108 +96,17 @@ pub enum CoercionEvidence {
     },
 }
 
-/// One immutable edge in a catalog-proven coercion path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, facet::Facet)]
-pub struct TypedCastStep {
-    /// Stable catalog cast identity.
-    pub cast_id: CastId,
-    /// Exact step input type.
-    pub source_type: TypeId,
-    /// Exact step output type.
-    pub target_type: TypeId,
-    /// PostgreSQL context in which this cast edge is permitted.
-    pub context: CoercionContext,
-}
-
-/// One explicit proof-bearing typed coercion applied at a use site.
+/// One explicit typed coercion node.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
-#[facet(invariants = TypedCoercion::is_valid)]
 pub struct TypedCoercion {
-    /// Source expression type before coercion.
+    /// Source type.
     pub source_type: TypeId,
-    /// Target type after coercion.
+    /// Target type.
     pub target_type: TypeId,
     /// Target typmod.
     pub target_typmod: Option<Typmod>,
-    /// Conservative proof-bearing nullability after coercion.
-    pub result_nullability: Nullability,
     /// Resolution proof.
     pub evidence: CoercionEvidence,
-}
-
-impl TypedCoercion {
-    /// Validates the self-contained coercion proof.
-    pub fn validate(&self) -> Result<(), TypedShapeError> {
-        self.result_nullability
-            .validate()
-            .map_err(|_| TypedShapeError::Nullability)?;
-        if !self
-            .result_nullability
-            .evidence()
-            .contains(&NullabilityEvidence::CastPropagation)
-        {
-            return Err(TypedShapeError::Nullability);
-        }
-        if self.source_type == self.target_type {
-            return Err(TypedShapeError::Coercion);
-        }
-        match &self.evidence {
-            CoercionEvidence::Exact => Err(TypedShapeError::Coercion),
-            CoercionEvidence::CatalogCastPath { steps } => {
-                validate_cast_path(&self.source_type, &self.target_type, steps)
-            }
-            CoercionEvidence::DomainBase { domain, base }
-                if domain == &self.source_type && base == &self.target_type =>
-            {
-                Ok(())
-            }
-            CoercionEvidence::UnknownLiteral { resolved } if resolved == &self.target_type => {
-                Ok(())
-            }
-            CoercionEvidence::Polymorphic { bound_types, .. }
-                if bound_types
-                    .iter()
-                    .any(|type_id| type_id == &self.target_type) =>
-            {
-                Ok(())
-            }
-            CoercionEvidence::CommonType { resolved, inputs }
-                if resolved == &self.target_type && inputs.contains(&self.source_type) =>
-            {
-                Ok(())
-            }
-            _ => Err(TypedShapeError::Coercion),
-        }
-    }
-
-    fn is_valid(&self) -> bool {
-        self.validate().is_ok()
-    }
-}
-
-fn validate_cast_path(
-    source: &TypeId,
-    target: &TypeId,
-    steps: &[TypedCastStep],
-) -> Result<(), TypedShapeError> {
-    let Some(first) = steps.first() else {
-        return Err(TypedShapeError::Coercion);
-    };
-    if &first.source_type != source || steps.last().map(|step| &step.target_type) != Some(target) {
-        return Err(TypedShapeError::Coercion);
-    }
-    let mut cast_ids = std::collections::BTreeSet::new();
-    let mut visited_types = std::collections::BTreeSet::from([source.clone()]);
-    for (index, step) in steps.iter().enumerate() {
-        if step.source_type == step.target_type
-            || !cast_ids.insert(step.cast_id.clone())
-            || !visited_types.insert(step.target_type.clone())
-            || index > 0 && steps[index - 1].target_type != step.source_type
-        {
-            return Err(TypedShapeError::Coercion);
-        }
-    }
-    Ok(())
 }
 
 /// Typed statement wrapper with proof-bearing cardinality.
@@ -391,46 +302,10 @@ pub struct TypedProjection {
     pub field_id: FieldId,
     /// Exact SQL output label.
     pub sql_label: String,
-    /// Typed source expression before any projection use-site coercion.
+    /// Typed expression.
     pub expression: TypedExpression,
-    /// Optional coercion applied to the projected value before output aliasing.
-    pub coercion: Option<TypedCoercion>,
 }
 
-impl TypedProjection {
-    /// Returns the PostgreSQL output type after any projection use-site coercion.
-    #[must_use]
-    pub fn output_type_id(&self) -> &TypeId {
-        self.coercion
-            .as_ref()
-            .map_or(&self.expression.type_id, |coercion| &coercion.target_type)
-    }
-
-    /// Returns proof-bearing output nullability after any projection use-site coercion.
-    #[must_use]
-    pub fn output_nullability(&self) -> &Nullability {
-        self.coercion
-            .as_ref()
-            .map_or(&self.expression.nullability, |coercion| {
-                &coercion.result_nullability
-            })
-    }
-
-    /// Returns the output typmod after any projection use-site coercion.
-    #[must_use]
-    pub fn output_typmod(&self) -> Option<&Typmod> {
-        self.coercion
-            .as_ref()
-            .map_or(self.expression.typmod.as_ref(), |coercion| {
-                coercion.target_typmod.as_ref()
-            })
-    }
-
-    fn validate(&self) -> Result<(), TypedShapeError> {
-        self.expression.validate()?;
-        validate_use_site_coercion(&self.expression, self.coercion.as_ref(), None)
-    }
-}
 /// Typed relation.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct TypedRelation {
@@ -606,60 +481,25 @@ impl TypedExpression {
             | TypedExpressionKind::CteColumn { .. } => Ok(()),
             TypedExpressionKind::Call(call) => call.validate(),
             TypedExpressionKind::Operator { operands, .. } => validate_arguments(operands),
-            TypedExpressionKind::Cast {
-                expression,
-                coercion,
-                ..
-            } => {
-                expression.validate()?;
-                validate_use_site_coercion(expression, Some(coercion), Some(&self.type_id))
-            }
-            TypedExpressionKind::Collate { expression, .. } => expression.validate(),
+            TypedExpressionKind::Cast { expression, .. }
+            | TypedExpressionKind::Collate { expression, .. } => expression.validate(),
             TypedExpressionKind::Case {
                 operand,
                 branches,
                 else_expression,
-                implicit_else_type,
-                result_coercion,
+                ..
             } => {
-                if implicit_else_type.is_some() == else_expression.is_some() {
-                    return Err(TypedShapeError::Coercion);
-                }
-                if implicit_else_type.is_some()
-                    && (!self.nullability.is_nullable()
-                        || !self
-                            .nullability
-                            .evidence()
-                            .contains(&NullabilityEvidence::CaseBranch))
-                {
-                    return Err(TypedShapeError::Nullability);
-                }
                 if let Some(operand) = operand {
                     operand.validate()?;
                 }
                 for branch in branches {
                     branch.when.validate()?;
-                    validate_argument(&branch.then, Some(&self.type_id))?;
+                    branch.then.validate()?;
                 }
                 if let Some(else_expression) = else_expression {
-                    validate_argument(else_expression, Some(&self.type_id))?;
+                    else_expression.validate()?;
                 }
-                validate_common_type_evidence(
-                    result_coercion,
-                    &self.type_id,
-                    implicit_else_type
-                        .iter()
-                        .chain(
-                            else_expression
-                                .iter()
-                                .map(|argument| &argument.expression.type_id),
-                        )
-                        .chain(
-                            branches
-                                .iter()
-                                .map(|branch| &branch.then.expression.type_id),
-                        ),
-                )
+                Ok(())
             }
             TypedExpressionKind::ScalarSubquery(statement) => statement.validate(),
             TypedExpressionKind::Row(values) => {
@@ -668,16 +508,11 @@ impl TypedExpression {
                 }
                 Ok(())
             }
-            TypedExpressionKind::Array { elements, coercion } => {
-                let target_type = common_type_target(coercion)?;
+            TypedExpressionKind::Array { elements, .. } => {
                 for element in elements {
-                    validate_argument(element, Some(target_type))?;
+                    element.validate()?;
                 }
-                validate_common_type_evidence(
-                    coercion,
-                    target_type,
-                    elements.iter().map(|element| &element.expression.type_id),
-                )
+                Ok(())
             }
         }
     }
@@ -693,7 +528,7 @@ impl TypedExpression {
 pub enum TypedExpressionKind {
     /// Typed literal.
     Literal(HirLiteral),
-    /// Typed parameter reference.
+    /// Typed parameter.
     Parameter(ParameterId),
     /// Typed column reference.
     Column {
@@ -735,11 +570,9 @@ pub enum TypedExpressionKind {
         operand: Option<Box<TypedExpression>>,
         /// Ordered branches.
         branches: Vec<TypedCaseBranch>,
-        /// Optional ELSE value and its use-site coercion.
-        else_expression: Option<Box<TypedArgument>>,
-        /// Non-rendered PostgreSQL implicit `ELSE NULL` input type, present exactly when ELSE is absent.
-        implicit_else_type: Option<TypeId>,
-        /// Common result-type selection proof.
+        /// Optional ELSE expression.
+        else_expression: Option<Box<TypedExpression>>,
+        /// Common result coercion proof.
         result_coercion: CoercionEvidence,
     },
     /// Scalar subquery.
@@ -748,9 +581,9 @@ pub enum TypedExpressionKind {
     Row(Vec<TypedExpression>),
     /// Array constructor with common-element proof.
     Array {
-        /// Elements in authored order, each with its use-site coercion.
-        elements: Vec<TypedArgument>,
-        /// Common element-type selection proof.
+        /// Elements in authored order.
+        elements: Vec<TypedExpression>,
+        /// Common element coercion proof.
         coercion: CoercionEvidence,
     },
     /// Typed CTE field.
@@ -776,8 +609,8 @@ pub struct TypedArgument {
 pub struct TypedCaseBranch {
     /// Boolean/match expression.
     pub when: TypedExpression,
-    /// Result value and its use-site coercion.
-    pub then: TypedArgument,
+    /// Result expression.
+    pub then: TypedExpression,
 }
 
 /// One typed ordering term.
@@ -855,87 +688,36 @@ pub enum TypedLimit {
     Parameter(ParameterId),
 }
 
-/// One proof-bearing common output column of a typed VALUES relation.
-#[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
-pub struct TypedValuesColumn {
-    /// Common PostgreSQL output type for this column.
-    pub type_id: TypeId,
-    /// Common PostgreSQL output typmod for this column.
-    pub typmod: Option<Typmod>,
-    /// Conservative nullability after every cell coercion.
-    pub nullability: Nullability,
-    /// Ordered common-type proof over source cell types in authored row order.
-    pub common_type: CoercionEvidence,
-}
-
-/// Validated non-empty rectangular typed VALUES rows with one common target per column.
+/// Validated non-empty rectangular typed VALUES rows.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 #[facet(invariants = TypedValues::is_valid)]
 pub struct TypedValues {
-    rows: Vec<Vec<TypedArgument>>,
-    columns: Vec<TypedValuesColumn>,
+    rows: Vec<Vec<TypedExpression>>,
 }
 
 impl TypedValues {
-    /// Creates non-empty rectangular typed VALUES rows with one proof-bearing column contract.
-    pub fn try_new(
-        rows: Vec<Vec<TypedArgument>>,
-        columns: Vec<TypedValuesColumn>,
-    ) -> Result<Self, TypedShapeError> {
-        let value = Self { rows, columns };
-        value.validate()?;
-        Ok(value)
+    /// Creates non-empty rectangular typed VALUES rows.
+    pub fn try_new(rows: Vec<Vec<TypedExpression>>) -> Result<Self, TypedShapeError> {
+        let value = Self { rows };
+        value
+            .is_valid()
+            .then_some(value)
+            .ok_or(TypedShapeError::Values)
     }
 
     /// Returns typed rows in authored order.
     #[must_use]
-    pub fn rows(&self) -> &[Vec<TypedArgument>] {
+    pub fn rows(&self) -> &[Vec<TypedExpression>] {
         &self.rows
-    }
-    /// Returns common column contracts in semantic column order.
-    #[must_use]
-    pub fn columns(&self) -> &[TypedValuesColumn] {
-        &self.columns
     }
 
     fn validate(&self) -> Result<(), TypedShapeError> {
         if !self.is_rectangular() {
             return Err(TypedShapeError::Values);
         }
-        let width = self.rows[0].len();
-        if self.columns.len() != width {
-            return Err(TypedShapeError::Values);
-        }
-        for (column_index, column) in self.columns.iter().enumerate() {
-            column
-                .nullability
-                .validate()
-                .map_err(|_| TypedShapeError::Nullability)?;
-            validate_common_type_evidence(
-                &column.common_type,
-                &column.type_id,
-                self.rows
-                    .iter()
-                    .map(|row| &row[column_index].expression.type_id),
-            )?;
-            let mut nullable = false;
-            for row in &self.rows {
-                let argument = &row[column_index];
-                validate_argument(argument, Some(&column.type_id))?;
-                if argument_output_type(argument) != &column.type_id
-                    || argument_output_typmod(argument) != column.typmod.as_ref()
-                {
-                    return Err(TypedShapeError::Coercion);
-                }
-                nullable |= argument_output_nullability(argument).is_nullable();
-            }
-            if column.nullability.is_nullable() != nullable
-                || !column
-                    .nullability
-                    .evidence()
-                    .contains(&NullabilityEvidence::ValuesPropagation)
-            {
-                return Err(TypedShapeError::Nullability);
+        for row in &self.rows {
+            for expression in row {
+                expression.validate()?;
             }
         }
         Ok(())
@@ -1043,7 +825,7 @@ impl TypedConflictClause {
                 return Err(TypedShapeError::Conflict);
             }
             for assignment in assignments {
-                validate_use_site_coercion(&assignment.value, assignment.coercion.as_ref(), None)?;
+                assignment.value.validate()?;
             }
             if let Some(predicate) = predicate {
                 predicate.validate()?;
@@ -1112,7 +894,7 @@ impl TypedUpdate {
     fn validate(&self) -> Result<(), TypedShapeError> {
         validate_ctes(&self.ctes)?;
         for assignment in &self.assignments {
-            validate_use_site_coercion(&assignment.value, assignment.coercion.as_ref(), None)?;
+            assignment.value.validate()?;
         }
         for relation in &self.from {
             relation.validate()?;
@@ -1174,8 +956,6 @@ pub enum TypedShapeError {
     Cardinality,
     /// Non-null claim without positive proof.
     Nullability,
-    /// Missing, redundant, discontinuous, or mismatched use-site coercion proof.
-    Coercion,
     /// Invalid PostgreSQL conflict target/action combination.
     Conflict,
     /// Invalid function-call modifier combination.
@@ -1201,7 +981,6 @@ impl std::fmt::Display for TypedShapeError {
             Self::Nullability => {
                 formatter.write_str("typed expression has invalid nullability proof")
             }
-            Self::Coercion => formatter.write_str("invalid typed use-site coercion proof"),
             Self::Conflict => {
                 formatter.write_str("invalid PostgreSQL conflict target/action shape")
             }
@@ -1226,95 +1005,9 @@ fn statement_projections(statement: &TypedStatement) -> &[TypedProjection] {
 
 fn validate_arguments(arguments: &[TypedArgument]) -> Result<(), TypedShapeError> {
     for argument in arguments {
-        validate_argument(argument, None)?;
+        argument.expression.validate()?;
     }
     Ok(())
-}
-
-fn validate_argument(
-    argument: &TypedArgument,
-    expected_target: Option<&TypeId>,
-) -> Result<(), TypedShapeError> {
-    argument.expression.validate()?;
-    validate_use_site_coercion(
-        &argument.expression,
-        argument.coercion.as_ref(),
-        expected_target,
-    )
-}
-
-fn validate_use_site_coercion(
-    expression: &TypedExpression,
-    coercion: Option<&TypedCoercion>,
-    expected_target: Option<&TypeId>,
-) -> Result<(), TypedShapeError> {
-    match coercion {
-        Some(coercion) => {
-            coercion.validate()?;
-            if coercion.source_type != expression.type_id
-                || coercion.result_nullability.is_nullable() != expression.nullability.is_nullable()
-                || expected_target.is_some_and(|target| target != &coercion.target_type)
-            {
-                return Err(TypedShapeError::Coercion);
-            }
-            Ok(())
-        }
-        None if expected_target.is_some_and(|target| target != &expression.type_id) => {
-            Err(TypedShapeError::Coercion)
-        }
-        None => Ok(()),
-    }
-}
-
-fn common_type_target(evidence: &CoercionEvidence) -> Result<&TypeId, TypedShapeError> {
-    match evidence {
-        CoercionEvidence::CommonType { resolved, .. } => Ok(resolved),
-        _ => Err(TypedShapeError::Coercion),
-    }
-}
-
-fn argument_output_type(argument: &TypedArgument) -> &TypeId {
-    argument
-        .coercion
-        .as_ref()
-        .map_or(&argument.expression.type_id, |coercion| {
-            &coercion.target_type
-        })
-}
-fn argument_output_typmod(argument: &TypedArgument) -> Option<&Typmod> {
-    argument
-        .coercion
-        .as_ref()
-        .map_or(argument.expression.typmod.as_ref(), |coercion| {
-            coercion.target_typmod.as_ref()
-        })
-}
-
-fn argument_output_nullability(argument: &TypedArgument) -> &Nullability {
-    argument
-        .coercion
-        .as_ref()
-        .map_or(&argument.expression.nullability, |coercion| {
-            &coercion.result_nullability
-        })
-}
-
-fn validate_common_type_evidence<'a>(
-    evidence: &CoercionEvidence,
-    target: &TypeId,
-    inputs: impl Iterator<Item = &'a TypeId>,
-) -> Result<(), TypedShapeError> {
-    let CoercionEvidence::CommonType {
-        resolved,
-        inputs: proven_inputs,
-    } = evidence
-    else {
-        return Err(TypedShapeError::Coercion);
-    };
-    let actual_inputs = inputs.cloned().collect::<Vec<_>>();
-    (resolved == target && proven_inputs == &actual_inputs)
-        .then_some(())
-        .ok_or(TypedShapeError::Coercion)
 }
 
 fn validate_select_distinct(
@@ -1428,7 +1121,7 @@ fn validate_projections(projections: &[TypedProjection]) -> Result<(), TypedShap
         if !valid_render_identifier(&projection.sql_label) {
             return Err(TypedShapeError::RenderName);
         }
-        projection.validate()?;
+        projection.expression.validate()?;
     }
     Ok(())
 }
@@ -1711,7 +1404,10 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
                     typed_operand.as_deref(),
                     hir_operand.as_deref(),
                 ) && typed_case_branches_correspond(typed_branches, hir_branches)
-                    && typed_argument_option_corresponds(typed_else.as_deref(), hir_else.as_deref())
+                    && typed_boxed_expression_option_corresponds(
+                        typed_else.as_deref(),
+                        hir_else.as_deref(),
+                    )
             }
             (
                 TypedExpressionKind::ScalarSubquery(typed),
@@ -1725,7 +1421,7 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
                     elements: typed, ..
                 },
                 HirExpressionKind::Array(hir),
-            ) => typed_arguments_correspond(typed, hir),
+            ) => typed_expressions_correspond(typed, hir),
             (
                 TypedExpressionKind::CteColumn {
                     cte_id: typed_cte,
@@ -1826,27 +1522,8 @@ fn typed_case_branches_correspond(typed: &[TypedCaseBranch], hir: &[HirCaseBranc
     typed.len() == hir.len()
         && typed.iter().zip(hir).all(|(typed, hir)| {
             typed_expression_corresponds(&typed.when, &hir.when)
-                && typed_expression_corresponds(&typed.then.expression, &hir.then)
+                && typed_expression_corresponds(&typed.then, &hir.then)
         })
-}
-
-fn typed_arguments_correspond(typed: &[TypedArgument], hir: &[HirExpression]) -> bool {
-    typed.len() == hir.len()
-        && typed
-            .iter()
-            .zip(hir)
-            .all(|(typed, hir)| typed_expression_corresponds(&typed.expression, hir))
-}
-
-fn typed_argument_option_corresponds(
-    typed: Option<&TypedArgument>,
-    hir: Option<&HirExpression>,
-) -> bool {
-    match (typed, hir) {
-        (Some(typed), Some(hir)) => typed_expression_corresponds(&typed.expression, hir),
-        (None, None) => true,
-        _ => false,
-    }
 }
 
 fn typed_expressions_correspond(typed: &[TypedExpression], hir: &[HirExpression]) -> bool {
@@ -1897,15 +1574,12 @@ fn typed_limit_corresponds(typed: Option<&TypedLimit>, hir: Option<&HirExpressio
     }
 }
 
-fn typed_value_rows_correspond(typed: &[Vec<TypedArgument>], hir: &[Vec<HirExpression>]) -> bool {
+fn typed_value_rows_correspond(typed: &[Vec<TypedExpression>], hir: &[Vec<HirExpression>]) -> bool {
     typed.len() == hir.len()
-        && typed.iter().zip(hir).all(|(typed, hir)| {
-            typed.len() == hir.len()
-                && typed
-                    .iter()
-                    .zip(hir)
-                    .all(|(typed, hir)| typed_expression_corresponds(&typed.expression, hir))
-        })
+        && typed
+            .iter()
+            .zip(hir)
+            .all(|(typed, hir)| typed_expressions_correspond(typed, hir))
 }
 
 fn typed_insert_corresponds(typed: &TypedInsert, hir: &HirInsert) -> bool {

@@ -338,9 +338,9 @@ fn validate_outputs(
         && projections.iter().zip(outputs).all(|(projection, output)| {
             projection.field_id == output.id
                 && projection.expression.id == output.source_expression
-                && projection.output_type_id() == &output.type_id
-                && projection.output_typmod() == output.typmod.as_ref()
-                && projection.output_nullability() == &output.nullability
+                && projection.expression.type_id == output.type_id
+                && projection.expression.typmod == output.typmod
+                && projection.expression.nullability == output.nullability
         });
     matches
         .then_some(())
@@ -547,12 +547,7 @@ fn collect_statement_catalog_identities(statement: &TypedStatement, output: &mut
             match &insert.source {
                 crate::TypedInsertSource::Values(values) => {
                     for row in values.rows() {
-                        for argument in row {
-                            collect_argument_catalog_identities(argument, output);
-                        }
-                    }
-                    for column in values.columns() {
-                        collect_values_column_catalog_identities(column, output);
+                        collect_expressions_catalog_identities(row, output);
                     }
                 }
                 crate::TypedInsertSource::Select(statement) => {
@@ -623,12 +618,7 @@ fn collect_relation_catalog_identities(
         }
         crate::TypedRelationKind::Values { rows } => {
             for row in rows.rows() {
-                for argument in row {
-                    collect_argument_catalog_identities(argument, output);
-                }
-            }
-            for column in rows.columns() {
-                collect_values_column_catalog_identities(column, output);
+                collect_expressions_catalog_identities(row, output);
             }
         }
         crate::TypedRelationKind::SetOperation { left, right, .. } => {
@@ -698,20 +688,14 @@ fn collect_expression_catalog_identities(
             operand,
             branches,
             else_expression,
-            implicit_else_type,
             result_coercion,
         } => {
-            if let Some(type_id) = implicit_else_type {
-                output.insert(type_id.as_str().to_string());
-            }
             collect_expression_option_catalog_identities(operand.as_deref(), output);
             for branch in branches {
                 collect_expression_catalog_identities(&branch.when, output);
-                collect_argument_catalog_identities(&branch.then, output);
+                collect_expression_catalog_identities(&branch.then, output);
             }
-            if let Some(else_expression) = else_expression {
-                collect_argument_catalog_identities(else_expression, output);
-            }
+            collect_expression_option_catalog_identities(else_expression.as_deref(), output);
             collect_coercion_evidence_catalog_identities(result_coercion, output);
         }
         crate::TypedExpressionKind::ScalarSubquery(statement) => {
@@ -721,9 +705,7 @@ fn collect_expression_catalog_identities(
             collect_expressions_catalog_identities(values, output);
         }
         crate::TypedExpressionKind::Array { elements, coercion } => {
-            for element in elements {
-                collect_argument_catalog_identities(element, output);
-            }
+            collect_expressions_catalog_identities(elements, output);
             collect_coercion_evidence_catalog_identities(coercion, output);
         }
         crate::TypedExpressionKind::CteColumn { .. } => {}
@@ -743,28 +725,13 @@ fn collect_coercion_catalog_identities(
     collect_coercion_evidence_catalog_identities(&coercion.evidence, output);
 }
 
-fn collect_argument_catalog_identities(
-    argument: &crate::TypedArgument,
-    output: &mut BTreeSet<String>,
-) {
-    collect_expression_catalog_identities(&argument.expression, output);
-    if let Some(coercion) = &argument.coercion {
-        collect_coercion_catalog_identities(coercion, output);
-    }
-}
-
 fn collect_coercion_evidence_catalog_identities(
     evidence: &crate::CoercionEvidence,
     output: &mut BTreeSet<String>,
 ) {
     match evidence {
         crate::CoercionEvidence::Exact => {}
-        crate::CoercionEvidence::CatalogCastPath { steps } => {
-            for step in steps {
-                output.insert(step.source_type.as_str().to_string());
-                output.insert(step.target_type.as_str().to_string());
-            }
-        }
+        crate::CoercionEvidence::CatalogCast { .. } => {}
         crate::CoercionEvidence::DomainBase { domain, base } => {
             output.insert(domain.as_str().to_string());
             output.insert(base.as_str().to_string());
@@ -784,14 +751,6 @@ fn collect_coercion_evidence_catalog_identities(
             output.extend(bound_types.iter().map(|id| id.as_str().to_string()));
         }
     }
-}
-
-fn collect_values_column_catalog_identities(
-    column: &crate::TypedValuesColumn,
-    output: &mut BTreeSet<String>,
-) {
-    output.insert(column.type_id.as_str().to_string());
-    collect_coercion_evidence_catalog_identities(&column.common_type, output);
 }
 
 fn collect_conflict_catalog_identities(
@@ -888,9 +847,6 @@ fn collect_projections_catalog_identities(
 ) {
     for projection in projections {
         collect_expression_catalog_identities(&projection.expression, output);
-        if let Some(coercion) = &projection.coercion {
-            collect_coercion_catalog_identities(coercion, output);
-        }
     }
 }
 
