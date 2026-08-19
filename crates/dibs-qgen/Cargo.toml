@@ -13,8 +13,6 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [dependencies]
 dibs-db-schema = { version = "0.2.0-rc.5", path = "../dibs-db-schema" }
-dibs-pg-catalog.workspace = true
-dibs-query-ir = { path = "../dibs-query-ir", version = "0.1.0" }
 facet.workspace = true
 dibs-query-schema.workspace = true
 dibs-sql = { version = "0.2.0-rc.5", path = "../dibs-sql" }
