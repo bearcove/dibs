@@ -130,7 +130,6 @@ fn renders_select_windows_relations_expressions_and_locks() {
         100,
         BIGINT,
         TypedExpressionKind::Call(Box::new(TypedCall {
-            authored_callable_id: CallableId::new(COUNT),
             callable_id: CallableId::new(COUNT),
             arguments: vec![TypedArgument {
                 expression: column(101, RelationId::new(1), ID),
@@ -338,7 +337,6 @@ fn renders_within_group_named_over_and_every_frame_and_lock_spelling() {
             200 + index as u32,
             BIGINT,
             TypedExpressionKind::Call(Box::new(TypedCall {
-                authored_callable_id: CallableId::new(COUNT),
                 callable_id: CallableId::new(COUNT),
                 arguments: vec![TypedArgument {
                     expression: integer(210, "1"),
@@ -1075,11 +1073,10 @@ fn hir_expression(expression: &TypedExpression) -> dibs_query_ir::HirExpression 
                 }))
             }
             TypedExpressionKind::Operator {
-                authored_operator_id,
+                operator_id,
                 operands,
-                ..
             } => HirExpressionKind::Operator {
-                operator_id: authored_operator_id.clone(),
+                operator_id: operator_id.clone(),
                 operands: operands
                     .iter()
                     .map(|argument| hir_expression(&argument.expression))
@@ -1538,7 +1535,6 @@ fn operator(id: u32, operator_id: &str, operands: Vec<TypedExpression>) -> Typed
         id,
         BOOL,
         TypedExpressionKind::Operator {
-            authored_operator_id: OperatorId::new(operator_id),
             operator_id: OperatorId::new(operator_id),
             operands: operands
                 .into_iter()

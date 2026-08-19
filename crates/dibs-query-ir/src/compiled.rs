@@ -657,7 +657,6 @@ fn collect_expression_catalog_identities(
         crate::TypedExpressionKind::Operator {
             operator_id,
             operands,
-            ..
         } => {
             if !is_structural_syntax_operator(operator_id) {
                 output.insert(operator_id.as_str().to_string());

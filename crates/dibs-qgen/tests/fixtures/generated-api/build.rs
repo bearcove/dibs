@@ -625,7 +625,6 @@ fn typed_operator(
         nullability: Nullability::nullable(NullabilityEvidence::Conservative),
         volatility: Volatility::Immutable,
         kind: TypedExpressionKind::Operator {
-            authored_operator_id: OperatorId::new(operator),
             operator_id: OperatorId::new(operator),
             operands: operands
                 .into_iter()

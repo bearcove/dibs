@@ -541,9 +541,7 @@ pub enum TypedExpressionKind {
     Call(Box<TypedCall>),
     /// Typed operator application.
     Operator {
-        /// Authored or resolver operator identity retained only for HIR correspondence.
-        authored_operator_id: OperatorId,
-        /// Stable resolved catalog operator identity used by execution and rendering.
+        /// Stable operator identity.
         operator_id: OperatorId,
         /// Paired typed operands and their optional coercions.
         operands: Vec<TypedArgument>,
@@ -619,9 +617,7 @@ pub type TypedOrderBy = OrderBy<TypedExpression>;
 /// One typed function call with PostgreSQL aggregate and window modifiers.
 #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
 pub struct TypedCall {
-    /// Authored or resolver callable identity retained only for HIR correspondence.
-    pub authored_callable_id: CallableId,
-    /// Stable resolved catalog callable identity used by execution and rendering.
+    /// Stable callable identity.
     pub callable_id: CallableId,
     /// Paired typed arguments and their optional coercions.
     pub arguments: Vec<TypedArgument>,
@@ -1344,16 +1340,15 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
 
             (
                 TypedExpressionKind::Operator {
-                    authored_operator_id: typed_authored_operator,
+                    operator_id: typed_operator,
                     operands: typed_operands,
-                    ..
                 },
                 HirExpressionKind::Operator {
                     operator_id: hir_operator,
                     operands: hir_operands,
                 },
             ) => {
-                typed_authored_operator == hir_operator
+                typed_operator == hir_operator
                     && typed_operands.len() == hir_operands.len()
                     && typed_operands
                         .iter()
@@ -1436,7 +1431,7 @@ fn typed_expression_corresponds(typed: &TypedExpression, hir: &HirExpression) ->
         }
 }
 fn typed_call_corresponds(typed: &TypedCall, hir: &HirCall) -> bool {
-    typed.authored_callable_id == hir.callable_id
+    typed.callable_id == hir.callable_id
         && typed.distinct == hir.distinct
         && typed.star == hir.star
         && typed.arguments.len() == hir.arguments.len()

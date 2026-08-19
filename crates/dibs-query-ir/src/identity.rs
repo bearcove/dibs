@@ -761,7 +761,6 @@ impl From<&crate::TypedExpressionKind> for SemanticExpressionKind {
             crate::TypedExpressionKind::Operator {
                 operator_id,
                 operands,
-                ..
             } => Self::Operator {
                 operator_id: operator_id.clone(),
                 operands: operands
