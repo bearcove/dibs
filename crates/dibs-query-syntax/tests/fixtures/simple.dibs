@@ -1,7 +1,0 @@
-/// Find a run by id.
-query FindRun(id: bigint, owner: text?,) -> optional {
-    select id, owner
-    from run
-    where id = :id
-      and owner = :owner
-}

@@ -14,7 +14,7 @@ env:
 jobs:
   check:
     name: Check
-    runs-on: bearcove-ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
 
@@ -29,7 +29,7 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: bearcove-ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
 
@@ -46,7 +46,7 @@ jobs:
 
   fmt:
     name: Format
-    runs-on: bearcove-ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
 
@@ -60,7 +60,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: bearcove-ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
 
@@ -78,7 +78,7 @@ jobs:
 
   doc:
     name: Documentation
-    runs-on: bearcove-ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
 
@@ -95,11 +95,11 @@ jobs:
 
   test-tokio-postgres:
     name: Test tokio-postgres
-    runs-on: bearcove-ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
 
     services:
       postgres:
-        image: postgres:18
+        image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
         ports:
