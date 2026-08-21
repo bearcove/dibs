@@ -1,8 +1,20 @@
 # release-plz configuration
-# https://release-plz.ieni.dev/docs/config
-#
-# Publish policy lives in each crate's Cargo.toml via `publish = false`
-# (examples + internal-only crates like dibs-codegen / dockside / xtask).
-# release-plz inherits that automatically, so there are no per-package
-# entries here. Do not re-add `release = false` entries for crates that
-# already set `publish = false` — release-plz errors on the inconsistency.
+# https://release-plz.dev/docs/config
+
+# `publish = false` in Cargo.toml only disables publishing. These workspace
+# packages must also set `release = false` here so release-plz does not package
+# and compare them while preparing releases for public crates.
+[[package]]
+name = "dibs-codegen"
+release = false
+publish = false
+
+[[package]]
+name = "dockside"
+release = false
+publish = false
+
+[[package]]
+name = "xtask"
+release = false
+publish = false
