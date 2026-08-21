@@ -1443,15 +1443,17 @@ dependencies = [
 
 [[package]]
 name = "facet-styx"
-version = "5.0.0-rc.2"
+version = "5.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b692aa42ffed458a434d71c8b28e3e926993cd4e9b4c368bcce33225cd5945a7"
+checksum = "be1a948b17c9fb97ed52e2b51f6800c2c39e03eed9ffd33167f57397d371ba88"
 dependencies = [
  "ariadne",
  "facet",
  "facet-core",
  "facet-format",
  "facet-reflect",
+ "margin",
+ "margin-term",
  "serde_json",
  "styx-format",
  "styx-parse",
@@ -2541,6 +2543,27 @@ checksum = "c0aeb26bf5e836cc1c341c8106051b573f1766dfa05aa87f0b98be5e51b02303"
 dependencies = [
  "nix",
  "winapi",
+]
+
+[[package]]
+name = "margin"
+version = "0.10.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5d74bb14c1949b60793bc50fa36cd8bca73705c2164ac7b12540da8a38321fa"
+dependencies = [
+ "facet",
+ "unicode-width",
+]
+
+[[package]]
+name = "margin-term"
+version = "0.10.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "681f9da7dbb6ce152c4bf54fb6a584be6159229f5a38b1cf7a11f241fe6d3649"
+dependencies = [
+ "arborium-theme",
+ "margin",
+ "unicode-width",
 ]
 
 [[package]]
@@ -4231,9 +4254,9 @@ dependencies = [
 
 [[package]]
 name = "styx-embed"
-version = "5.0.0-rc.2"
+version = "5.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d91c4a63a7915af516e8a4b9a0f37bd7a32a3c911792e947f8609fc231f1236d"
+checksum = "f696e6d724bbdbbb63b9ff7bb90aa21fcec5180e388163030f015caa2b8f04f6"
 dependencies = [
  "blake3",
  "goblin",
@@ -4244,9 +4267,9 @@ dependencies = [
 
 [[package]]
 name = "styx-embed-macros"
-version = "5.0.0-rc.2"
+version = "5.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "924e63582e6a3d211cbff774456f4db7b8777b08e6cb6a03715a171a18c682f3"
+checksum = "d7c4f8ee1978eba78bf195b2d361ae3c3b0f70ff20f6807d980ae3e3155213e7"
 dependencies = [
  "blake3",
  "lz4_flex",
@@ -4257,9 +4280,9 @@ dependencies = [
 
 [[package]]
 name = "styx-format"
-version = "5.0.0-rc.2"
+version = "5.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b560c3b4ba4c3058136fa31b97e787d93fb21cd2884a1e2a2f84e6a914f046b2"
+checksum = "f78560ef305254e73442a8c742d86f0aa348b287765cb1ac52a59882d248c6aa"
 dependencies = [
  "styx-cst",
  "styx-parse",
@@ -4268,9 +4291,9 @@ dependencies = [
 
 [[package]]
 name = "styx-lsp"
-version = "5.0.0-rc.2"
+version = "5.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73d3d1d9916fdd9f012fdc2b443e6759deb0c6fd1e9c9fdf373ac6bdfc0a54c1"
+checksum = "69f0c9adfb7bc24365f740c64855e9b78169158bc2af3d2b197607a88bd35afe"
 dependencies = [
  "dirs",
  "eyre",
@@ -4297,9 +4320,9 @@ dependencies = [
 
 [[package]]
 name = "styx-lsp-ext"
-version = "5.0.0-rc.2"
+version = "5.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdd19fd6c596cbc468d23010811c821622066f9cae4fa0169533ad8d2fddda74"
+checksum = "5c6b93a94ebad9afd3ce6a051c46ab21c4164a6f4447027a1d2c378770e90dd7"
 dependencies = [
  "facet",
  "styx-tree",
@@ -4338,9 +4361,9 @@ dependencies = [
 
 [[package]]
 name = "styx-tree"
-version = "5.0.0-rc.2"
+version = "5.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fadf13bdca5178a3dd0f73f9f050cb879f417a3f4acf3fb3c3bf3e38947b3b2f"
+checksum = "e0a11f0b1db6814e3ec5d96afe4b29ed4567bf93cfbf3b1952b713eba577ad35"
 dependencies = [
  "ariadne",
  "facet",
