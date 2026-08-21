@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-rc.7](https://github.com/bearcove/dibs/compare/dibs-v0.2.0-rc.6...dibs-v0.2.0-rc.7) - 2026-08-21
+
+### Other
+
+- updated the following local packages: dibs-qgen
+
 ## [0.2.0-rc.5](https://github.com/facet-rs/facet/compare/dibs-jsonb-v0.2.0-rc.4...dibs-jsonb-v0.2.0-rc.5) - 2026-06-28
 
 ### Other
