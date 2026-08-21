@@ -28,11 +28,11 @@ facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0
 figue = { version = "5.0.0-rc.6" }
 strid = { version = "11.0.0-rc.5" }
 
-facet-styx = { version = "=5.0.0-rc.2" }
-styx-embed = { version = "=5.0.0-rc.2" }
-styx-tree = { version = "=5.0.0-rc.2", features = ["facet"] }
-styx-lsp-ext = { version = "=5.0.0-rc.2" }
-styx-lsp = { version = "=5.0.0-rc.2" }
+facet-styx = { version = "=5.0.0-rc.5" }
+styx-embed = { version = "=5.0.0-rc.5" }
+styx-tree = { version = "=5.0.0-rc.5", features = ["facet"] }
+styx-lsp-ext = { version = "=5.0.0-rc.5" }
+styx-lsp = { version = "=5.0.0-rc.5" }
 
 vox = { version = "0.10.0-rc.7" }
 vox-codegen = { version = "0.10.0-rc.7" }
