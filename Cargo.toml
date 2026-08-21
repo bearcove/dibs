@@ -18,26 +18,26 @@ dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.5" }
 dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.5" }
 dockside = { path = "crates/dockside" }
 
-facet = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-core = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-value = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-json = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-reflect = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet = { version = "0.50.0-rc.7" }
+facet-core = { version = "0.50.0-rc.7" }
+facet-value = { version = "0.50.0-rc.7" }
+facet-json = { version = "0.50.0-rc.7" }
+facet-reflect = { version = "0.50.0-rc.7" }
+facet-testhelpers = { version = "0.50.0-rc.7" }
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
-figue = { git = "https://github.com/bearcove/figue", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
-strid = { git = "https://github.com/bearcove/strid", rev = "c48464a22b6511b0119be92ea2c86c1f61e06153" }
+figue = { version = "5.0.0-rc.6" }
+strid = { version = "11.0.0-rc.5" }
 
-facet-styx = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
-styx-embed = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
-styx-tree = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265", features = ["facet"] }
-styx-lsp-ext = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
-styx-lsp = { git = "https://github.com/bearcove/styx", rev = "fc2814a5ec889338eb1bf9f27425ac7094462265" }
+facet-styx = { version = "=5.0.0-rc.2" }
+styx-embed = { version = "=5.0.0-rc.2" }
+styx-tree = { version = "=5.0.0-rc.2", features = ["facet"] }
+styx-lsp-ext = { version = "=5.0.0-rc.2" }
+styx-lsp = { version = "=5.0.0-rc.2" }
 
-vox = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
-vox-codegen = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
-vox-stream = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
-vox-websocket = { git = "https://github.com/bearcove/vox", rev = "e875e070d78690f45a06a13e8fc79cef84579ed4" }
+vox = { version = "0.10.0-rc.7" }
+vox-codegen = { version = "0.10.0-rc.7" }
+vox-stream = { version = "0.10.0-rc.7" }
+vox-websocket = { version = "0.10.0-rc.7" }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-postgres = "0.7"
@@ -75,10 +75,3 @@ testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-[patch."https://github.com/bearcove/phon-next"]
-phon = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
-phon-codegen = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
-phon-engine = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
-phon-ir = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
-phon-jit = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
-phon-schema = { git = "https://github.com/bearcove/phon", rev = "79622e1459b3c6b3ede766abd1e02a505a204504" }
