@@ -7,12 +7,12 @@ resolver = "3"
 rust-version = "1.92"
 
 [workspace.dependencies]
-dibs = { path = "crates/dibs", version = "0.2.0-rc.6" }
+dibs = { path = "crates/dibs", version = "0.2.0-rc.7" }
 dibs-config = { path = "crates/dibs-config", version = "0.2.0-rc.6" }
 dibs-macros = { path = "crates/dibs-macros", version = "0.2.0-rc.6" }
 dibs-proto = { path = "crates/dibs-proto", version = "0.2.0-rc.6" }
-dibs-qgen = { path = "crates/dibs-qgen", version = "0.2.0-rc.6" }
-dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.2.0-rc.6" }
+dibs-qgen = { path = "crates/dibs-qgen", version = "0.2.0-rc.7" }
+dibs-query-schema = { path = "crates/dibs-query-schema", version = "0.2.0-rc.7" }
 dibs-db-schema = { path = "crates/dibs-db-schema", version = "0.2.0-rc.6" }
 dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.6" }
 dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.6" }

@@ -939,7 +939,7 @@ dependencies = [
 
 [[package]]
 name = "dibs"
-version = "0.2.0-rc.6"
+version = "0.2.0-rc.7"
 dependencies = [
  "blake3",
  "bytes",
@@ -968,7 +968,7 @@ dependencies = [
 
 [[package]]
 name = "dibs-cli"
-version = "0.2.0-rc.6"
+version = "0.2.0-rc.7"
 dependencies = [
  "arborium",
  "arborium-highlight",
@@ -1059,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "dibs-qgen"
-version = "0.2.0-rc.6"
+version = "0.2.0-rc.7"
 dependencies = [
  "ariadne",
  "camino",
@@ -1079,7 +1079,7 @@ dependencies = [
 
 [[package]]
 name = "dibs-query-schema"
-version = "0.2.0-rc.6"
+version = "0.2.0-rc.7"
 dependencies = [
  "dibs-sql",
  "facet",

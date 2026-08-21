@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-rc.7](https://github.com/bearcove/dibs/compare/dibs-cli-v0.2.0-rc.6...dibs-cli-v0.2.0-rc.7) - 2026-08-21
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.1.0](https://github.com/bearcove/dibs/compare/dibs-cli-v0.0.0...dibs-cli-v0.1.0) - 2026-06-02
 
 ### Added

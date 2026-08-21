@@ -1,6 +1,6 @@
 [package]
 name = "dibs-qgen"
-version = "0.2.0-rc.6"
+version = "0.2.0-rc.7"
 edition = "2024"
 rust-version.workspace = true
 description = "Query DSL code generator for dibs (parses .styx query files into Rust and SQL)"
