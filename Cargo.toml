@@ -19,12 +19,12 @@ dibs-jsonb = { path = "crates/dibs-jsonb", version = "0.2.0-rc.5" }
 dibs-runtime = { path = "crates/dibs-runtime", version = "0.2.0-rc.5" }
 dockside = { path = "crates/dockside" }
 
-facet = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-core = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-value = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-json = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-reflect = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
-facet-testhelpers = { git = "https://github.com/facet-rs/facet", rev = "5705fa6c51289bea49f5729c52dc5e23cedce4f8" }
+facet = "0.50.0-rc.7"
+facet-core = "0.50.0-rc.7"
+facet-value = "0.50.0-rc.7"
+facet-json = "0.50.0-rc.7"
+facet-reflect = "0.50.0-rc.7"
+facet-testhelpers = "0.50.0-rc.7"
 facet-tokio-postgres = { path = "crates/facet-tokio-postgres", version = "0.50.0-rc.5" }
 figue = { git = "https://github.com/bearcove/figue", rev = "361672c57316b2202ac0372f1c64988d8acfc6b6" }
 strid = { git = "https://github.com/bearcove/strid", rev = "c48464a22b6511b0119be92ea2c86c1f61e06153" }
@@ -82,15 +82,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [patch.crates-io]
 copypatch = { path = "../weavy/copypatch" }
-taxon = { path = "../weavy/taxon" }
+taxon = { path = "../taxon" }
 weavy = { path = "../weavy/weavy" }
-weavy-phon = { path = "../weavy/weavy-phon" }
 
 [patch."https://github.com/bearcove/weavy"]
 copypatch = { path = "../weavy/copypatch" }
-taxon = { path = "../weavy/taxon" }
+taxon = { path = "../taxon" }
 weavy = { path = "../weavy/weavy" }
-weavy-phon = { path = "../weavy/weavy-phon" }
 
 [profile.dev.package.blake3]
 opt-level = 3
